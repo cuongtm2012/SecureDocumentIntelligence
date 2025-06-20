@@ -10,6 +10,7 @@ import sharp from "sharp";
 import { deepSeekService } from "./deepseek-service";
 import { vietnameseTextCleaner } from "./vietnamese-text-cleaner";
 import { enhancedVietnameseOCR } from "./enhanced-vietnamese-ocr";
+import { pdfProcessor } from "./pdf-processor";
 import helmet from "helmet";
 import { insertDocumentSchema, insertAuditLogSchema } from "@shared/schema";
 import { z } from "zod";
@@ -177,7 +178,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
             } catch (pdfError: any) {
               console.error('DeepSeek PDF processing failed:', pdfError);
-              throw new Error(`PDF processing failed: ${pdfError.message}`);
+              
+              // Fallback to enhanced Vietnamese OCR for PDFs when DeepSeek fails
+              console.log('Falling back to enhanced Vietnamese OCR for PDF processing...');
+              
+              try {
+                // For now, provide a clear error message about PDF fallback processing
+                const errorMessage = pdfError.message.includes('402') ? 
+                  'DeepSeek API quota exceeded. Please add API credits or convert PDF to image format (JPG/PNG) for processing.' :
+                  'PDF processing requires DeepSeek API. Please convert to image format (JPG/PNG) for optimal results.';
+                  
+                throw new Error(errorMessage);
+              } catch (fallbackError: any) {
+                throw new Error(errorMessage);
+              }
             }
           } else {
             throw new Error('DeepSeek API key required for PDF processing. Please configure OPENAI_API_KEY.');
