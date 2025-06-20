@@ -4,10 +4,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FileText, Clock, CheckCircle, AlertCircle, Loader2, Eye } from "lucide-react";
 import { useLanguage } from "@/hooks/use-language";
+import { DocumentViewerModal } from "@/components/document-viewer-modal";
+import { useState } from "react";
 import type { Document, AuditLog } from "@shared/schema";
 
 export function EnhancedDashboard() {
   const { t } = useLanguage();
+  const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
   
   const { data: documents = [], isLoading: documentsLoading } = useQuery({
     queryKey: ['/api/documents'],
@@ -117,7 +121,15 @@ export function EnhancedDashboard() {
                   </div>
                   <div className="flex items-center space-x-2 flex-shrink-0">
                     {getStatusBadge(doc.processingStatus)}
-                    <Button variant="outline" size="sm" className="h-7">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="h-7"
+                      onClick={() => {
+                        setSelectedDocument(doc);
+                        setIsModalOpen(true);
+                      }}
+                    >
                       <Eye className="w-3 h-3" />
                     </Button>
                   </div>
@@ -183,6 +195,15 @@ export function EnhancedDashboard() {
           )}
         </CardContent>
       </Card>
+
+      <DocumentViewerModal
+        document={selectedDocument}
+        isOpen={isModalOpen}
+        onClose={() => {
+          setIsModalOpen(false);
+          setSelectedDocument(null);
+        }}
+      />
     </div>
   );
 }

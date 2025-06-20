@@ -121,30 +121,7 @@ export function SystemSidebar() {
         </CardContent>
       </Card>
 
-      {/* Recent Activity */}
-      <Card>
-        <CardContent className="p-6">
-          <h3 className="text-lg font-semibold gov-dark mb-4">Recent Activity</h3>
-          
-          <div className="space-y-3">
-            {auditLogs.length === 0 ? (
-              <p className="text-sm text-gray-500 italic">No recent activity</p>
-            ) : (
-              auditLogs.slice(0, 5).map((log) => (
-                <div key={log.id} className="flex items-start space-x-3 pb-3 border-b border-gray-100 last:border-b-0">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${getActivityIconBg(log.action)}`}>
-                    {getActivityIcon(log.action)}
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm text-gray-800">{log.action}</p>
-                    <p className="text-xs text-gray-500">{formatTimeAgo(log.timestamp.toString())}</p>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </CardContent>
-      </Card>
+
 
       {/* Security Information */}
       <Card>
