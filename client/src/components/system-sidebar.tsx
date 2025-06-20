@@ -5,6 +5,7 @@ import { FileText, Shield, Download, Clock, Lock, ShieldX } from "lucide-react";
 import { useLanguage } from "@/hooks/use-language";
 
 export function SystemSidebar() {
+  const { t } = useLanguage();
   const { data: systemStatus } = useQuery({
     queryKey: ["/api/system/status"],
     refetchInterval: 30000, // Refresh every 30 seconds
@@ -57,45 +58,45 @@ export function SystemSidebar() {
       {/* System Status */}
       <Card>
         <CardContent className="p-6">
-          <h3 className="text-lg font-semibold gov-dark mb-4">System Status</h3>
+          <h3 className="text-lg font-semibold gov-dark mb-4">{t('systemStatus')}</h3>
           
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <div className={getStatusColor(systemStatus?.services?.ocr || 'offline')}></div>
+                <div className={getStatusColor((systemStatus as any)?.services?.ocr || 'offline')}></div>
                 <span className="text-sm">
-                  {systemStatus?.services?.ocr === 'deepseek-ai' ? 'DeepSeek AI' : 'OCR Service'}
+                  {(systemStatus as any)?.services?.ocr === 'deepseek-ai' ? 'DeepSeek AI' : t('ocr')}
                 </span>
               </div>
               <span className="text-sm text-green-600 capitalize">
-                {systemStatus?.services?.ocr === 'deepseek-ai' ? 'Advanced' : (systemStatus?.services?.ocr || 'offline')}
+                {(systemStatus as any)?.services?.ocr === 'deepseek-ai' ? t('operational') : ((systemStatus as any)?.services?.ocr || 'offline')}
               </span>
             </div>
             
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <div className={getStatusColor(systemStatus?.services?.ai || 'offline')}></div>
+                <div className={getStatusColor((systemStatus as any)?.services?.ai || 'offline')}></div>
                 <span className="text-sm">AI Analysis</span>
               </div>
               <span className="text-sm text-green-600 capitalize">
-                {systemStatus?.services?.ai || 'offline'}
+                {(systemStatus as any)?.services?.ai || 'offline'}
               </span>
             </div>
             
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <div className={getStatusColor(systemStatus?.services?.database || 'offline')}></div>
-                <span className="text-sm">Database</span>
+                <div className={getStatusColor((systemStatus as any)?.services?.database || 'offline')}></div>
+                <span className="text-sm">{t('database')}</span>
               </div>
               <span className="text-sm text-green-600 capitalize">
-                {systemStatus?.services?.database || 'offline'}
+                {(systemStatus as any)?.services?.database || 'offline'}
               </span>
             </div>
             
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <div className={getStatusColor(systemStatus?.services?.security || 'offline')}></div>
-                <span className="text-sm">Security Layer</span>
+                <div className={getStatusColor((systemStatus as any)?.services?.security || 'offline')}></div>
+                <span className="text-sm">{t('securityLevel')}</span>
               </div>
               <span className="text-sm text-green-600 capitalize">
                 {systemStatus?.services?.security || 'offline'}

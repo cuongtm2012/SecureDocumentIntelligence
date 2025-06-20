@@ -3,10 +3,13 @@ import { SecurityBanner } from "@/components/security-banner";
 import { DocumentUpload } from "@/components/document-upload";
 import { ProcessingResults } from "@/components/processing-results";
 import { SystemSidebar } from "@/components/system-sidebar";
+import { EnhancedDashboard } from "@/components/enhanced-dashboard";
 import { useQuery } from "@tanstack/react-query";
+import { useLanguage } from "@/hooks/use-language";
 import type { Document } from "@shared/schema";
 
 export default function Dashboard() {
+  const { t } = useLanguage();
   const { data: documents = [], isLoading } = useQuery<Document[]>({
     queryKey: ["/api/documents"],
   });
@@ -25,7 +28,7 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-6">
             <DocumentUpload documents={documents} isLoading={isLoading} />
-            <ProcessingResults documents={documents} />
+            <EnhancedDashboard />
           </div>
           
           <div>
