@@ -227,8 +227,8 @@ export function EnhancedDocumentViewer({ documents }: EnhancedDocumentViewerProp
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => displayDocument && analyzeDocumentMutation.mutate(displayDocument.id)}
-                disabled={analyzeDocumentMutation.isPending}
+                onClick={() => displayDocument?.id && analyzeDocumentMutation.mutate(displayDocument.id)}
+                disabled={analyzeDocumentMutation.isPending || !displayDocument}
               >
                 {analyzeDocumentMutation.isPending ? (
                   <Clock className="mr-2 animate-spin" size={16} />

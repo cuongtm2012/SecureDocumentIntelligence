@@ -1,9 +1,9 @@
 import { HeaderNavigation } from "@/components/header-navigation";
 import { SecurityBanner } from "@/components/security-banner";
 import { DocumentUpload } from "@/components/document-upload";
-import { ProcessingResults } from "@/components/processing-results";
+import { EnhancedDocumentViewer } from "@/components/enhanced-document-viewer";
 import { SystemSidebar } from "@/components/system-sidebar";
-import { EnhancedDashboard } from "@/components/enhanced-dashboard";
+import { RealTimeStatus } from "@/components/real-time-status";
 import { useQuery } from "@tanstack/react-query";
 import { useLanguage } from "@/hooks/use-language";
 import type { Document } from "@shared/schema";
@@ -28,11 +28,12 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-6">
             <DocumentUpload documents={documents} isLoading={isLoading} />
-            <EnhancedDashboard />
+            <EnhancedDocumentViewer documents={documents} />
           </div>
           
-          <div>
+          <div className="space-y-6">
             <SystemSidebar />
+            <RealTimeStatus documents={documents} />
           </div>
         </div>
       </main>
