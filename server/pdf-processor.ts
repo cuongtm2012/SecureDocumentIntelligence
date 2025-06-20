@@ -36,19 +36,23 @@ export class PDFProcessor {
 
   private async convertPDFToImages(filePath: string): Promise<string[]> {
     try {
-      const convert = pdf2pic.fromPath(filePath, {
-        density: 300,           // High DPI for better OCR
-        saveFilename: "page",
-        savePath: path.dirname(filePath),
-        format: "png",
-        width: 2000,            // High resolution
-        height: 2829            // A4 aspect ratio
-      });
-
-      const results = await convert.bulk(-1, { responseType: "image" });
-      return results.map(result => result.path);
-    } catch (error) {
-      console.error('Error converting PDF to images:', error);
+      const outputDir = path.dirname(filePath);
+      const basename = path.basename(filePath, '.pdf');
+      const outputPattern = path.join(outputDir, `${basename}-page-%d.png`);
+      
+      // Use pdftoppm to convert PDF to high-quality images
+      await execAsync(`pdftoppm -png -r 300 "${filePath}" "${path.join(outputDir, `${basename}-page`)}"`);
+      
+      // Find all generated image files
+      const files = await fs.readdir(outputDir);
+      const imageFiles = files
+        .filter(file => file.startsWith(`${basename}-page`) && file.endsWith('.png'))
+        .map(file => path.join(outputDir, file))
+        .sort();
+      
+      return imageFiles;
+    } catch (error: any) {
+      console.error('Error converting PDF to images:', error.message);
       throw new Error(`PDF conversion failed: ${error.message}`);
     }
   }
@@ -60,7 +64,7 @@ export class PDFProcessor {
 
     for (const imagePath of imagePaths) {
       try {
-        const worker = await createWorker('vie', 1, {
+        const worker = await createWorker(['vie', 'eng'], 1, {
           logger: m => console.log(`Tesseract page ${pageCount + 1}:`, m.status, m.progress)
         });
 
@@ -68,7 +72,6 @@ export class PDFProcessor {
         await worker.setParameters({
           tessedit_pageseg_mode: '1', // Automatic page segmentation with OSD
           tessedit_ocr_engine_mode: '1', // Neural nets LSTM engine only
-          tessedit_char_whitelist: '', // Allow all characters
           preserve_interword_spaces: '1',
           user_defined_dpi: '300'
         });
@@ -84,8 +87,8 @@ export class PDFProcessor {
 
         // Clean up temporary image
         await fs.unlink(imagePath).catch(() => {});
-      } catch (error) {
-        console.error(`Error processing page ${pageCount + 1}:`, error);
+      } catch (error: any) {
+        console.error(`Error processing page ${pageCount + 1}:`, error.message);
       }
     }
 

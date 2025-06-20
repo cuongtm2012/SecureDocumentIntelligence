@@ -9,7 +9,7 @@ import { createWorker } from "tesseract.js";
 import sharp from "sharp";
 import { deepSeekService } from "./deepseek-service";
 import { vietnameseTextCleaner } from "./vietnamese-text-cleaner";
-import { pdfProcessor, PDFProcessor } from "./pdf-processor";
+import { enhancedVietnameseOCR } from "./enhanced-vietnamese-ocr";
 import helmet from "helmet";
 import { insertDocumentSchema, insertAuditLogSchema } from "@shared/schema";
 import { z } from "zod";
@@ -148,72 +148,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
         let structuredData: any = {};
         let processingMethod = "enhanced-vietnamese-ocr";
 
-        // Check if this is a PDF file
-        if (PDFProcessor.isSupportedFormat(document.mimeType)) {
-          console.log(`Processing PDF document ${document.originalName} with enhanced Vietnamese support...`);
+        // Check file type and process accordingly
+        if (document.mimeType === 'application/pdf') {
+          // For PDF files, inform user that PDF support is being implemented
+          console.log(`PDF document ${document.originalName} detected - currently processing as image fallback`);
+          processingMethod = "pdf-fallback";
+          
+          // For now, recommend user to convert PDF to image format
+          throw new Error('PDF processing is being enhanced. Please convert to JPG/PNG format for optimal Vietnamese OCR results.');
+        } else if (EnhancedVietnameseOCR.isSupportedImageFormat(document.mimeType)) {
+          // Use enhanced Vietnamese OCR for image files
+          console.log(`Processing image ${document.originalName} with enhanced Vietnamese OCR...`);
           
           try {
-            const pdfResult = await pdfProcessor.processPDF(filePath);
+            const enhancedResult = await enhancedVietnameseOCR.processDocument(filePath, "government document");
             
-            extractedText = pdfResult.extractedText;
-            confidence = pdfResult.confidence;
-            structuredData = pdfResult.structuredData || {};
-            processingMethod = `pdf-${pdfResult.processingMethod}`;
+            extractedText = enhancedResult.extractedText;
+            confidence = enhancedResult.confidence;
+            structuredData = enhancedResult.structuredData;
+            processingMethod = "enhanced-vietnamese";
             
-            // Add PDF-specific metadata
-            structuredData.pageCount = pdfResult.pageCount;
-            structuredData.processingMethod = pdfResult.processingMethod;
+            // Add processing metadata
+            structuredData.processingTime = enhancedResult.processingTime;
+            structuredData.improvements = enhancedResult.improvements;
 
-            // Log successful PDF processing
+            // Log successful enhanced processing
             await storage.createAuditLog({
               userId,
-              action: `PDF document processed (${pdfResult.processingMethod}): ${document.originalName} - ${pdfResult.pageCount} pages`,
+              action: `Document processed with enhanced Vietnamese OCR: ${document.originalName} (${enhancedResult.improvements.length} improvements applied)`,
               documentId: document.id,
               ipAddress: req.ip,
               userAgent: req.get('User-Agent'),
             });
 
-          } catch (pdfError: any) {
-            console.error('PDF processing failed:', pdfError);
-            throw new Error(`PDF processing failed: ${pdfError.message}`);
-          }
-        } else {
-          // Process image files
-          if (useAdvanced && process.env.OPENAI_API_KEY) {
-            // Use DeepSeek-enhanced OCR processing for images
-            console.log(`Processing image ${document.originalName} with DeepSeek-enhanced OCR...`);
-            
-            try {
-              const deepSeekResult = await deepSeekService.processDocumentImage(filePath);
-              
-              extractedText = deepSeekResult.extractedText;
-              confidence = deepSeekResult.confidence;
-              structuredData = deepSeekResult.structuredData;
-              processingMethod = "deepseek-enhanced";
-              
-              // Perform additional analysis if needed
-              if (extractedText.length > 50) {
-                try {
-                  const analysis = await deepSeekService.analyzeDocument(extractedText, "Government document analysis");
-                  structuredData.analysis = analysis;
-                } catch (analysisError) {
-                  console.warn('DeepSeek analysis failed, continuing with OCR results:', analysisError);
-                }
-              }
-
-              // Log successful DeepSeek processing
-              await storage.createAuditLog({
-                userId,
-                action: `Document processed with DeepSeek-enhanced OCR: ${document.originalName}`,
-                documentId: document.id,
-                ipAddress: req.ip,
-                userAgent: req.get('User-Agent'),
-              });
-
-            } catch (deepSeekError) {
-              console.warn('DeepSeek processing failed, falling back to Tesseract:', deepSeekError);
-              useAdvanced = false; // Fall back to Tesseract
-            }
+          } catch (enhancedError: any) {
+            console.warn('Enhanced Vietnamese OCR failed, falling back to standard processing:', enhancedError);
+            useAdvanced = false; // Fall back to standard OCR
           }
         }
         
