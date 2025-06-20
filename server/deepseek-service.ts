@@ -92,9 +92,19 @@ Please provide your response in the exact JSON format specified in the system pr
         processingTime
       };
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('DeepSeek OCR processing error:', error);
-      throw new Error(`DeepSeek processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      
+      // Handle specific error types
+      if (error.status === 402) {
+        throw new Error(`DeepSeek API insufficient balance. Please add credits to your DeepSeek account.`);
+      } else if (error.status === 401) {
+        throw new Error(`DeepSeek API authentication failed. Please check your API key.`);
+      } else if (error.status === 429) {
+        throw new Error(`DeepSeek API rate limit exceeded. Please try again later.`);
+      } else {
+        throw new Error(`DeepSeek processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
     }
   }
 

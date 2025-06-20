@@ -125,7 +125,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const documentId = parseInt(req.params.id);
       const userId = (req as any).user.id;
-      const useAdvanced = req.body.useAdvanced !== false; // Default to advanced processing
+      let useAdvanced = req.body.useAdvanced !== false; // Default to advanced processing
       
       const document = await storage.getDocument(documentId);
       if (!document || document.userId !== userId) {
