@@ -3,9 +3,11 @@ import { useDropzone } from "react-dropzone";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CloudUpload, FolderOpen, FileImage, CheckCircle, Loader2, Upload } from "lucide-react";
+import { CloudUpload, FolderOpen, FileImage, FileText, CheckCircle, Loader2, Upload, AlertCircle, Clock, X } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useLanguage } from "@/hooks/use-language";
 import type { Document } from "@shared/schema";
@@ -129,10 +131,10 @@ export function DocumentUpload({ documents, isLoading }: DocumentUploadProps) {
         return;
       }
 
-      if (!['image/jpeg', 'image/jpg', 'image/png'].includes(file.type)) {
+      if (!['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'].includes(file.type)) {
         toast({
           title: "Invalid File Type",
-          description: `${file.name} is not a supported format`,
+          description: `${file.name} is not a supported format. Please use JPG, PNG, or PDF files.`,
           variant: "destructive",
         });
         return;
@@ -147,6 +149,7 @@ export function DocumentUpload({ documents, isLoading }: DocumentUploadProps) {
     accept: {
       'image/jpeg': ['.jpg', '.jpeg'],
       'image/png': ['.png'],
+      'application/pdf': ['.pdf'],
     },
     multiple: true,
   });
@@ -164,16 +167,20 @@ export function DocumentUpload({ documents, isLoading }: DocumentUploadProps) {
     }
   };
 
-  const getStatusIcon = (status: string) => {
+  const getStatusIcon = (status: string, mimeType?: string) => {
+    const fileIcon = mimeType === 'application/pdf' ? 
+      <FileText className="text-red-600" size={16} /> : 
+      <FileImage className="text-blue-600" size={16} />;
+
     switch (status) {
       case 'completed':
-        return <CheckCircle className="gov-success" size={16} />;
+        return <CheckCircle className="text-green-600" size={16} />;
       case 'processing':
-        return <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />;
+        return <Loader2 className="text-blue-500 animate-spin" size={16} />;
       case 'failed':
-        return <div className="w-4 h-4 bg-red-500 rounded-full" />;
+        return <AlertCircle className="text-red-500" size={16} />;
       default:
-        return <FileImage className="gov-blue" size={16} />;
+        return fileIcon;
     }
   };
 
