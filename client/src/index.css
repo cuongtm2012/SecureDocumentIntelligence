@@ -1,0 +1,142 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: hsl(0, 0%, 100%);
+  --foreground: hsl(20, 14.3%, 4.1%);
+  --muted: hsl(60, 4.8%, 95.9%);
+  --muted-foreground: hsl(25, 5.3%, 44.7%);
+  --popover: hsl(0, 0%, 100%);
+  --popover-foreground: hsl(20, 14.3%, 4.1%);
+  --card: hsl(0, 0%, 100%);
+  --card-foreground: hsl(20, 14.3%, 4.1%);
+  --border: hsl(20, 5.9%, 90%);
+  --input: hsl(20, 5.9%, 90%);
+  --primary: hsl(207, 90%, 54%);
+  --primary-foreground: hsl(211, 100%, 99%);
+  --secondary: hsl(60, 4.8%, 95.9%);
+  --secondary-foreground: hsl(24, 9.8%, 10%);
+  --accent: hsl(60, 4.8%, 95.9%);
+  --accent-foreground: hsl(24, 9.8%, 10%);
+  --destructive: hsl(0, 84.2%, 60.2%);
+  --destructive-foreground: hsl(60, 9.1%, 97.8%);
+  --ring: hsl(20, 14.3%, 4.1%);
+  --radius: 0.5rem;
+  
+  /* Government colors */
+  --gov-blue: hsl(211, 100%, 33%);
+  --gov-purple: hsl(268, 59%, 36%);
+  --gov-success: hsl(131, 100%, 33%);
+  --gov-warning: hsl(45, 100%, 58%);
+  --gov-error: hsl(339, 69%, 55%);
+  --gov-dark: hsl(206, 13%, 16%);
+  --gov-light: hsl(0, 0%, 94%);
+}
+
+.dark {
+  --background: hsl(240, 10%, 3.9%);
+  --foreground: hsl(0, 0%, 98%);
+  --muted: hsl(240, 3.7%, 15.9%);
+  --muted-foreground: hsl(240, 5%, 64.9%);
+  --popover: hsl(240, 10%, 3.9%);
+  --popover-foreground: hsl(0, 0%, 98%);
+  --card: hsl(240, 10%, 3.9%);
+  --card-foreground: hsl(0, 0%, 98%);
+  --border: hsl(240, 3.7%, 15.9%);
+  --input: hsl(240, 3.7%, 15.9%);
+  --primary: hsl(207, 90%, 54%);
+  --primary-foreground: hsl(211, 100%, 99%);
+  --secondary: hsl(240, 3.7%, 15.9%);
+  --secondary-foreground: hsl(0, 0%, 98%);
+  --accent: hsl(240, 3.7%, 15.9%);
+  --accent-foreground: hsl(0, 0%, 98%);
+  --destructive: hsl(0, 62.8%, 30.6%);
+  --destructive-foreground: hsl(0, 0%, 98%);
+  --ring: hsl(240, 4.9%, 83.9%);
+  --radius: 0.5rem;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+  }
+}
+
+/* Government specific styles */
+.gov-blue {
+  color: var(--gov-blue);
+}
+
+.bg-gov-blue {
+  background-color: var(--gov-blue);
+}
+
+.gov-success {
+  color: var(--gov-success);
+}
+
+.bg-gov-success {
+  background-color: var(--gov-success);
+}
+
+.gov-warning {
+  color: var(--gov-warning);
+}
+
+.bg-gov-warning {
+  background-color: var(--gov-warning);
+}
+
+.gov-error {
+  color: var(--gov-error);
+}
+
+.bg-gov-error {
+  background-color: var(--gov-error);
+}
+
+.gov-dark {
+  color: var(--gov-dark);
+}
+
+.bg-gov-dark {
+  background-color: var(--gov-dark);
+}
+
+.border-gov-blue {
+  border-color: var(--gov-blue);
+}
+
+.border-gov-warning {
+  border-color: var(--gov-warning);
+}
+
+/* Status indicator styles */
+.status-online {
+  @apply w-3 h-3 rounded-full;
+  background-color: var(--gov-success);
+}
+
+.status-warning {
+  @apply w-3 h-3 rounded-full;
+  background-color: var(--gov-warning);
+}
+
+.status-error {
+  @apply w-3 h-3 rounded-full;
+  background-color: var(--gov-error);
+}
+
+/* Upload zone hover effect */
+.upload-zone {
+  transition: border-color 0.2s ease-in-out;
+}
+
+.upload-zone:hover {
+  border-color: var(--gov-blue);
+}

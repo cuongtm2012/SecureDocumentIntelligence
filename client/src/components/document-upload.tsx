@@ -1,0 +1,225 @@
+import { useState, useCallback } from "react";
+import { useDropzone } from "react-dropzone";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { useToast } from "@/hooks/use-toast";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { CloudUpload, FolderOpen, FileImage, CheckCircle } from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
+import type { Document } from "@shared/schema";
+
+interface DocumentUploadProps {
+  documents: Document[];
+  isLoading: boolean;
+}
+
+export function DocumentUpload({ documents, isLoading }: DocumentUploadProps) {
+  const [uploadingFiles, setUploadingFiles] = useState<Map<string, number>>(new Map());
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const uploadMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      const response = await apiRequest('POST', '/api/documents/upload', formData);
+      return response.json();
+    },
+    onSuccess: (document: Document) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/documents'] });
+      // Start processing automatically
+      processMutation.mutate(document.id);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Upload Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const processMutation = useMutation({
+    mutationFn: async (documentId: number) => {
+      const response = await apiRequest('POST', `/api/documents/${documentId}/process`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/documents'] });
+      toast({
+        title: "Processing Complete",
+        description: "Document has been successfully processed",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Processing Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    acceptedFiles.forEach((file) => {
+      if (file.size > 10 * 1024 * 1024) {
+        toast({
+          title: "File Too Large",
+          description: `${file.name} exceeds 10MB limit`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (!['image/jpeg', 'image/jpg', 'image/png'].includes(file.type)) {
+        toast({
+          title: "Invalid File Type",
+          description: `${file.name} is not a supported format`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      uploadMutation.mutate(file);
+    });
+  }, [uploadMutation, toast]);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: {
+      'image/jpeg': ['.jpg', '.jpeg'],
+      'image/png': ['.png'],
+    },
+    multiple: true,
+  });
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return 'bg-green-50';
+      case 'processing':
+        return 'bg-blue-50';
+      case 'failed':
+        return 'bg-red-50';
+      default:
+        return 'bg-gray-50';
+    }
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return <CheckCircle className="gov-success" size={16} />;
+      case 'processing':
+        return <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />;
+      case 'failed':
+        return <div className="w-4 h-4 bg-red-500 rounded-full" />;
+      default:
+        return <FileImage className="gov-blue" size={16} />;
+    }
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  };
+
+  const getProcessingProgress = (doc: Document) => {
+    if (doc.processingStatus === 'completed') return 100;
+    if (doc.processingStatus === 'processing') return 65;
+    if (doc.processingStatus === 'failed') return 0;
+    return 0;
+  };
+
+  return (
+    <Card>
+      <CardContent className="p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-semibold gov-dark">Document Upload & Processing</h2>
+          <div className="flex items-center space-x-2">
+            <div className="status-online"></div>
+            <span className="text-sm text-gray-600">System Ready</span>
+          </div>
+        </div>
+
+        {/* Upload Zone */}
+        <div
+          {...getRootProps()}
+          className={`border-2 border-dashed rounded-lg p-8 text-center upload-zone cursor-pointer transition-colors ${
+            isDragActive ? 'border-gov-blue bg-blue-50' : 'border-gray-300'
+          }`}
+        >
+          <input {...getInputProps()} />
+          <CloudUpload className="mx-auto text-gray-400 mb-4" size={48} />
+          <h3 className="text-lg font-medium text-gray-700 mb-2">Upload Document Images</h3>
+          <p className="text-sm text-gray-500 mb-4">
+            {isDragActive ? 'Drop files here' : 'Drag and drop files here, or click to browse'}
+          </p>
+          <p className="text-xs text-gray-400 mb-4">Supported formats: JPG, PNG • Max size: 10MB per file</p>
+          <Button className="bg-gov-blue hover:bg-blue-700">
+            <FolderOpen className="mr-2" size={16} />
+            Select Files
+          </Button>
+        </div>
+
+        {/* File Processing Queue */}
+        {documents.length > 0 && (
+          <div className="mt-6">
+            <h3 className="text-lg font-medium gov-dark mb-4">Processing Queue</h3>
+            
+            <div className="space-y-3">
+              {documents.map((doc) => (
+                <div key={doc.id} className={`rounded-lg p-4 ${getStatusColor(doc.processingStatus)}`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      {getStatusIcon(doc.processingStatus)}
+                      <div>
+                        <p className="font-medium text-gray-800">{doc.originalName}</p>
+                        <p className="text-sm text-gray-500">
+                          {formatFileSize(doc.fileSize)} • {
+                            doc.processingStatus === 'processing' ? 'Processing...' :
+                            doc.processingStatus === 'completed' ? `Completed in ${doc.processingCompletedAt ? '3.2s' : ''}` :
+                            doc.processingStatus === 'failed' ? 'Processing failed' :
+                            'Pending'
+                          }
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-3">
+                      {doc.processingStatus === 'processing' && (
+                        <>
+                          <div className="w-24">
+                            <Progress value={getProcessingProgress(doc)} className="h-2" />
+                          </div>
+                          <span className="text-sm text-gray-600">{getProcessingProgress(doc)}%</span>
+                        </>
+                      )}
+                      {doc.processingStatus === 'completed' && (
+                        <Button
+                          variant="link"
+                          size="sm"
+                          className="gov-blue p-0 h-auto"
+                          onClick={() => {
+                            // Scroll to results section
+                            document.querySelector('[data-results-section]')?.scrollIntoView({ behavior: 'smooth' });
+                          }}
+                        >
+                          View Results
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
