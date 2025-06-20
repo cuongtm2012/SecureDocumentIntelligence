@@ -32,15 +32,27 @@ export class DeepSeekService {
       const sharp = await import('sharp');
       const { createWorker } = await import('tesseract.js');
       
-      // Process image with Tesseract first
+      // Enhanced image preprocessing for Vietnamese text
       const processedImageBuffer = await sharp.default(imagePath)
-        .rotate()
-        .normalize()
-        .sharpen()
-        .png()
+        .resize({ width: 2000, withoutEnlargement: true }) // Upscale for better OCR
+        .rotate() // Auto-rotate based on EXIF
+        .greyscale() // Convert to grayscale for better text recognition
+        .normalize() // Normalize contrast
+        .sharpen({ sigma: 1, m1: 0.5, m2: 2 }) // Enhanced sharpening
+        .threshold(128) // Binary threshold for clean text
+        .png({ quality: 100 })
         .toBuffer();
 
-      const worker = await createWorker('eng');
+      // Configure Tesseract for Vietnamese language with optimized settings
+      const worker = await createWorker(['vie', 'eng'], 1, {
+        logger: m => console.log(`Tesseract: ${m.status} - ${m.progress}`)
+      });
+      
+      // Configure for better Vietnamese text recognition
+      await worker.setParameters({
+        'preserve_interword_spaces': '1'
+      });
+
       const { data: { text: ocrText, confidence: ocrConfidence } } = await worker.recognize(processedImageBuffer);
       await worker.terminate();
 

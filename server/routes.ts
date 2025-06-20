@@ -182,18 +182,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         
         if (!useAdvanced) {
-          // Fallback to Tesseract OCR
-          console.log(`Processing document ${document.originalName} with Tesseract (fallback)...`);
+          // Enhanced Tesseract OCR with Vietnamese language support
+          console.log(`Processing document ${document.originalName} with enhanced Vietnamese OCR...`);
           
+          // Enhanced image preprocessing for Vietnamese text
           const processedImageBuffer = await sharp(filePath)
-            .rotate()
-            .normalize()
-            .sharpen()
-            .png()
+            .resize({ width: 2000, withoutEnlargement: true }) // Upscale for better OCR
+            .rotate() // Auto-rotate based on EXIF
+            .greyscale() // Convert to grayscale for better text recognition
+            .normalize() // Normalize contrast
+            .sharpen({ sigma: 1, m1: 0.5, m2: 2 }) // Enhanced sharpening
+            .threshold(128) // Binary threshold for clean text
+            .png({ quality: 100 })
             .toBuffer();
 
-          const worker = await createWorker('eng');
+          // Configure Tesseract for Vietnamese language with optimized settings
+          const worker = await createWorker(['vie', 'eng'], 1, {
+            logger: m => console.log(`Tesseract: ${m.status} - ${m.progress}`)
+          });
           
+          // Configure for better Vietnamese text recognition
+          await worker.setParameters({
+            'preserve_interword_spaces': '1'
+          });
+
           const { data: { text, confidence: tessConfidence } } = await worker.recognize(processedImageBuffer);
           await worker.terminate();
 
@@ -432,9 +444,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
 // Helper function to extract structured data from text
 function extractStructuredData(text: string) {
+  const lines = text.split('\n').filter(line => line.trim());
+  const cleanText = text.replace(/[^\p{L}\p{N}\s\/\-\.,:]/gu, ' ').replace(/\s+/g, ' ').trim();
+  
+  // Vietnamese ID Card detection and extraction
+  const isVietnameseId = /(?:CAN CUOC|CCCD|Citizen Identity|Identity Card)/i.test(text);
+  
+  if (isVietnameseId) {
+    const result: any = {
+      documentType: "Vietnamese Citizen Identity Card",
+      country: "Vietnam"
+    };
+
+    // Extract ID number (12 digits)
+    const idMatch = cleanText.match(/(?:số|sev|cccd|id)[\s:]*([0-9]{12})/i);
+    if (idMatch) result.idNumber = idMatch[1];
+
+    // Extract full name
+    const nameMatch = cleanText.match(/(?:họ và tên|ho va ten|full name)[\s:]*([^\n]+?)(?:\n|date|ngay|gioi|sex)/i);
+    if (nameMatch) {
+      result.fullName = nameMatch[1].trim().replace(/[^a-zA-ZÀ-ỹ\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+
+    // Extract date of birth
+    const dobMatch = cleanText.match(/(?:ngày sinh|date of birth|ngay sinh)[\s:]*([0-9]{1,2}[\/\-][0-9]{1,2}[\/\-][0-9]{4})/i);
+    if (dobMatch) result.dateOfBirth = dobMatch[1];
+
+    // Extract gender
+    const genderMatch = cleanText.match(/(?:giới tính|gioi tinh|sex)[\s:]*([^\n]+?)(?:\n|quoc|nationality)/i);
+    if (genderMatch) {
+      const gender = genderMatch[1].trim().toLowerCase();
+      result.gender = gender.includes('nam') ? 'Male' : gender.includes('nữ') || gender.includes('nu') ? 'Female' : gender;
+    }
+
+    // Extract nationality
+    const nationalityMatch = cleanText.match(/(?:quốc tịch|quoc tich|nationality)[\s:]*([^\n]+?)(?:\n|que|place)/i);
+    if (nationalityMatch) {
+      result.nationality = nationalityMatch[1].trim().replace(/[^a-zA-ZÀ-ỹ\s]/g, ' ').trim();
+    }
+
+    // Extract place of origin
+    const originMatch = cleanText.match(/(?:quê quán|que quan|place of origin)[\s:]*([^\n]+?)(?:\n|noi thuong|place of residence)/i);
+    if (originMatch) {
+      result.placeOfOrigin = originMatch[1].trim().replace(/[^a-zA-ZÀ-ỹ\s,]/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+
+    // Extract place of residence
+    const residenceMatch = cleanText.match(/(?:nơi thường trú|noi thuong tru|place of residence)[\s:]*([^\n]+?)(?:\n|$)/i);
+    if (residenceMatch) {
+      result.placeOfResidence = residenceMatch[1].trim().replace(/[^a-zA-ZÀ-ỹ\s,0-9]/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+
+    // Extract expiry date if present
+    const expiryMatch = cleanText.match(/([0-9]{1,2}[\/\-][0-9]{1,2}[\/\-][0-9]{4})/g);
+    if (expiryMatch && expiryMatch.length > 1) {
+      result.expiryDate = expiryMatch[expiryMatch.length - 1]; // Last date is usually expiry
+    }
+
+    return result;
+  }
+
+  // Government document detection
   const structuredData: any = {};
   
-  // Extract document type
   if (text.toLowerCase().includes('incident report')) {
     structuredData.documentType = 'Incident Report';
   } else if (text.toLowerCase().includes('case file')) {
@@ -442,7 +514,7 @@ function extractStructuredData(text: string) {
   } else if (text.toLowerCase().includes('memo')) {
     structuredData.documentType = 'Memorandum';
   } else {
-    structuredData.documentType = 'Unknown';
+    structuredData.documentType = 'Unknown Document';
   }
 
   // Extract case/incident numbers
@@ -468,6 +540,9 @@ function extractStructuredData(text: string) {
   } else if (text.toLowerCase().includes('top secret')) {
     structuredData.classification = 'TOP SECRET';
   }
+
+  // Add language detection
+  structuredData.language = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđĐ]/.test(text) ? "Vietnamese" : "English";
 
   return structuredData;
 }
