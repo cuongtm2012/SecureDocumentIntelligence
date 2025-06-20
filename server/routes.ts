@@ -146,35 +146,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
         let structuredData: any = {};
 
         if (useAdvanced && process.env.OPENAI_API_KEY) {
-          // Use DeepSeek for advanced OCR and analysis
-          console.log(`Processing document ${document.originalName} with DeepSeek...`);
+          // Use DeepSeek-enhanced OCR processing
+          console.log(`Processing document ${document.originalName} with DeepSeek-enhanced OCR...`);
           
-          const deepSeekResult = await deepSeekService.processDocumentImage(filePath);
-          
-          extractedText = deepSeekResult.extractedText;
-          confidence = deepSeekResult.confidence;
-          structuredData = deepSeekResult.structuredData;
-          
-          // Perform additional analysis if needed
-          if (extractedText.length > 50) {
-            try {
-              const analysis = await deepSeekService.analyzeDocument(extractedText, "Government document analysis");
-              structuredData.analysis = analysis;
-            } catch (analysisError) {
-              console.warn('DeepSeek analysis failed, continuing with OCR results:', analysisError);
+          try {
+            const deepSeekResult = await deepSeekService.processDocumentImage(filePath);
+            
+            extractedText = deepSeekResult.extractedText;
+            confidence = deepSeekResult.confidence;
+            structuredData = deepSeekResult.structuredData;
+            
+            // Perform additional analysis if needed
+            if (extractedText.length > 50) {
+              try {
+                const analysis = await deepSeekService.analyzeDocument(extractedText, "Government document analysis");
+                structuredData.analysis = analysis;
+              } catch (analysisError) {
+                console.warn('DeepSeek analysis failed, continuing with OCR results:', analysisError);
+              }
             }
+
+            // Log successful DeepSeek processing
+            await storage.createAuditLog({
+              userId,
+              action: `Document processed with DeepSeek-enhanced OCR: ${document.originalName}`,
+              documentId: document.id,
+              ipAddress: req.ip,
+              userAgent: req.get('User-Agent'),
+            });
+
+          } catch (deepSeekError) {
+            console.warn('DeepSeek processing failed, falling back to Tesseract:', deepSeekError);
+            useAdvanced = false; // Fall back to Tesseract
           }
-
-          // Log successful DeepSeek processing
-          await storage.createAuditLog({
-            userId,
-            action: `Document processed with DeepSeek AI: ${document.originalName}`,
-            documentId: document.id,
-            ipAddress: req.ip,
-            userAgent: req.get('User-Agent'),
-          });
-
-        } else {
+        }
+        
+        if (!useAdvanced) {
           // Fallback to Tesseract OCR
           console.log(`Processing document ${document.originalName} with Tesseract (fallback)...`);
           

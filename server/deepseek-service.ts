@@ -27,28 +27,43 @@ export class DeepSeekService {
       // Create system prompt for document analysis
       const systemPrompt = this.createSystemPrompt(documentType);
       
-      // Send image to DeepSeek for OCR and analysis
+      // DeepSeek doesn't support vision models, so we'll use their text model with OCR description
+      // First, let's use a basic OCR approach and then enhance with DeepSeek analysis
+      const sharp = await import('sharp');
+      const { createWorker } = await import('tesseract.js');
+      
+      // Process image with Tesseract first
+      const processedImageBuffer = await sharp.default(imagePath)
+        .rotate()
+        .normalize()
+        .sharpen()
+        .png()
+        .toBuffer();
+
+      const worker = await createWorker('eng');
+      const { data: { text: ocrText, confidence: ocrConfidence } } = await worker.recognize(processedImageBuffer);
+      await worker.terminate();
+
+      // Now use DeepSeek to enhance the OCR results and extract structured data
       const completion = await openai.chat.completions.create({
         model: "deepseek-chat",
         messages: [
           {
             role: "system",
-            content: systemPrompt
+            content: `${systemPrompt}
+
+The following text was extracted from a document image using OCR. Please analyze and structure this text according to the format specified above.`
           },
           {
             role: "user",
-            content: [
-              {
-                type: "text",
-                text: "Please extract all text from this document image and provide structured analysis as specified in the system prompt."
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:${mimeType};base64,${base64Image}`
-                }
-              }
-            ]
+            content: `Please analyze this OCR-extracted text and provide structured data extraction:
+
+OCR Text:
+${ocrText}
+
+OCR Confidence: ${(ocrConfidence / 100).toFixed(2)}
+
+Please provide your response in the exact JSON format specified in the system prompt, improving upon the OCR results with intelligent analysis.`
           }
         ],
         temperature: 0.1,
@@ -60,13 +75,20 @@ export class DeepSeekService {
         throw new Error("No response from DeepSeek API");
       }
 
-      // Parse the structured response
-      const result = this.parseDeepSeekResponse(responseContent);
+      // Parse the structured response and combine with OCR data
+      const enhancedResult = this.parseDeepSeekResponse(responseContent);
       
       const processingTime = Date.now() - startTime;
       
       return {
-        ...result,
+        extractedText: ocrText, // Use original OCR text
+        confidence: Math.max(ocrConfidence / 100, enhancedResult.confidence), // Use higher confidence
+        structuredData: {
+          ...enhancedResult.structuredData,
+          ocrConfidence: ocrConfidence / 100,
+          enhancedByAI: true,
+          processingMethod: "Tesseract OCR + DeepSeek AI Analysis"
+        },
         processingTime
       };
       
