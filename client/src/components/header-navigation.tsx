@@ -20,27 +20,30 @@ export function HeaderNavigation({ user }: HeaderNavigationProps) {
             <Shield className="text-2xl" />
             <div>
               <h1 className="text-xl font-semibold">SecureDoc OCR</h1>
-              <p className="text-blue-200 text-sm">{t('systemStatus')}</p>
             </div>
           </div>
           
-          <div className="flex items-center space-x-6">
+          <div className="flex items-center space-x-4">
             <LanguageSwitcher />
-            <div className="flex items-center space-x-2">
-              <Lock className="text-green-300" size={16} />
-              <span className="text-sm">{t('authorized')}</span>
+            
+            <div className="hidden sm:flex items-center space-x-2 text-green-300">
+              <Lock size={14} />
+              <span className="text-xs font-medium">{t('authorized')}</span>
             </div>
             
             {user && (
-              <div className="flex items-center space-x-3">
+              <div className="flex items-center space-x-3 pl-4 border-l border-blue-500/30">
                 <div className="flex items-center space-x-2">
-                  <div className="w-8 h-8 bg-blue-400 rounded-full flex items-center justify-center">
-                    <User size={16} />
+                  <div className="w-8 h-8 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border border-white/30">
+                    <User size={14} className="text-white" />
                   </div>
-                  <span className="text-sm">{user.name}</span>
+                  <div className="hidden sm:block">
+                    <div className="text-sm font-medium text-white">{user.name}</div>
+                    <div className="text-xs text-blue-200">{user.clearanceLevel} Access</div>
+                  </div>
                 </div>
-                <button className="text-blue-200 hover:text-white transition-colors">
-                  <LogOut size={16} />
+                <button className="text-blue-200 hover:text-white transition-colors p-1 rounded hover:bg-white/10">
+                  <LogOut size={14} />
                 </button>
               </div>
             )}
