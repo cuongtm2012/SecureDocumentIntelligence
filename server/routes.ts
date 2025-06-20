@@ -8,6 +8,7 @@ import { promisify } from "util";
 import { createWorker } from "tesseract.js";
 import sharp from "sharp";
 import { deepSeekService } from "./deepseek-service";
+import { vietnameseTextCleaner } from "./vietnamese-text-cleaner";
 import helmet from "helmet";
 import { insertDocumentSchema, insertAuditLogSchema } from "@shared/schema";
 import { z } from "zod";
@@ -212,6 +213,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
           extractedText = text;
           confidence = tessConfidence / 100;
           structuredData = extractStructuredData(text);
+
+          // Apply Vietnamese text cleaning if the document contains Vietnamese text
+          const isVietnamese = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđĐ]/.test(text);
+          if (isVietnamese) {
+            try {
+              console.log('Applying Vietnamese text cleaning...');
+              const cleaningResult = await vietnameseTextCleaner.cleanVietnameseText(text, 'Vietnamese identity document');
+              
+              // Use cleaned text and enhanced structured data
+              extractedText = cleaningResult.cleanedText;
+              structuredData = await vietnameseTextCleaner.enhanceStructuredData(structuredData, cleaningResult.cleanedText);
+              
+              // Add cleaning information to structured data
+              structuredData.textCleaning = {
+                applied: true,
+                improvements: cleaningResult.improvements,
+                originalConfidence: confidence,
+                language: 'Vietnamese'
+              };
+
+              console.log(`Text cleaning completed with ${cleaningResult.improvements.length} improvements`);
+            } catch (cleaningError) {
+              console.warn('Vietnamese text cleaning failed, using original text:', cleaningError);
+              structuredData.textCleaning = {
+                applied: false,
+                error: 'Text cleaning service unavailable',
+                language: 'Vietnamese'
+              };
+            }
+          }
 
           await storage.createAuditLog({
             userId,
@@ -445,7 +476,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 // Helper function to extract structured data from text
 function extractStructuredData(text: string) {
   const lines = text.split('\n').filter(line => line.trim());
-  const cleanText = text.replace(/[^\p{L}\p{N}\s\/\-\.,:]/gu, ' ').replace(/\s+/g, ' ').trim();
+  const cleanText = text.replace(/[^\w\s\/\-\.,:àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđĐÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸ]/g, ' ').replace(/\s+/g, ' ').trim();
   
   // Vietnamese ID Card detection and extraction
   const isVietnameseId = /(?:CAN CUOC|CCCD|Citizen Identity|Identity Card)/i.test(text);
