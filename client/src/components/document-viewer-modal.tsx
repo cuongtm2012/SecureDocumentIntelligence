@@ -1,11 +1,9 @@
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { FileText, Eye, Download, Clock, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
+import { FileText, Eye, Download, Clock, CheckCircle, AlertCircle, Loader2, X } from "lucide-react";
 import { useLanguage } from "@/hooks/use-language";
+import { useState } from "react";
 import type { Document } from "@shared/schema";
 
 interface DocumentViewerModalProps {
@@ -16,8 +14,9 @@ interface DocumentViewerModalProps {
 
 export function DocumentViewerModal({ document, isOpen, onClose }: DocumentViewerModalProps) {
   const { t } = useLanguage();
+  const [activeTab, setActiveTab] = useState<'extracted' | 'structured'>('extracted');
 
-  if (!document) return null;
+  if (!isOpen || !document) return null;
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -91,18 +90,36 @@ export function DocumentViewerModal({ document, isOpen, onClose }: DocumentViewe
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-3">
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop */}
+      <div 
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      
+      {/* Modal Content */}
+      <div className="relative bg-white rounded-lg shadow-2xl max-w-5xl w-full mx-4 max-h-[90vh] overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+          <div className="flex items-center gap-3">
             <FileText className="w-5 h-5 text-blue-600" />
-            <span className="truncate">{document.originalName}</span>
+            <h2 className="text-lg font-semibold text-gray-900 truncate">{document.originalName}</h2>
             {getStatusBadge(document.processingStatus)}
-          </DialogTitle>
-        </DialogHeader>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            className="h-8 w-8 p-0"
+          >
+            <X className="w-4 h-4" />
+          </Button>
+        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 py-4">
-          <Card className="md:col-span-1">
+        {/* Content */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
+          {/* Document Info */}
+          <Card className="lg:col-span-1">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium">Document Information</CardTitle>
             </CardHeader>
@@ -138,64 +155,84 @@ export function DocumentViewerModal({ document, isOpen, onClose }: DocumentViewe
             </CardContent>
           </Card>
 
-          <div className="md:col-span-2">
-            <Tabs defaultValue="extracted" className="h-full">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="extracted">{t('extractedText')}</TabsTrigger>
-                <TabsTrigger value="structured">{t('structuredData')}</TabsTrigger>
-              </TabsList>
-              
-              <TabsContent value="extracted" className="mt-4">
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-medium flex items-center gap-2">
-                      <Eye className="w-4 h-4" />
-                      {t('extractedText')}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ScrollArea className="h-64">
-                      {document.extractedText ? (
-                        <div className="whitespace-pre-wrap text-sm text-gray-800 leading-relaxed">
-                          {document.extractedText}
+          {/* Content Tabs */}
+          <div className="lg:col-span-2">
+            <div className="mb-4">
+              <div className="flex border-b border-gray-200">
+                <button
+                  onClick={() => setActiveTab('extracted')}
+                  className={`px-4 py-2 text-sm font-medium border-b-2 ${
+                    activeTab === 'extracted'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {t('extractedText')}
+                </button>
+                <button
+                  onClick={() => setActiveTab('structured')}
+                  className={`px-4 py-2 text-sm font-medium border-b-2 ml-8 ${
+                    activeTab === 'structured'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {t('structuredData')}
+                </button>
+              </div>
+            </div>
+
+            {activeTab === 'extracted' && (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium flex items-center gap-2">
+                    <Eye className="w-4 h-4" />
+                    {t('extractedText')}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-64 overflow-y-auto border border-gray-200 rounded p-3">
+                    {document.extractedText ? (
+                      <div className="whitespace-pre-wrap text-sm text-gray-800 leading-relaxed">
+                        {document.extractedText}
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center h-32 text-gray-500">
+                        <div className="text-center">
+                          <FileText className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                          <p className="text-sm">
+                            {document.processingStatus === 'pending' || document.processingStatus === 'processing'
+                              ? 'Processing in progress...'
+                              : 'No text extracted yet'}
+                          </p>
                         </div>
-                      ) : (
-                        <div className="flex items-center justify-center h-32 text-gray-500">
-                          <div className="text-center">
-                            <FileText className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                            <p className="text-sm">
-                              {document.processingStatus === 'pending' || document.processingStatus === 'processing'
-                                ? 'Processing in progress...'
-                                : 'No text extracted yet'}
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                    </ScrollArea>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-              
-              <TabsContent value="structured" className="mt-4">
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-medium flex items-center gap-2">
-                      <FileText className="w-4 h-4" />
-                      {t('structuredData')}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ScrollArea className="h-64">
-                      {renderStructuredData(document.structuredData)}
-                    </ScrollArea>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            </Tabs>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {activeTab === 'structured' && (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium flex items-center gap-2">
+                    <FileText className="w-4 h-4" />
+                    {t('structuredData')}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-64 overflow-y-auto border border-gray-200 rounded p-3">
+                    {renderStructuredData(document.structuredData)}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 pt-4 border-t">
+        {/* Footer */}
+        <div className="flex justify-end gap-2 p-6 border-t border-gray-200">
           <Button variant="outline" onClick={onClose}>
             {t('close')}
           </Button>
@@ -206,7 +243,7 @@ export function DocumentViewerModal({ document, isOpen, onClose }: DocumentViewe
             </Button>
           )}
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </div>
   );
 }

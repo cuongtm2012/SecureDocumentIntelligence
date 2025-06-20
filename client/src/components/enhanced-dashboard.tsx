@@ -12,6 +12,8 @@ export function EnhancedDashboard() {
   const { t } = useLanguage();
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+
   
   const { data: documents = [], isLoading: documentsLoading } = useQuery({
     queryKey: ['/api/documents'],
@@ -124,13 +126,17 @@ export function EnhancedDashboard() {
                     <Button 
                       variant="outline" 
                       size="sm" 
-                      className="h-7"
-                      onClick={() => {
+                      className="h-7 hover:bg-blue-50 hover:border-blue-300 transition-colors"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
                         setSelectedDocument(doc);
                         setIsModalOpen(true);
                       }}
+                      title="View document details"
                     >
-                      <Eye className="w-3 h-3" />
+                      <Eye className="w-3 h-3 mr-1" />
+                      <span className="text-xs hidden sm:inline">View</span>
                     </Button>
                   </div>
                 </div>
