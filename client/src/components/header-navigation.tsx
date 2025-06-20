@@ -1,4 +1,6 @@
 import { Shield, Lock, User, LogOut } from "lucide-react";
+import { LanguageSwitcher } from "./language-switcher";
+import { useLanguage } from "@/hooks/use-language";
 
 interface HeaderNavigationProps {
   user?: {
@@ -8,6 +10,8 @@ interface HeaderNavigationProps {
 }
 
 export function HeaderNavigation({ user }: HeaderNavigationProps) {
+  const { t } = useLanguage();
+  
   return (
     <header className="bg-gov-blue text-white shadow-lg">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -16,14 +20,15 @@ export function HeaderNavigation({ user }: HeaderNavigationProps) {
             <Shield className="text-2xl" />
             <div>
               <h1 className="text-xl font-semibold">SecureDoc OCR</h1>
-              <p className="text-blue-200 text-sm">Government Document Processing System</p>
+              <p className="text-blue-200 text-sm">{t('systemStatus')}</p>
             </div>
           </div>
           
           <div className="flex items-center space-x-6">
+            <LanguageSwitcher />
             <div className="flex items-center space-x-2">
               <Lock className="text-green-300" size={16} />
-              <span className="text-sm">Secure Connection</span>
+              <span className="text-sm">{t('authorized')}</span>
             </div>
             
             {user && (

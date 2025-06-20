@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { FileText, Shield, Download, Clock, Lock, ShieldX } from "lucide-react";
+import { useLanguage } from "@/hooks/use-language";
 
 export function SystemSidebar() {
   const { data: systemStatus } = useQuery({

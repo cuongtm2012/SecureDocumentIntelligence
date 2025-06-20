@@ -85,21 +85,33 @@ export function DocumentUpload({ documents, isLoading }: DocumentUploadProps) {
 
   const processMutation = useMutation({
     mutationFn: async (documentId: number) => {
+      setProcessingFiles(prev => new Set(prev.add(documentId)));
+      
       const response = await apiRequest('POST', `/api/documents/${documentId}/process`, {
         useAdvanced: true // Always use DeepSeek for advanced processing
       });
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (_, documentId) => {
+      setProcessingFiles(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(documentId);
+        return newSet;
+      });
       queryClient.invalidateQueries({ queryKey: ['/api/documents'] });
       toast({
-        title: "Processing Complete",
-        description: "Document has been successfully processed",
+        title: t('completed'),
+        description: t('processingDocument') + ' ' + t('completed').toLowerCase(),
       });
     },
-    onError: (error: Error) => {
+    onError: (error: Error, documentId) => {
+      setProcessingFiles(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(documentId);
+        return newSet;
+      });
       toast({
-        title: "Processing Failed",
+        title: t('failed'),
         description: error.message,
         variant: "destructive",
       });
@@ -184,7 +196,7 @@ export function DocumentUpload({ documents, isLoading }: DocumentUploadProps) {
     <Card>
       <CardContent className="p-6">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-semibold gov-dark">Document Upload & Processing</h2>
+          <h2 className="text-xl font-semibold gov-dark">{t('uploadDocuments')}</h2>
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2">
               <div className="status-online"></div>
@@ -204,15 +216,47 @@ export function DocumentUpload({ documents, isLoading }: DocumentUploadProps) {
           }`}
         >
           <input {...getInputProps()} />
-          <CloudUpload className="mx-auto text-gray-400 mb-4" size={48} />
-          <h3 className="text-lg font-medium text-gray-700 mb-2">Upload Document Images</h3>
+          {uploadingFiles.size > 0 ? (
+            <Loader2 className="mx-auto text-blue-500 mb-4 animate-spin" size={48} />
+          ) : (
+            <CloudUpload className="mx-auto text-gray-400 mb-4" size={48} />
+          )}
+          <h3 className="text-lg font-medium text-gray-700 mb-2">{t('uploadDocument')}</h3>
           <p className="text-sm text-gray-500 mb-4">
-            {isDragActive ? 'Drop files here' : 'Drag and drop files here, or click to browse'}
+            {isDragActive ? t('dragDropFiles') : t('dragDropFiles')}
           </p>
-          <p className="text-xs text-gray-400 mb-4">Supported formats: JPG, PNG • Max size: 10MB per file</p>
-          <Button className="bg-gov-blue hover:bg-blue-700">
-            <FolderOpen className="mr-2" size={16} />
-            Select Files
+          <p className="text-xs text-gray-400 mb-4">{t('supportedFormats')}: JPG, PNG • Max size: 10MB</p>
+          
+          {/* Upload Progress */}
+          {uploadingFiles.size > 0 && (
+            <div className="mb-4 space-y-2">
+              {Array.from(uploadingFiles.entries()).map(([fileName, progress]) => (
+                <div key={fileName} className="text-left">
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="truncate">{fileName}</span>
+                    <span>{progress}%</span>
+                  </div>
+                  <Progress value={progress} className="h-2" />
+                </div>
+              ))}
+            </div>
+          )}
+          
+          <Button 
+            className="bg-gov-blue hover:bg-blue-700" 
+            disabled={uploadingFiles.size > 0}
+          >
+            {uploadingFiles.size > 0 ? (
+              <>
+                <Loader2 className="mr-2 animate-spin" size={16} />
+                {t('uploadProgress')}
+              </>
+            ) : (
+              <>
+                <FolderOpen className="mr-2" size={16} />
+                {t('selectFiles')}
+              </>
+            )}
           </Button>
         </div>
 
