@@ -72,7 +72,7 @@ export class DeepSeekService {
       
     } catch (error) {
       console.error('DeepSeek OCR processing error:', error);
-      throw new Error(`DeepSeek processing failed: ${error.message}`);
+      throw new Error(`DeepSeek processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -211,7 +211,7 @@ Provide analysis in JSON format with:
       
     } catch (error) {
       console.error('DeepSeek document analysis error:', error);
-      throw new Error(`Document analysis failed: ${error.message}`);
+      throw new Error(`Document analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 }

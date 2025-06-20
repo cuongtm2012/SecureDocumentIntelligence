@@ -43,7 +43,9 @@ export function DocumentUpload({ documents, isLoading }: DocumentUploadProps) {
 
   const processMutation = useMutation({
     mutationFn: async (documentId: number) => {
-      const response = await apiRequest('POST', `/api/documents/${documentId}/process`);
+      const response = await apiRequest('POST', `/api/documents/${documentId}/process`, {
+        useAdvanced: true // Always use DeepSeek for advanced processing
+      });
       return response.json();
     },
     onSuccess: () => {
@@ -141,9 +143,14 @@ export function DocumentUpload({ documents, isLoading }: DocumentUploadProps) {
       <CardContent className="p-6">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-semibold gov-dark">Document Upload & Processing</h2>
-          <div className="flex items-center space-x-2">
-            <div className="status-online"></div>
-            <span className="text-sm text-gray-600">System Ready</span>
+          <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2">
+              <div className="status-online"></div>
+              <span className="text-sm text-gray-600">DeepSeek AI Ready</span>
+            </div>
+            <div className="bg-blue-100 px-3 py-1 rounded-full">
+              <span className="text-xs font-medium text-blue-800">Advanced OCR</span>
+            </div>
           </div>
         </div>
 

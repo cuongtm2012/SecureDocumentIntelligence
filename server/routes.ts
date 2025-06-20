@@ -11,6 +11,7 @@ import { deepSeekService } from "./deepseek-service";
 import helmet from "helmet";
 import { insertDocumentSchema, insertAuditLogSchema } from "@shared/schema";
 import { z } from "zod";
+import { initializeDatabase } from "./init-db";
 
 const writeFile = promisify(fs.writeFile);
 const readFile = promisify(fs.readFile);
@@ -39,6 +40,9 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Initialize database with default user
+  await initializeDatabase();
+
   // Apply security headers
   app.use(helmet({
     contentSecurityPolicy: {
@@ -181,9 +185,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             .png()
             .toBuffer();
 
-          const worker = await createWorker();
-          await worker.loadLanguage('eng');
-          await worker.initialize('eng');
+          const worker = await createWorker('eng');
           
           const { data: { text, confidence: tessConfidence } } = await worker.recognize(processedImageBuffer);
           await worker.terminate();
@@ -337,6 +339,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Advanced document analysis endpoint
+  app.post("/api/documents/:id/analyze", async (req, res) => {
+    try {
+      const documentId = parseInt(req.params.id);
+      const userId = (req as any).user.id;
+      
+      const document = await storage.getDocument(documentId);
+      if (!document || document.userId !== userId) {
+        return res.status(404).json({ message: "Document not found" });
+      }
+
+      if (!document.extractedText) {
+        return res.status(400).json({ message: "Document must be processed first" });
+      }
+
+      // Perform advanced analysis with DeepSeek
+      const analysis = await deepSeekService.analyzeDocument(
+        document.extractedText, 
+        "Government security document analysis"
+      );
+
+      // Log the analysis
+      await storage.createAuditLog({
+        userId,
+        action: `Advanced analysis performed: ${document.originalName}`,
+        documentId: document.id,
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent'),
+      });
+
+      res.json({
+        documentId,
+        analysis,
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error) {
+      console.error('Document analysis error:', error);
+      res.status(500).json({ message: "Analysis failed" });
+    }
+  });
+
   // System status endpoint
   app.get("/api/system/status", async (req, res) => {
     try {
@@ -348,18 +392,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return docDate.toDateString() === today.toDateString();
       }).length;
 
+      const hasDeepSeekKey = !!process.env.OPENAI_API_KEY;
+
       res.json({
         services: {
-          ocr: "online",
+          ocr: hasDeepSeekKey ? "deepseek-ai" : "tesseract",
           database: "connected",
           security: "active",
+          ai: hasDeepSeekKey ? "online" : "offline"
+        },
+        capabilities: {
+          advancedOCR: hasDeepSeekKey,
+          documentAnalysis: hasDeepSeekKey,
+          structuredExtraction: true
         },
         usage: {
           today: todayProcessed,
           limit: 1000,
         },
         session: {
-          remaining: 45, // Mock session time
+          remaining: 45,
         }
       });
     } catch (error) {
