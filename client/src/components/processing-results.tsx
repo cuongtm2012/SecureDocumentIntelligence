@@ -2,7 +2,9 @@ import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { Download, FileText } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { Download, FileText, Brain, Sparkles } from "lucide-react";
 import type { Document } from "@shared/schema";
 
 interface ProcessingResultsProps {
@@ -11,10 +13,32 @@ interface ProcessingResultsProps {
 
 export function ProcessingResults({ documents }: ProcessingResultsProps) {
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<any>(null);
   const { toast } = useToast();
 
   const completedDocuments = documents.filter(doc => doc.processingStatus === 'completed');
   const displayDocument = selectedDocument || completedDocuments[completedDocuments.length - 1];
+
+  const analyzeDocumentMutation = useMutation({
+    mutationFn: async (documentId: number) => {
+      const response = await apiRequest('POST', `/api/documents/${documentId}/analyze`);
+      return response.json();
+    },
+    onSuccess: (result) => {
+      setAnalysisResult(result);
+      toast({
+        title: "Analysis Complete",
+        description: "DeepSeek AI analysis completed successfully",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Analysis Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
 
   const handleExport = async (format: 'txt' | 'json') => {
     if (!displayDocument) return;
@@ -71,6 +95,14 @@ export function ProcessingResults({ documents }: ProcessingResultsProps) {
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-semibold gov-dark">Extraction Results</h2>
           <div className="flex space-x-2">
+            <Button
+              variant="outline"
+              onClick={() => analyzeDocumentMutation.mutate(displayDocument.id)}
+              disabled={!displayDocument || analyzeDocumentMutation.isPending}
+            >
+              <Brain className="mr-2" size={16} />
+              {analyzeDocumentMutation.isPending ? 'Analyzing...' : 'AI Analysis'}
+            </Button>
             <Button
               variant="outline"
               onClick={() => handleExport('txt')}
@@ -170,6 +202,64 @@ export function ProcessingResults({ documents }: ProcessingResultsProps) {
                           <p className="text-sm text-gray-500">No structured data available</p>
                         </div>
                       );
+                    }
+                  })()}
+                </div>
+              </div>
+            )}
+
+            {/* AI Analysis Results */}
+            {analysisResult && (
+              <div className="mt-6">
+                <div className="flex items-center mb-3">
+                  <Sparkles className="mr-2 text-purple-600" size={20} />
+                  <h3 className="font-medium text-gray-700">DeepSeek AI Analysis</h3>
+                </div>
+                <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg p-4">
+                  {(() => {
+                    try {
+                      const analysis = analysisResult.analysis;
+                      if (typeof analysis === 'object') {
+                        return (
+                          <div className="space-y-4">
+                            {analysis.summary && (
+                              <div>
+                                <h4 className="font-medium text-purple-800 mb-2">Summary</h4>
+                                <p className="text-sm text-gray-700">{analysis.summary}</p>
+                              </div>
+                            )}
+                            {analysis.keyFindings && (
+                              <div>
+                                <h4 className="font-medium text-purple-800 mb-2">Key Findings</h4>
+                                <ul className="list-disc list-inside text-sm text-gray-700">
+                                  {Array.isArray(analysis.keyFindings) 
+                                    ? analysis.keyFindings.map((finding, idx) => (
+                                        <li key={idx}>{finding}</li>
+                                      ))
+                                    : <li>{analysis.keyFindings}</li>
+                                  }
+                                </ul>
+                              </div>
+                            )}
+                            {analysis.riskAssessment && (
+                              <div>
+                                <h4 className="font-medium text-red-700 mb-2">Risk Assessment</h4>
+                                <p className="text-sm text-gray-700">{analysis.riskAssessment}</p>
+                              </div>
+                            )}
+                            {analysis.recommendations && (
+                              <div>
+                                <h4 className="font-medium text-green-700 mb-2">Recommendations</h4>
+                                <p className="text-sm text-gray-700">{analysis.recommendations}</p>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      } else {
+                        return <p className="text-sm text-gray-700">{String(analysis)}</p>;
+                      }
+                    } catch {
+                      return <p className="text-sm text-gray-500">Analysis data unavailable</p>;
                     }
                   })()}
                 </div>

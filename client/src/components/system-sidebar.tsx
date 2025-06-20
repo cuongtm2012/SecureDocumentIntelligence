@@ -62,10 +62,22 @@ export function SystemSidebar() {
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <div className={getStatusColor(systemStatus?.services?.ocr || 'offline')}></div>
-                <span className="text-sm">OCR Service</span>
+                <span className="text-sm">
+                  {systemStatus?.services?.ocr === 'deepseek-ai' ? 'DeepSeek AI' : 'OCR Service'}
+                </span>
               </div>
               <span className="text-sm text-green-600 capitalize">
-                {systemStatus?.services?.ocr || 'offline'}
+                {systemStatus?.services?.ocr === 'deepseek-ai' ? 'Advanced' : (systemStatus?.services?.ocr || 'offline')}
+              </span>
+            </div>
+            
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <div className={getStatusColor(systemStatus?.services?.ai || 'offline')}></div>
+                <span className="text-sm">AI Analysis</span>
+              </div>
+              <span className="text-sm text-green-600 capitalize">
+                {systemStatus?.services?.ai || 'offline'}
               </span>
             </div>
             
