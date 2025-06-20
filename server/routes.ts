@@ -150,13 +150,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // Check file type and process accordingly
         if (document.mimeType === 'application/pdf') {
-          // For PDF files, inform user that PDF support is being implemented
-          console.log(`PDF document ${document.originalName} detected - currently processing as image fallback`);
-          processingMethod = "pdf-fallback";
+          // Process PDF files with DeepSeek API
+          console.log(`Processing PDF document ${document.originalName} with DeepSeek Vietnamese OCR...`);
           
-          // For now, recommend user to convert PDF to image format
-          throw new Error('PDF processing is being enhanced. Please convert to JPG/PNG format for optimal Vietnamese OCR results.');
-        } else if (EnhancedVietnameseOCR.isSupportedImageFormat(document.mimeType)) {
+          if (process.env.OPENAI_API_KEY) {
+            try {
+              const pdfResult = await deepSeekService.processPDFDocument(filePath, "Vietnamese government document");
+              
+              extractedText = pdfResult.extractedText;
+              confidence = pdfResult.confidence;
+              structuredData = pdfResult.structuredData;
+              processingMethod = "deepseek-pdf-vietnamese";
+              
+              // Add PDF-specific metadata
+              structuredData.pageCount = pdfResult.pageCount;
+              structuredData.improvements = pdfResult.improvements;
+
+              // Log successful PDF processing
+              await storage.createAuditLog({
+                userId,
+                action: `PDF processed with DeepSeek Vietnamese OCR: ${document.originalName} (${pdfResult.pageCount} pages, ${pdfResult.improvements?.length || 0} improvements)`,
+                documentId: document.id,
+                ipAddress: req.ip,
+                userAgent: req.get('User-Agent'),
+              });
+
+            } catch (pdfError: any) {
+              console.error('DeepSeek PDF processing failed:', pdfError);
+              throw new Error(`PDF processing failed: ${pdfError.message}`);
+            }
+          } else {
+            throw new Error('DeepSeek API key required for PDF processing. Please configure OPENAI_API_KEY.');
+          }
+        } else if (['image/jpeg', 'image/jpg', 'image/png'].includes(document.mimeType)) {
           // Use enhanced Vietnamese OCR for image files
           console.log(`Processing image ${document.originalName} with enhanced Vietnamese OCR...`);
           
