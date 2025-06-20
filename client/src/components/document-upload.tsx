@@ -232,7 +232,19 @@ export function DocumentUpload({ documents, isLoading }: DocumentUploadProps) {
           <p className="text-sm text-gray-500 mb-4">
             {isDragActive ? t('dragDropFiles') : t('dragDropFiles')}
           </p>
-          <p className="text-xs text-gray-400 mb-4">{t('supportedFormats')}: JPG, PNG • Max size: 10MB</p>
+          <p className="text-xs text-gray-400 mb-4">{t('supportedFormats')}: JPG, PNG, PDF • Max size: 10MB</p>
+          
+          {/* Enhanced file type support notification */}
+          <div className="flex items-center justify-center space-x-6 mb-4">
+            <div className="flex items-center space-x-2">
+              <FileImage className="text-blue-500" size={20} />
+              <span className="text-xs text-gray-600">Images</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <FileText className="text-red-500" size={20} />
+              <span className="text-xs text-gray-600">PDFs</span>
+            </div>
+          </div>
           
           {/* Upload Progress */}
           {uploadingFiles.size > 0 && (
@@ -277,13 +289,24 @@ export function DocumentUpload({ documents, isLoading }: DocumentUploadProps) {
                 <div key={doc.id} className={`rounded-lg p-4 ${getStatusColor(doc.processingStatus)}`}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
-                      {getStatusIcon(doc.processingStatus)}
+                      {getStatusIcon(doc.processingStatus, doc.mimeType)}
                       <div>
-                        <p className="font-medium text-gray-800">{doc.originalName}</p>
+                        <div className="flex items-center space-x-2">
+                          <p className="font-medium text-gray-800">{doc.originalName}</p>
+                          <Badge variant="outline" className="text-xs">
+                            {doc.mimeType === 'application/pdf' ? 'PDF' : 'Image'}
+                          </Badge>
+                        </div>
                         <p className="text-sm text-gray-500">
                           {formatFileSize(doc.fileSize)} • {
-                            doc.processingStatus === 'processing' ? 'Processing...' :
-                            doc.processingStatus === 'completed' ? `Completed in ${doc.processingCompletedAt ? '3.2s' : ''}` :
+                            doc.processingStatus === 'processing' ? (
+                              doc.mimeType === 'application/pdf' ? 
+                                'Extracting text from PDF...' : 
+                                'Processing image...'
+                            ) :
+                            doc.processingStatus === 'completed' ? (
+                              `Completed • ${typeof doc.structuredData === 'object' && doc.structuredData && (doc.structuredData as any)?.pageCount ? `${(doc.structuredData as any).pageCount} pages` : 'Single page'} processed`
+                            ) :
                             doc.processingStatus === 'failed' ? 'Processing failed' :
                             'Pending'
                           }

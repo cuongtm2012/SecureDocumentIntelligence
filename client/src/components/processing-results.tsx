@@ -1,10 +1,13 @@
 import { useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { Download, FileText, Brain, Sparkles } from "lucide-react";
+import { Download, FileText, Brain, Sparkles, ChevronLeft, ChevronRight, Eye, Copy, CheckCircle } from "lucide-react";
 import type { Document } from "@shared/schema";
 
 interface ProcessingResultsProps {
