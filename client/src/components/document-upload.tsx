@@ -5,8 +5,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CloudUpload, FolderOpen, FileImage, CheckCircle } from "lucide-react";
+import { CloudUpload, FolderOpen, FileImage, CheckCircle, Loader2, Upload } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { useLanguage } from "@/hooks/use-language";
 import type { Document } from "@shared/schema";
 
 interface DocumentUploadProps {
@@ -16,7 +17,9 @@ interface DocumentUploadProps {
 
 export function DocumentUpload({ documents, isLoading }: DocumentUploadProps) {
   const [uploadingFiles, setUploadingFiles] = useState<Map<string, number>>(new Map());
+  const [processingFiles, setProcessingFiles] = useState<Set<number>>(new Set());
   const { toast } = useToast();
+  const { t } = useLanguage();
   const queryClient = useQueryClient();
 
   const uploadMutation = useMutation({
@@ -24,17 +27,56 @@ export function DocumentUpload({ documents, isLoading }: DocumentUploadProps) {
       const formData = new FormData();
       formData.append('file', file);
       
-      const response = await apiRequest('POST', '/api/documents/upload', formData);
-      return response.json();
+      // Simulate upload progress
+      setUploadingFiles(prev => new Map(prev.set(file.name, 0)));
+      
+      // Simulate progress updates
+      const progressInterval = setInterval(() => {
+        setUploadingFiles(prev => {
+          const current = prev.get(file.name) || 0;
+          if (current < 90) {
+            return new Map(prev.set(file.name, current + 10));
+          }
+          return prev;
+        });
+      }, 200);
+      
+      try {
+        const response = await apiRequest('POST', '/api/documents/upload', formData);
+        clearInterval(progressInterval);
+        setUploadingFiles(prev => new Map(prev.set(file.name, 100)));
+        
+        setTimeout(() => {
+          setUploadingFiles(prev => {
+            const newMap = new Map(prev);
+            newMap.delete(file.name);
+            return newMap;
+          });
+        }, 1000);
+        
+        return response.json();
+      } catch (error) {
+        clearInterval(progressInterval);
+        setUploadingFiles(prev => {
+          const newMap = new Map(prev);
+          newMap.delete(file.name);
+          return newMap;
+        });
+        throw error;
+      }
     },
     onSuccess: (document: Document) => {
       queryClient.invalidateQueries({ queryKey: ['/api/documents'] });
+      toast({
+        title: t('uploadComplete'),
+        description: `${document.originalName} ${t('uploadComplete').toLowerCase()}`,
+      });
       // Start processing automatically
       processMutation.mutate(document.id);
     },
     onError: (error: Error) => {
       toast({
-        title: "Upload Failed",
+        title: t('uploadFailed'),
         description: error.message,
         variant: "destructive",
       });
