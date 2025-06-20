@@ -7,6 +7,7 @@ import fs from "fs";
 import { promisify } from "util";
 import { createWorker } from "tesseract.js";
 import sharp from "sharp";
+import { deepSeekService } from "./deepseek-service";
 import helmet from "helmet";
 import { insertDocumentSchema, insertAuditLogSchema } from "@shared/schema";
 import { z } from "zod";
@@ -115,11 +116,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Process document with OCR
+  // Process document with DeepSeek OCR
   app.post("/api/documents/:id/process", async (req, res) => {
     try {
       const documentId = parseInt(req.params.id);
       const userId = (req as any).user.id;
+      const useAdvanced = req.body.useAdvanced !== false; // Default to advanced processing
       
       const document = await storage.getDocument(documentId);
       if (!document || document.userId !== userId) {
@@ -132,45 +134,80 @@ export async function registerRoutes(app: Express): Promise<Server> {
         processingStartedAt: new Date(),
       });
 
-      // Process the image
       const filePath = path.join(uploadsDir, document.filename);
       
       try {
-        // Preprocess image with Sharp
-        const processedImageBuffer = await sharp(filePath)
-          .rotate() // Auto-rotate based on EXIF
-          .normalize() // Enhance contrast
-          .sharpen() // Sharpen the image
-          .png() // Convert to PNG for better OCR
-          .toBuffer();
+        let extractedText = "";
+        let confidence = 0;
+        let structuredData: any = {};
 
-        // Perform OCR with Tesseract
-        const worker = await createWorker();
-        await worker.loadLanguage('eng');
-        await worker.initialize('eng');
-        
-        const { data: { text, confidence } } = await worker.recognize(processedImageBuffer);
-        await worker.terminate();
+        if (useAdvanced && process.env.OPENAI_API_KEY) {
+          // Use DeepSeek for advanced OCR and analysis
+          console.log(`Processing document ${document.originalName} with DeepSeek...`);
+          
+          const deepSeekResult = await deepSeekService.processDocumentImage(filePath);
+          
+          extractedText = deepSeekResult.extractedText;
+          confidence = deepSeekResult.confidence;
+          structuredData = deepSeekResult.structuredData;
+          
+          // Perform additional analysis if needed
+          if (extractedText.length > 50) {
+            try {
+              const analysis = await deepSeekService.analyzeDocument(extractedText, "Government document analysis");
+              structuredData.analysis = analysis;
+            } catch (analysisError) {
+              console.warn('DeepSeek analysis failed, continuing with OCR results:', analysisError);
+            }
+          }
 
-        // Extract structured data (basic example)
-        const structuredData = extractStructuredData(text);
+          // Log successful DeepSeek processing
+          await storage.createAuditLog({
+            userId,
+            action: `Document processed with DeepSeek AI: ${document.originalName}`,
+            documentId: document.id,
+            ipAddress: req.ip,
+            userAgent: req.get('User-Agent'),
+          });
+
+        } else {
+          // Fallback to Tesseract OCR
+          console.log(`Processing document ${document.originalName} with Tesseract (fallback)...`);
+          
+          const processedImageBuffer = await sharp(filePath)
+            .rotate()
+            .normalize()
+            .sharpen()
+            .png()
+            .toBuffer();
+
+          const worker = await createWorker();
+          await worker.loadLanguage('eng');
+          await worker.initialize('eng');
+          
+          const { data: { text, confidence: tessConfidence } } = await worker.recognize(processedImageBuffer);
+          await worker.terminate();
+
+          extractedText = text;
+          confidence = tessConfidence / 100;
+          structuredData = extractStructuredData(text);
+
+          await storage.createAuditLog({
+            userId,
+            action: `Document processed with Tesseract OCR: ${document.originalName}`,
+            documentId: document.id,
+            ipAddress: req.ip,
+            userAgent: req.get('User-Agent'),
+          });
+        }
 
         // Update document with results
         await storage.updateDocument(documentId, {
           processingStatus: "completed",
           processingCompletedAt: new Date(),
-          confidence: confidence / 100, // Convert to decimal
-          extractedText: text,
+          confidence,
+          extractedText,
           structuredData: JSON.stringify(structuredData),
-        });
-
-        // Log the processing
-        await storage.createAuditLog({
-          userId,
-          action: `Document processed: ${document.originalName}`,
-          documentId: document.id,
-          ipAddress: req.ip,
-          userAgent: req.get('User-Agent'),
         });
 
         const updatedDocument = await storage.getDocument(documentId);
@@ -182,10 +219,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.updateDocument(documentId, {
           processingStatus: "failed",
           processingCompletedAt: new Date(),
-          errorMessage: "OCR processing failed",
+          errorMessage: `Processing failed: ${processingError instanceof Error ? processingError.message : 'Unknown error'}`,
         });
 
-        res.status(500).json({ message: "OCR processing failed" });
+        // Log the error
+        await storage.createAuditLog({
+          userId,
+          action: `Document processing failed: ${document.originalName} - ${processingError instanceof Error ? processingError.message : 'Unknown error'}`,
+          documentId: document.id,
+          ipAddress: req.ip,
+          userAgent: req.get('User-Agent'),
+        });
+
+        res.status(500).json({ message: "Document processing failed" });
       }
 
     } catch (error) {
