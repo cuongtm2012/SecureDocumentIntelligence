@@ -1,6 +1,6 @@
 import { users, documents, auditLogs, type User, type InsertUser, type Document, type InsertDocument, type AuditLog, type InsertAuditLog } from "@shared/schema";
 import { db } from "./db";
-import { eq } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 
 export interface IStorage {
   // User methods
@@ -161,7 +161,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getDocumentsByUserId(userId: number): Promise<Document[]> {
-    return await db.select().from(documents).where(eq(documents.userId, userId));
+    return await db.select().from(documents)
+      .where(eq(documents.userId, userId))
+      .orderBy(desc(documents.uploadedAt));
   }
 
   async createDocument(insertDocument: InsertDocument): Promise<Document> {
@@ -200,7 +202,7 @@ export class DatabaseStorage implements IStorage {
 
   async getRecentAuditLogs(limit: number = 10): Promise<AuditLog[]> {
     return await db.select().from(auditLogs)
-      .orderBy(auditLogs.timestamp)
+      .orderBy(desc(auditLogs.timestamp))
       .limit(limit);
   }
 }
