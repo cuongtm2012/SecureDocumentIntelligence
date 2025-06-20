@@ -4,6 +4,7 @@ import { DocumentUpload } from "@/components/document-upload";
 import { EnhancedDocumentViewer } from "@/components/enhanced-document-viewer";
 import { SystemSidebar } from "@/components/system-sidebar";
 import { RealTimeStatus } from "@/components/real-time-status";
+import { ApiStatusIndicator } from "@/components/api-status-indicator";
 import { useQuery } from "@tanstack/react-query";
 import { useLanguage } from "@/hooks/use-language";
 import type { Document } from "@shared/schema";
@@ -33,6 +34,7 @@ export default function Dashboard() {
           
           <div className="space-y-6">
             <SystemSidebar />
+            <ApiStatusIndicator />
             <RealTimeStatus documents={documents} />
           </div>
         </div>

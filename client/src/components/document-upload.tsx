@@ -7,9 +7,10 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CloudUpload, FolderOpen, FileImage, FileText, CheckCircle, Loader2, Upload, AlertCircle, Clock, X } from "lucide-react";
+import { CloudUpload, FolderOpen, FileImage, FileText, CheckCircle, Loader2, Upload, AlertCircle, Clock, X, AlertTriangle } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useLanguage } from "@/hooks/use-language";
+import { ApiStatusIndicator } from "@/components/api-status-indicator";
 import type { Document } from "@shared/schema";
 
 interface DocumentUploadProps {
@@ -112,8 +113,13 @@ export function DocumentUpload({ documents, isLoading }: DocumentUploadProps) {
         newSet.delete(documentId);
         return newSet;
       });
+      
+      // Enhanced error handling for different scenarios
+      const isApiQuotaError = error.message.includes('402') || error.message.includes('Insufficient Balance') || error.message.includes('quota exceeded');
+      const isPdfError = error.message.includes('PDF');
+      
       toast({
-        title: t('failed'),
+        title: isApiQuotaError ? 'API Quota Exceeded' : t('failed'),
         description: error.message,
         variant: "destructive",
       });
@@ -279,6 +285,29 @@ export function DocumentUpload({ documents, isLoading }: DocumentUploadProps) {
           </Button>
         </div>
 
+        {/* Enhanced Error Handling for Failed Documents */}
+        {documents.some(doc => doc.processingStatus === 'failed') && (
+          <Alert className="mt-6 border-red-200 bg-red-50">
+            <AlertTriangle className="h-4 w-4 text-red-500" />
+            <AlertDescription className="text-red-700">
+              <div className="space-y-2">
+                <p className="font-medium">Processing Issues Detected</p>
+                <p className="text-sm">
+                  Some documents failed to process. This may be due to:
+                </p>
+                <ul className="text-sm list-disc list-inside space-y-1">
+                  <li>API quota limitations for PDF processing</li>
+                  <li>Poor image quality or unreadable text</li>
+                  <li>Unsupported document formats</li>
+                </ul>
+                <p className="text-sm font-medium">
+                  Recommendation: Convert PDFs to high-quality JPG or PNG images for optimal results.
+                </p>
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* File Processing Queue */}
         {documents.length > 0 && (
           <div className="mt-6">
@@ -307,7 +336,7 @@ export function DocumentUpload({ documents, isLoading }: DocumentUploadProps) {
                             doc.processingStatus === 'completed' ? (
                               `Completed • ${typeof doc.structuredData === 'object' && doc.structuredData && (doc.structuredData as any)?.pageCount ? `${(doc.structuredData as any).pageCount} pages` : 'Single page'} processed`
                             ) :
-                            doc.processingStatus === 'failed' ? 'Processing failed' :
+                            doc.processingStatus === 'failed' ? 'Processing failed - try converting to image format' :
                             'Pending'
                           }
                         </p>
@@ -321,6 +350,17 @@ export function DocumentUpload({ documents, isLoading }: DocumentUploadProps) {
                           </div>
                           <span className="text-sm text-gray-600">{getProcessingProgress(doc)}%</span>
                         </>
+                      )}
+                      {doc.processingStatus === 'failed' && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => processMutation.mutate(doc.id)}
+                          disabled={processingFiles.has(doc.id)}
+                        >
+                          <AlertCircle className="mr-1" size={12} />
+                          Retry
+                        </Button>
                       )}
                       {doc.processingStatus === 'completed' && (
                         <Button
