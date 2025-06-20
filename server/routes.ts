@@ -9,6 +9,7 @@ import { createWorker } from "tesseract.js";
 import sharp from "sharp";
 import { deepSeekService } from "./deepseek-service";
 import { vietnameseTextCleaner } from "./vietnamese-text-cleaner";
+import { pdfProcessor, PDFProcessor } from "./pdf-processor";
 import helmet from "helmet";
 import { insertDocumentSchema, insertAuditLogSchema } from "@shared/schema";
 import { z } from "zod";
@@ -25,11 +26,11 @@ const upload = multer({
     fileSize: 10 * 1024 * 1024, // 10MB
   },
   fileFilter: (req, file, cb) => {
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'];
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Only JPG and PNG files are allowed'));
+      cb(new Error('Only JPG, PNG, and PDF files are allowed'));
     }
   },
 });
@@ -145,40 +146,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
         let extractedText = "";
         let confidence = 0;
         let structuredData: any = {};
+        let processingMethod = "enhanced-vietnamese-ocr";
 
-        if (useAdvanced && process.env.OPENAI_API_KEY) {
-          // Use DeepSeek-enhanced OCR processing
-          console.log(`Processing document ${document.originalName} with DeepSeek-enhanced OCR...`);
+        // Check if this is a PDF file
+        if (PDFProcessor.isSupportedFormat(document.mimeType)) {
+          console.log(`Processing PDF document ${document.originalName} with enhanced Vietnamese support...`);
           
           try {
-            const deepSeekResult = await deepSeekService.processDocumentImage(filePath);
+            const pdfResult = await pdfProcessor.processPDF(filePath);
             
-            extractedText = deepSeekResult.extractedText;
-            confidence = deepSeekResult.confidence;
-            structuredData = deepSeekResult.structuredData;
+            extractedText = pdfResult.extractedText;
+            confidence = pdfResult.confidence;
+            structuredData = pdfResult.structuredData || {};
+            processingMethod = `pdf-${pdfResult.processingMethod}`;
             
-            // Perform additional analysis if needed
-            if (extractedText.length > 50) {
-              try {
-                const analysis = await deepSeekService.analyzeDocument(extractedText, "Government document analysis");
-                structuredData.analysis = analysis;
-              } catch (analysisError) {
-                console.warn('DeepSeek analysis failed, continuing with OCR results:', analysisError);
-              }
-            }
+            // Add PDF-specific metadata
+            structuredData.pageCount = pdfResult.pageCount;
+            structuredData.processingMethod = pdfResult.processingMethod;
 
-            // Log successful DeepSeek processing
+            // Log successful PDF processing
             await storage.createAuditLog({
               userId,
-              action: `Document processed with DeepSeek-enhanced OCR: ${document.originalName}`,
+              action: `PDF document processed (${pdfResult.processingMethod}): ${document.originalName} - ${pdfResult.pageCount} pages`,
               documentId: document.id,
               ipAddress: req.ip,
               userAgent: req.get('User-Agent'),
             });
 
-          } catch (deepSeekError) {
-            console.warn('DeepSeek processing failed, falling back to Tesseract:', deepSeekError);
-            useAdvanced = false; // Fall back to Tesseract
+          } catch (pdfError: any) {
+            console.error('PDF processing failed:', pdfError);
+            throw new Error(`PDF processing failed: ${pdfError.message}`);
+          }
+        } else {
+          // Process image files
+          if (useAdvanced && process.env.OPENAI_API_KEY) {
+            // Use DeepSeek-enhanced OCR processing for images
+            console.log(`Processing image ${document.originalName} with DeepSeek-enhanced OCR...`);
+            
+            try {
+              const deepSeekResult = await deepSeekService.processDocumentImage(filePath);
+              
+              extractedText = deepSeekResult.extractedText;
+              confidence = deepSeekResult.confidence;
+              structuredData = deepSeekResult.structuredData;
+              processingMethod = "deepseek-enhanced";
+              
+              // Perform additional analysis if needed
+              if (extractedText.length > 50) {
+                try {
+                  const analysis = await deepSeekService.analyzeDocument(extractedText, "Government document analysis");
+                  structuredData.analysis = analysis;
+                } catch (analysisError) {
+                  console.warn('DeepSeek analysis failed, continuing with OCR results:', analysisError);
+                }
+              }
+
+              // Log successful DeepSeek processing
+              await storage.createAuditLog({
+                userId,
+                action: `Document processed with DeepSeek-enhanced OCR: ${document.originalName}`,
+                documentId: document.id,
+                ipAddress: req.ip,
+                userAgent: req.get('User-Agent'),
+              });
+
+            } catch (deepSeekError) {
+              console.warn('DeepSeek processing failed, falling back to Tesseract:', deepSeekError);
+              useAdvanced = false; // Fall back to Tesseract
+            }
           }
         }
         
