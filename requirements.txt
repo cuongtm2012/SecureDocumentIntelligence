@@ -1,0 +1,40 @@
+# Vietnamese PDF OCR Processor - Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# Core OCR dependencies
+pytesseract==0.3.10
+pdf2image==1.17.0
+Pillow==10.2.0
+
+# API communication
+requests==2.31.0
+
+# Additional utilities
+pathlib2==2.3.7.post1
+
+# Optional: For enhanced image processing
+opencv-python==4.9.0.80
+
+# Optional: For PDF handling alternatives
+PyPDF2==3.0.1
+
+# Development and testing (optional)
+pytest==8.0.0
+pytest-cov==4.1.0
+
+# System requirements notes:
+# 
+# 1. Tesseract OCR Engine:
+#    - Windows: Download from https://github.com/UB-Mannheim/tesseract/wiki
+#    - Ubuntu/Debian: sudo apt-get install tesseract-ocr tesseract-ocr-vie
+#    - macOS: brew install tesseract tesseract-lang
+#
+# 2. Vietnamese Language Data:
+#    - Download vie.traineddata from Tesseract GitHub
+#    - Place in Tesseract tessdata directory
+#    - Or install via package manager (tesseract-ocr-vie)
+#
+# 3. Poppler (for pdf2image):
+#    - Windows: Download poppler binaries
+#    - Ubuntu/Debian: sudo apt-get install poppler-utils
+#    - macOS: brew install poppler

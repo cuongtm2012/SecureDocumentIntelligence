@@ -1,0 +1,74 @@
+# Development Docker Compose
+# Optimized for development with hot reloading and debugging
+
+version: '3.8'
+
+services:
+  # Development server with hot reloading
+  app-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "5000:5000"
+      - "3000:3000"  # Vite dev server
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://ocr_user:dev_password@postgres-dev:5432/ocr_dev
+      - PYTHON_OCR_SERVICE_URL=http://python-ocr-dev:8001
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - ./uploads:/app/uploads
+    depends_on:
+      - postgres-dev
+      - python-ocr-dev
+    networks:
+      - ocr-dev
+
+  # Python OCR service for development
+  python-ocr-dev:
+    build:
+      context: ./python-ocr-service
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TESSDATA_PREFIX=/usr/share/tesseract-ocr/4.00/tessdata
+    volumes:
+      - ./python-ocr-service:/app
+      - ./uploads:/app/uploads:ro
+    networks:
+      - ocr-dev
+    command: python -m uvicorn app:app --host 0.0.0.0 --port 8001 --reload
+
+  # Development database
+  postgres-dev:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=ocr_dev
+      - POSTGRES_USER=ocr_user
+      - POSTGRES_PASSWORD=dev_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    networks:
+      - ocr-dev
+
+  # Redis for development
+  redis-dev:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    networks:
+      - ocr-dev
+
+volumes:
+  postgres_dev_data:
+
+networks:
+  ocr-dev:
+    driver: bridge

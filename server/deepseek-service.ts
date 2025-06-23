@@ -1,6 +1,9 @@
 import OpenAI from "openai";
 import fs from "fs";
 import path from "path";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const openai = new OpenAI({
   baseURL: 'https://api.deepseek.com',

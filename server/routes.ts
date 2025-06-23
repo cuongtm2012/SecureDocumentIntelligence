@@ -15,6 +15,15 @@ import helmet from "helmet";
 import { insertDocumentSchema, insertAuditLogSchema } from "@shared/schema";
 import { z } from "zod";
 import { initializeDatabase } from "./init-db";
+import { 
+  healthCheck, 
+  processSingleFile, 
+  processBatchFiles, 
+  getBatchJobStatus, 
+  getSupportedLanguages,
+  uploadSingle,
+  uploadMultiple 
+} from "./controllers/ocr.controller.js";
 
 const writeFile = promisify(fs.writeFile);
 const readFile = promisify(fs.readFile);
@@ -508,6 +517,239 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get document thumbnail/preview
+  app.get("/api/documents/:id/thumbnail", async (req, res) => {
+    try {
+      const documentId = parseInt(req.params.id);
+      const userId = (req as any).user.id;
+      
+      const document = await storage.getDocument(documentId);
+      if (!document || document.userId !== userId) {
+        return res.status(404).json({ message: "Document not found" });
+      }
+
+      const filePath = path.join(uploadsDir, document.fileName);
+      
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ message: "File not found" });
+      }
+
+      if (document.mimeType === 'application/pdf') {
+        // For PDF, convert first page to image
+        try {
+          const thumbnailBuffer = await pdfProcessor.convertPdfToImages(filePath, {
+            firstPageOnly: true,
+            width: 800,
+            height: 1000
+          });
+          
+          res.setHeader('Content-Type', 'image/png');
+          res.setHeader('Cache-Control', 'public, max-age=3600');
+          res.send(thumbnailBuffer[0]);
+        } catch (error) {
+          console.error('PDF thumbnail error:', error);
+          // Return placeholder image
+          const placeholderSvg = `
+            <svg width="400" height="600" xmlns="http://www.w3.org/2000/svg">
+              <rect width="400" height="600" fill="#f7f7f7"/>
+              <text x="200" y="300" text-anchor="middle" font-family="Arial" font-size="16" fill="#999">
+                PDF Preview
+              </text>
+            </svg>
+          `;
+          res.setHeader('Content-Type', 'image/svg+xml');
+          res.send(placeholderSvg);
+        }
+      } else {
+        // For images, return the original file or resized version
+        try {
+          const imageBuffer = await sharp(filePath)
+            .resize(800, 1000, { fit: 'inside', withoutEnlargement: true })
+            .png()
+            .toBuffer();
+          
+          res.setHeader('Content-Type', 'image/png');
+          res.setHeader('Cache-Control', 'public, max-age=3600');
+          res.send(imageBuffer);
+        } catch (error) {
+          console.error('Image thumbnail error:', error);
+          res.status(500).json({ message: "Failed to generate thumbnail" });
+        }
+      }
+    } catch (error) {
+      console.error('Thumbnail error:', error);
+      res.status(500).json({ message: "Failed to get thumbnail" });
+    }
+  });
+
+  // Get specific PDF page as image
+  app.get("/api/documents/:id/pdf", async (req, res) => {
+    try {
+      const documentId = parseInt(req.params.id);
+      const userId = (req as any).user.id;
+      const page = parseInt(req.query.page as string) || 1;
+      
+      const document = await storage.getDocument(documentId);
+      if (!document || document.userId !== userId) {
+        return res.status(404).json({ message: "Document not found" });
+      }
+
+      if (document.mimeType !== 'application/pdf') {
+        return res.status(400).json({ message: "Document is not a PDF" });
+      }
+
+      const filePath = path.join(uploadsDir, document.fileName);
+      
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ message: "File not found" });
+      }
+
+      try {
+        const pageImages = await pdfProcessor.convertPdfToImages(filePath, {
+          pageNumber: page,
+          width: 1200,
+          height: 1600
+        });
+        
+        if (pageImages.length === 0) {
+          return res.status(404).json({ message: "Page not found" });
+        }
+
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        res.send(pageImages[0]);
+      } catch (error) {
+        console.error('PDF page render error:', error);
+        // Return placeholder image
+        const placeholderSvg = `
+          <svg width="600" height="800" xmlns="http://www.w3.org/2000/svg">
+            <rect width="600" height="800" fill="#f7f7f7" stroke="#ddd"/>
+            <text x="300" y="400" text-anchor="middle" font-family="Arial" font-size="18" fill="#666">
+              PDF Page ${page}
+            </text>
+            <text x="300" y="430" text-anchor="middle" font-family="Arial" font-size="14" fill="#999">
+              Unable to render
+            </text>
+          </svg>
+        `;
+        res.setHeader('Content-Type', 'image/svg+xml');
+        res.send(placeholderSvg);
+      }
+    } catch (error) {
+      console.error('PDF page error:', error);
+      res.status(500).json({ message: "Failed to get PDF page" });
+    }
+  });
+
+  // Get document image (for non-PDF files)
+  app.get("/api/documents/:id/image", async (req, res) => {
+    try {
+      const documentId = parseInt(req.params.id);
+      const userId = (req as any).user.id;
+      
+      const document = await storage.getDocument(documentId);
+      if (!document || document.userId !== userId) {
+        return res.status(404).json({ message: "Document not found" });
+      }
+
+      if (document.mimeType === 'application/pdf') {
+        return res.status(400).json({ message: "Use /pdf endpoint for PDF files" });
+      }
+
+      const filePath = path.join(uploadsDir, document.fileName);
+      
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ message: "File not found" });
+      }
+
+      try {
+        const imageBuffer = await readFile(filePath);
+        res.setHeader('Content-Type', document.mimeType);
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        res.send(imageBuffer);
+      } catch (error) {
+        console.error('Image serve error:', error);
+        res.status(500).json({ message: "Failed to serve image" });
+      }
+    } catch (error) {      console.error('Image error:', error);
+      res.status(500).json({ message: "Failed to get image" });
+    }
+  });
+
+  // ========================================
+  // PYTHON OCR SERVICE ENDPOINTS
+  // ========================================
+
+  // Python OCR service health check
+  app.get("/api/ocr/health", healthCheck);
+
+  // Process single PDF file with Python OCR service  
+  app.post("/api/ocr/process", uploadSingle, processSingleFile);
+
+  // Process multiple PDF files in batch
+  app.post("/api/ocr/batch", uploadMultiple, processBatchFiles);
+
+  // Get batch job status and results
+  app.get("/api/ocr/jobs/:jobId", getBatchJobStatus);
+
+  // Get supported OCR languages
+  app.get("/api/ocr/languages", getSupportedLanguages);
+
+  // Clear completed batch jobs (cleanup endpoint)
+  app.delete("/api/ocr/jobs/completed", async (req, res) => {
+    try {
+      // This would be implemented in the controller
+      res.json({
+        success: true,
+        message: "Cleanup endpoint - implement in controller",
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: "Cleanup failed",
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
+  // Get OCR service information and configuration
+  app.get("/api/ocr/info", async (req, res) => {
+    try {
+      res.json({
+        success: true,
+        service: {
+          name: 'Enhanced Vietnamese OCR Service',
+          version: '1.0.0',
+          endpoints: {
+            health: '/api/ocr/health',
+            process: '/api/ocr/process',
+            batch: '/api/ocr/batch',
+            languages: '/api/ocr/languages',
+            jobStatus: '/api/ocr/jobs/:jobId',
+            info: '/api/ocr/info'
+          },
+          features: [
+            'Vietnamese PDF OCR',
+            'Batch processing',
+            'Real-time progress tracking',
+            'Multiple language support',
+            'API and CLI fallback modes',
+            'Confidence scoring',
+            'Metadata extraction'
+          ]
+        },
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: "Failed to get service info",
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
@@ -515,7 +757,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 // Helper function to extract structured data from text
 function extractStructuredData(text: string) {
   const lines = text.split('\n').filter(line => line.trim());
-  const cleanText = text.replace(/[^\w\s\/\-\.,:àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđĐÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸ]/g, ' ').replace(/\s+/g, ' ').trim();
+  const cleanText = text.replace(/[^\w\s\/\-\.,:àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđĐ]/g, ' ').replace(/\s+/g, ' ').trim();
   
   // Vietnamese ID Card detection and extraction
   const isVietnameseId = /(?:CAN CUOC|CCCD|Citizen Identity|Identity Card)/i.test(text);
