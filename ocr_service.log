@@ -1,0 +1,102 @@
+2025-06-24 13:34:11,467 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 13:34:11,547 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 13:34:14,946 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 13:34:15,041 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 13:34:15,158 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 13:34:15,322 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 18:56:16,861 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 18:56:16,861 - WARNING - 🔄 Running in mock mode - install Tesseract for real OCR
+2025-06-24 18:56:16,862 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 18:56:16,981 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 18:56:16,981 - WARNING - 🔄 Running in mock mode - install Tesseract for real OCR
+2025-06-24 18:56:16,981 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 18:56:31,208 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 18:56:31,209 - WARNING - 🔄 Running in mock mode - install Tesseract for real OCR
+2025-06-24 18:56:31,212 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 18:56:31,291 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 18:56:31,292 - WARNING - 🔄 Running in mock mode - install Tesseract for real OCR
+2025-06-24 18:56:31,292 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 18:56:40,356 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 18:56:40,357 - WARNING - 🔄 Running in mock mode - install Tesseract for real OCR
+2025-06-24 18:56:40,357 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 18:56:40,639 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 18:56:40,655 - WARNING - 🔄 Running in mock mode - install Tesseract for real OCR
+2025-06-24 18:56:40,656 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 18:56:46,841 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 18:56:46,841 - WARNING - 🔄 Running in mock mode - install Tesseract for real OCR
+2025-06-24 18:56:46,842 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 18:56:47,010 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 18:56:47,011 - WARNING - 🔄 Running in mock mode - install Tesseract for real OCR
+2025-06-24 18:56:47,011 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 18:57:19,607 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 18:57:19,612 - WARNING - 🔄 Running in mock mode - install Tesseract for real OCR
+2025-06-24 18:57:19,612 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 18:57:19,751 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 18:57:19,752 - WARNING - 🔄 Running in mock mode - install Tesseract for real OCR
+2025-06-24 18:57:19,752 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 18:57:27,639 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 18:57:27,640 - WARNING - 🔄 Running in mock mode - install Tesseract for real OCR
+2025-06-24 18:57:27,640 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 18:57:27,770 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 18:57:27,770 - WARNING - 🔄 Running in mock mode - install Tesseract for real OCR
+2025-06-24 18:57:27,771 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 18:57:37,335 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 18:57:37,335 - WARNING - 🔄 Running in mock mode - install Tesseract for real OCR
+2025-06-24 18:57:37,336 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 18:57:37,418 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 18:57:37,419 - WARNING - 🔄 Running in mock mode - install Tesseract for real OCR
+2025-06-24 18:57:37,419 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 18:57:49,366 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 18:57:49,372 - WARNING - 🔄 Running in mock mode - install Tesseract for real OCR
+2025-06-24 18:57:49,372 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 18:57:49,507 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 18:57:49,537 - WARNING - 🔄 Running in mock mode - install Tesseract for real OCR
+2025-06-24 18:57:49,555 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 18:57:58,068 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 18:57:58,069 - WARNING - 🔄 Running in mock mode - install Tesseract for real OCR
+2025-06-24 18:57:58,071 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 18:57:58,161 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 18:57:58,162 - WARNING - 🔄 Running in mock mode - install Tesseract for real OCR
+2025-06-24 18:57:58,162 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 18:58:05,725 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 18:58:05,727 - WARNING - 🔄 Running in mock mode - install Tesseract for real OCR
+2025-06-24 18:58:05,728 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 18:58:05,853 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 18:58:05,861 - WARNING - 🔄 Running in mock mode - install Tesseract for real OCR
+2025-06-24 18:58:05,862 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 18:58:13,301 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 18:58:13,302 - WARNING - 🔄 Running in mock mode - install Tesseract for real OCR
+2025-06-24 18:58:13,303 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 18:58:13,412 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 18:58:13,413 - WARNING - 🔄 Running in mock mode - install Tesseract for real OCR
+2025-06-24 18:58:13,414 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 18:58:27,452 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 18:58:27,453 - WARNING - 🔄 Running in mock mode - install Tesseract for real OCR
+2025-06-24 18:58:27,454 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 18:58:27,575 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 18:58:27,576 - WARNING - 🔄 Running in mock mode - install Tesseract for real OCR
+2025-06-24 18:58:27,576 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 18:58:32,989 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 18:58:33,034 - WARNING - 🔄 Running in mock mode - install Tesseract for real OCR
+2025-06-24 18:58:33,074 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 18:58:33,277 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 18:58:33,279 - WARNING - 🔄 Running in mock mode - install Tesseract for real OCR
+2025-06-24 18:58:33,279 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 18:58:42,063 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 18:58:42,071 - WARNING - 🔄 Running in mock mode - install Tesseract for real OCR
+2025-06-24 18:58:42,096 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 18:58:42,374 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 18:58:42,395 - WARNING - 🔄 Running in mock mode - install Tesseract for real OCR
+2025-06-24 18:58:42,420 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 18:58:46,416 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 18:58:46,417 - WARNING - 🔄 Running in mock mode - install Tesseract for real OCR
+2025-06-24 18:58:46,420 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 18:58:46,497 - ERROR - Tesseract verification failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-24 18:58:46,498 - WARNING - 🔄 Running in mock mode - install Tesseract for real OCR
+2025-06-24 18:58:46,498 - INFO - Enhanced OCR service initialized successfully
+2025-06-24 19:00:17,119 - INFO - 📄 Processing file: SYLL NguyenTranDuy.pdf (662003 bytes)
+2025-06-24 19:00:19,124 - INFO - [OK] Enhanced fallback OCR completed for ocr_20250624_190017_SYLL NguyenTranDuy.pdf: 627 chars, simulated confidence: 85%
+2025-06-24 19:00:19,125 - INFO - [OK] OCR processing completed for SYLL NguyenTranDuy.pdf: success=True
+2025-06-24 19:10:38,378 - INFO - 📄 Processing file: SYLL NguyenTranDuy.pdf (662003 bytes)
+2025-06-24 19:10:40,388 - INFO - [OK] Enhanced fallback OCR completed for ocr_20250624_191038_SYLL NguyenTranDuy.pdf: 627 chars, simulated confidence: 85%
+2025-06-24 19:10:40,389 - INFO - [OK] OCR processing completed for SYLL NguyenTranDuy.pdf: success=True

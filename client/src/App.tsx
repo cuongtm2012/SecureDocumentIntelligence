@@ -8,6 +8,9 @@ import { LanguageProvider } from "@/hooks/use-language";
 import Dashboard from "@/pages/dashboard";
 import NotFound from "@/pages/not-found";
 
+// Initialize PDF worker early
+import "@/lib/pdf-worker";
+
 function Router() {
   return (
     <Switch>

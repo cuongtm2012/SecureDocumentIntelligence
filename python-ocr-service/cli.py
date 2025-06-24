@@ -25,10 +25,37 @@ from typing import List, Dict, Any
 sys.path.append(str(Path(__file__).parent.parent))
 from vietnamese_pdf_ocr import VietnameseOCRProcessor
 
+# Configure logging with safe Unicode handling for Windows
+class SafeStreamHandler(logging.StreamHandler):
+    """Custom stream handler that safely handles Unicode characters on Windows"""
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            # Replace problematic Unicode characters with safe alternatives
+            msg = msg.replace('✅', '[OK]')
+            msg = msg.replace('❌', '[ERROR]')
+            msg = msg.replace('⚠️', '[WARNING]')
+            msg = msg.replace('🚀', '[PROCESS]')
+            msg = msg.replace('📄', '[PDF]')
+            msg = msg.replace('🔍', '[SEARCH]')
+            msg = msg.replace('📋', '[INFO]')
+            
+            stream = self.stream
+            try:
+                stream.write(msg + self.terminator)
+                stream.flush()
+            except UnicodeEncodeError:
+                safe_msg = msg.encode('ascii', errors='replace').decode('ascii')
+                stream.write(safe_msg + self.terminator)
+                stream.flush()
+        except Exception:
+            self.handleError(record)
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[SafeStreamHandler(sys.stdout)]
 )
 logger = logging.getLogger(__name__)
 
@@ -65,7 +92,7 @@ class OCRCLIService:
                 output_path=str(output_path)
             )
             
-            logger.info(f"✅ Processed {file_path.name} -> {output_path}")
+            logger.info(f"[OK] Processed {file_path.name} -> {output_path}")
             
             return {
                 "success": True,
@@ -75,7 +102,7 @@ class OCRCLIService:
             }
             
         except Exception as e:
-            logger.error(f"❌ Failed to process {file_path}: {e}")
+            logger.error(f"[ERROR] Failed to process {file_path}: {e}")
             return {
                 "success": False,
                 "input_file": str(file_path),
@@ -133,7 +160,7 @@ class OCRCLIService:
             json.dump(results, f, ensure_ascii=False, indent=2)
         
         successful = sum(1 for r in results if r['success'])
-        logger.info(f"✅ Batch processing completed: {successful}/{len(results)} files successful")
+        logger.info(f"[OK] Batch processing completed: {successful}/{len(results)} files successful")
         logger.info(f"Summary saved to: {summary_file}")
         
         return results
@@ -161,15 +188,15 @@ class OCRCLIService:
             }
             
             if "vie" in available_languages:
-                logger.info("✅ OCR service is healthy - Vietnamese support available")
+                logger.info("[OK] OCR service is healthy - Vietnamese support available")
             else:
-                logger.warning("⚠️ Vietnamese language pack not found")
+                logger.warning("[WARNING] Vietnamese language pack not found")
                 health_info["status"] = "warning"
             
             return health_info
             
         except Exception as e:
-            logger.error(f"❌ Health check failed: {e}")
+            logger.error(f"[ERROR] Health check failed: {e}")
             return {
                 "status": "unhealthy",
                 "service": "Vietnamese OCR CLI Service",

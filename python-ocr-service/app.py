@@ -36,17 +36,46 @@ try:
     OCR_AVAILABLE = True
 except ImportError:
     OCR_AVAILABLE = False
-    print("⚠️  OCR libraries not available. Install with: pip install pillow pytesseract pdf2image")
+    print("[WARNING] OCR libraries not available. Install with: pip install pillow pytesseract pdf2image")
 
 import requests
 
-# Configure logging
+# Configure logging with UTF-8 encoding support for Windows
+class SafeStreamHandler(logging.StreamHandler):
+    """Custom stream handler that safely handles Unicode characters on Windows"""
+    def emit(self, record):
+        try:
+            # Format the log message
+            msg = self.format(record)
+            # Replace problematic Unicode characters with safe alternatives for Windows console
+            msg = msg.replace('✅', '[OK]')
+            msg = msg.replace('❌', '[ERROR]')
+            msg = msg.replace('⚠️', '[WARNING]')
+            msg = msg.replace('🚀', '[PROCESS]')
+            msg = msg.replace('📄', '[PDF]')
+            msg = msg.replace('🔍', '[SEARCH]')
+            msg = msg.replace('📋', '[INFO]')
+            
+            # Write to stream with error handling
+            stream = self.stream
+            try:
+                stream.write(msg + self.terminator)
+                stream.flush()
+            except UnicodeEncodeError:
+                # Fallback: encode as ASCII with error replacement
+                safe_msg = msg.encode('ascii', errors='replace').decode('ascii')
+                stream.write(safe_msg + self.terminator)
+                stream.flush()
+        except Exception:
+            self.handleError(record)
+
+# Configure logging with safe Unicode handling
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('ocr_service.log'),
-        logging.StreamHandler(sys.stdout)
+        logging.FileHandler('ocr_service.log', encoding='utf-8'),
+        SafeStreamHandler(sys.stdout)
     ]
 )
 logger = logging.getLogger(__name__)
@@ -281,7 +310,7 @@ class VietnameseOCRService:
         try:
             # Try to get Tesseract version
             version = pytesseract.get_tesseract_version()
-            logger.info(f"✅ Found Tesseract version: {version}")
+            logger.info(f"[OK] Found Tesseract version: {version}")
             
             # Check available languages
             languages = pytesseract.get_languages(config='')
@@ -289,15 +318,15 @@ class VietnameseOCRService:
             
             # Check for Vietnamese language data
             if 'vie' not in languages:
-                logger.warning("⚠️ Vietnamese language data not found!")
+                logger.warning("[WARNING] Vietnamese language data not found!")
                 logger.warning("Using English OCR as fallback")
                 self.vietnamese_available = False
             else:
-                logger.info("✅ Vietnamese OCR language pack available")
+                logger.info("[OK] Vietnamese OCR language pack available")
                 self.vietnamese_available = True
             
             self.tesseract_available = True
-            logger.info("✅ OCR service initialized successfully")
+            logger.info("[OK] OCR service initialized successfully")
             
         except Exception as e:
             logger.error(f"Tesseract verification failed: {e}")
@@ -485,7 +514,7 @@ Issued by: Hanoi University of Science and Technology"""
                 ]
             }
             
-            logger.info(f"✅ Enhanced fallback OCR completed for {file_id}: {len(cleaned_text)} chars, simulated confidence: 85%")
+            logger.info(f"[OK] Enhanced fallback OCR completed for {file_id}: {len(cleaned_text)} chars, simulated confidence: 85%")
             
             return OCRResponse(
                 success=True,
@@ -603,7 +632,7 @@ Issued by: Hanoi University of Science and Technology"""
                 **cleaning_metadata
             }
             
-            logger.info(f"✅ Enhanced OCR completed for {file_id}: {len(cleaned_text)} chars, {avg_confidence:.1f}% confidence")
+            logger.info(f"[OK] Enhanced OCR completed for {file_id}: {len(cleaned_text)} chars, {avg_confidence:.1f}% confidence")
             
             return OCRResponse(
                 success=True,
@@ -710,7 +739,7 @@ async def process_ocr(
             try:
                 available_languages = pytesseract.get_languages(config='')
                 if language not in available_languages:
-                    logger.warning(f"⚠️ Language '{language}' not available. Available: {available_languages}")
+                    logger.warning(f"[WARNING] Language '{language}' not available. Available: {available_languages}")
                     # Use English as fallback but continue processing
                     language = "eng"
             except Exception as e:
@@ -726,14 +755,14 @@ async def process_ocr(
             clean_text=clean_text
         )
         
-        logger.info(f"✅ OCR processing completed for {file.filename}: success={result.success}")
+        logger.info(f"[OK] OCR processing completed for {file.filename}: success={result.success}")
         return result
         
     except HTTPException:
         # Re-raise HTTP exceptions as-is
         raise
     except Exception as e:
-        logger.error(f"❌ OCR endpoint error for {file.filename}: {e}")
+        logger.error(f"[ERROR] OCR endpoint error for {file.filename}: {e}")
         logger.error(f"Error type: {type(e).__name__}")
         
         # Return a more graceful error response instead of 500

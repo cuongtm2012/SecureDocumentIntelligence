@@ -15,7 +15,7 @@ import { EnhancedOCRViewer, OCRResult } from './enhanced-ocr-viewer';
 import { DocumentExportManager } from './document-export-manager';
 import { MultiLanguageOCR } from './multi-language-ocr';
 import { BatchOCRProcessor } from './batch-ocr-processor';
-import { PDFOCRViewer } from './pdf-ocr-viewer';
+import { OptimizedPDFOCRViewer } from './optimized-pdf-ocr-viewer';
 
 import { 
   Upload, 
@@ -684,17 +684,16 @@ export function AdvancedOCRDashboard() {
             />
           )}
         </DialogContent>
-      </Dialog>
-
-      {/* PDF OCR Viewer Modal */}
+      </Dialog>      {/* PDF OCR Viewer Modal */}
       {showPDFViewer && selectedFileForViewer && (
-        <PDFOCRViewer
+        <OptimizedPDFOCRViewer
           file={selectedFileForViewer}
+          documentId={parseInt(selectedFileForViewer.id)}
           onClose={() => {
             setShowPDFViewer(false);
             setSelectedFileForViewer(null);
           }}
-          onTextEdit={(fileId, newText, pageNumber) => {
+          onTextEdit={(fileId, newText) => {
             setUploadedFiles(prev => prev.map(file => 
               file.id === fileId && file.result
                 ? {

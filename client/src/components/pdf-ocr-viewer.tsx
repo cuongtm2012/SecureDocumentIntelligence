@@ -2,27 +2,17 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
-  ZoomIn, 
-  ZoomOut, 
-  RotateCw,
-  ChevronLeft,
-  ChevronRight,
-  Download,
-  Edit,
-  Save,
   X,
-  FileText,
-  Image as ImageIcon,
-  AlertTriangle,
+  Download,
   CheckCircle,
-  Copy,
+  AlertTriangle,
   RefreshCw
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { EnhancedPDFViewer } from "./enhanced-pdf-viewer";
+import { ScrollableTextPanel } from "./scrollable-text-panel";
 
 interface PDFOCRViewerProps {
   file: {

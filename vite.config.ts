@@ -27,6 +27,18 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    rollupOptions: {
+      // Ensure PDF.js worker is properly bundled
+      external: [],
+      output: {
+        // Keep worker files separate for proper loading
+        manualChunks: (id) => {
+          if (id.includes('pdf.worker')) {
+            return 'pdf-worker';
+          }
+        }
+      }
+    }
   },
   server: {
     fs: {
@@ -34,4 +46,14 @@ export default defineConfig({
       deny: ["**/.*"],
     },
   },
+  optimizeDeps: {
+    // Include pdfjs-dist in dependency optimization
+    include: ['pdfjs-dist'],
+    esbuildOptions: {
+      // Handle PDF.js worker properly
+      target: 'es2020'
+    }
+  },
+  // Add support for importing worker files
+  assetsInclude: ['**/*.worker.js', '**/*.worker.min.js']
 });

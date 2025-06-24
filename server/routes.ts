@@ -53,6 +53,128 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
+// Helper function to process file with fallback handling
+async function processFileWithFallback(filePath: string, document: any, documentId: number, userId: number, req: any, res: any) {
+  console.log(`🚀 Processing document ${document.originalName} with Python OCR Service...`);
+  
+  // Use Python OCR service for processing
+  const formData = new FormData();
+  const fileBuffer = await readFile(filePath);
+  formData.append('file', fileBuffer, {
+    filename: document.originalName,
+    contentType: document.mimeType
+  });
+  formData.append('language', 'vie');
+  formData.append('confidence_threshold', '60.0');
+
+  // Try to call Python OCR service with axios instead of fetch
+  let ocrResult;
+  try {
+    console.log('🔗 Calling Python OCR service with axios...');
+    
+    const response = await axios.post('http://localhost:8001/ocr/process', formData, {
+      headers: {
+        ...formData.getHeaders(),
+      },
+      timeout: 300000, // 5 minutes timeout for large files
+      maxContentLength: 50 * 1024 * 1024, // 50MB max
+    });
+
+    ocrResult = response.data;
+    console.log('✅ Python OCR service responded successfully');
+    
+  } catch (serviceError) {
+    console.warn('⚠️ Python OCR service unavailable, using fallback Tesseract processing...');
+    console.error('Service error:', serviceError instanceof Error ? serviceError.message : serviceError);
+    
+    // Fallback to local Tesseract processing for images
+    if (document.mimeType?.startsWith('image/')) {
+      const { createWorker } = await import('tesseract.js');
+      const sharp = await import('sharp');
+      
+      // Enhanced image preprocessing
+      const processedImageBuffer = await sharp.default(fileBuffer)
+        .resize({ width: 2000, height: 2000, fit: 'inside', withoutEnlargement: true })
+        .rotate()
+        .greyscale()
+        .normalize()
+        .sharpen({ sigma: 1, m1: 0.5, m2: 2 })
+        .threshold(128)
+        .png({ quality: 100 })
+        .toBuffer();
+
+      const worker = await createWorker(['vie', 'eng'], 1, {
+        logger: m => console.log(`Tesseract: ${m.status} - ${m.progress}`)
+      });
+      
+      await worker.setParameters({
+        'preserve_interword_spaces': '1'
+      });
+
+      const { data: { text, confidence: tessConfidence } } = await worker.recognize(processedImageBuffer);
+      await worker.terminate();
+
+      // Create result in Python OCR format
+      ocrResult = {
+        success: true,
+        file_id: document.originalName,
+        text: text,
+        confidence: tessConfidence,
+        page_count: 1,
+        processing_time: 2.0,
+        metadata: {
+          character_count: text.length,
+          word_count: text.split(/\s+/).filter(word => word.length > 0).length,
+          language: 'vie',
+          confidence_threshold: 60.0,
+          processing_timestamp: new Date().toISOString(),
+          file_size_bytes: document.fileSize,
+          processing_mode: 'fallback-tesseract',
+          note: 'Processed with local Tesseract (Python service unavailable)'
+        }
+      };
+    }
+  }
+
+  if (!ocrResult || !ocrResult.success) {
+    throw new Error('OCR processing failed: ' + (ocrResult?.error || 'Unknown error'));
+  }
+
+  // Extract data from Python OCR result
+  const extractedText = ocrResult.text || '';
+  const confidence = (ocrResult.confidence || 0) / 100; // Convert to 0-1 range
+  const structuredData = {
+    pageCount: ocrResult.page_count || 1,
+    characterCount: ocrResult.metadata?.character_count || extractedText.length,
+    wordCount: ocrResult.metadata?.word_count || extractedText.split(/\s+/).filter((word: string) => word.length > 0).length,
+    language: ocrResult.metadata?.language || 'vie',
+    processingMode: ocrResult.metadata?.processing_mode || 'python-ocr',
+    processingTime: ocrResult.processing_time || 0,
+    ...extractStructuredData(extractedText)
+  };
+
+  // Update document with results
+  await storage.updateDocument(documentId, {
+    processingStatus: "completed",
+    processingCompletedAt: new Date().toISOString(),
+    confidence,
+    extractedText,
+    structuredData: JSON.stringify(structuredData),
+  });
+
+  // Log successful processing
+  await storage.createAuditLog({
+    userId,
+    action: `Document processed with Python OCR: ${document.originalName} (${structuredData.pageCount} pages, ${Math.round(confidence * 100)}% confidence)`,
+    documentId: document.id,
+    ipAddress: req.ip,
+    userAgent: req.get('User-Agent'),
+  });
+
+  const updatedDocument = await storage.getDocument(documentId);
+  res.json(updatedDocument);
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Initialize database with default user
   await initializeDatabase();
@@ -149,133 +271,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.updateDocument(documentId, {
         processingStatus: "processing",
         processingStartedAt: new Date().toISOString(),
-      });
-
-      const filePath = path.join(uploadsDir, document.filename);
+      });      const filePath = path.join(uploadsDir, document.filename);
       
-      try {
-        console.log(`🚀 Processing document ${document.originalName} with Python OCR Service...`);
+      // Check if file exists, if not try to find an alternative
+      if (!fs.existsSync(filePath)) {
+        console.log(`⚠️  File not found: ${filePath}`);
         
-        // Use Python OCR service for processing
-        const formData = new FormData();
-        const fileBuffer = await readFile(filePath);
-        formData.append('file', fileBuffer, {
-          filename: document.originalName,
-          contentType: document.mimeType
-        });
-        formData.append('language', 'vie');
-        formData.append('confidence_threshold', '60.0');
-
-        // Try to call Python OCR service with axios instead of fetch
-        let ocrResult;
-        try {
-          console.log('🔗 Calling Python OCR service with axios...');
+        // Try to find a file with the same original name
+        const files = fs.readdirSync(uploadsDir);
+        const alternativeFile = files.find(file => 
+          file.includes(document.originalName.replace(/\s+/g, ' ')) ||
+          file.endsWith(document.originalName)
+        );
+        
+        if (alternativeFile) {
+          const alternativePath = path.join(uploadsDir, alternativeFile);
+          console.log(`🔄 Found alternative file: ${alternativeFile}`);
           
-          const response = await axios.post('http://localhost:8001/ocr/process', formData, {
-            headers: {
-              ...formData.getHeaders(),
-            },
-            timeout: 300000, // 5 minutes timeout for large files
-            maxContentLength: 50 * 1024 * 1024, // 50MB max
-          });
-
-          if (response.data.success) {
-            console.log('✅ Python OCR service response received');
-            ocrResult = response.data;
-          } else {
-            throw new Error(`Python OCR service error: ${response.data.error || 'Unknown error'}`);
-          }
-          
-        } catch (pythonError: any) {
-          console.error('❌ Python OCR service failed:', pythonError.message);
-          console.log('🔄 Falling back to local Tesseract processing...');
-          
-          // Fallback to local Tesseract processing
-          if (document.mimeType === 'application/pdf') {
-            throw new Error('PDF processing requires Python OCR service. Please ensure the Python service is running on http://localhost:8001');
-          }
-          
-          // Process images with local Tesseract
-          const processedImageBuffer = await sharp(filePath)
-            .resize({ width: 2000, withoutEnlargement: true })
-            .rotate()
-            .greyscale()
-            .normalize()
-            .sharpen({ sigma: 1, m1: 0.5, m2: 2 })
-            .threshold(128)
-            .png({ quality: 100 })
-            .toBuffer();
-
-          const worker = await createWorker(['vie', 'eng'], 1, {
-            logger: m => console.log(`Tesseract: ${m.status} - ${m.progress}`)
+          // Update the document record with the correct filename
+          await storage.updateDocument(documentId, {
+            filename: alternativeFile
           });
           
-          await worker.setParameters({
-            'preserve_interword_spaces': '1'
-          });
-
-          const { data: { text, confidence: tessConfidence } } = await worker.recognize(processedImageBuffer);
-          await worker.terminate();
-
-          // Create result in Python OCR format
-          ocrResult = {
-            success: true,
-            file_id: document.originalName,
-            text: text,
-            confidence: tessConfidence,
-            page_count: 1,
-            processing_time: 2.0,
-            metadata: {
-              character_count: text.length,
-              word_count: text.split(/\s+/).filter(word => word.length > 0).length,
-              language: 'vie',
-              confidence_threshold: 60.0,
-              processing_timestamp: new Date().toISOString(),
-              file_size_bytes: document.fileSize,
-              processing_mode: 'fallback-tesseract',
-              note: 'Processed with local Tesseract (Python service unavailable)'
-            }
-          };
+          // Use the alternative file path
+          const altFilePath = alternativePath;
+          return await processFileWithFallback(altFilePath, document, documentId, userId, req, res);
+        } else {
+          throw new Error(`File not found: ${document.filename} and no alternative found`);
         }
-
-        if (!ocrResult || !ocrResult.success) {
-          throw new Error('OCR processing failed: ' + (ocrResult?.error || 'Unknown error'));
-        }
-
-        // Extract data from Python OCR result
-        const extractedText = ocrResult.text || '';
-        const confidence = (ocrResult.confidence || 0) / 100; // Convert to 0-1 range
-        const structuredData = {
-          pageCount: ocrResult.page_count || 1,
-          characterCount: ocrResult.metadata?.character_count || extractedText.length,
-          wordCount: ocrResult.metadata?.word_count || extractedText.split(/\s+/).filter((word: string) => word.length > 0).length,
-          language: ocrResult.metadata?.language || 'vie',
-          processingMode: ocrResult.metadata?.processing_mode || 'python-ocr',
-          processingTime: ocrResult.processing_time || 0,
-          ...extractStructuredData(extractedText)
-        };
-
-        // Update document with results
-        await storage.updateDocument(documentId, {
-          processingStatus: "completed",
-          processingCompletedAt: new Date().toISOString(),
-          confidence,
-          extractedText,
-          structuredData: JSON.stringify(structuredData),
-        });
-
-        // Log successful processing
-        await storage.createAuditLog({
-          userId,
-          action: `Document processed with Python OCR: ${document.originalName} (${structuredData.pageCount} pages, ${Math.round(confidence * 100)}% confidence)`,
-          documentId: document.id,
-          ipAddress: req.ip,
-          userAgent: req.get('User-Agent'),
-        });
-
-        const updatedDocument = await storage.getDocument(documentId);
-        res.json(updatedDocument);
-
+      }      try {
+        return await processFileWithFallback(filePath, document, documentId, userId, req, res);
       } catch (processingError) {
         console.error('Processing error:', processingError);
         
@@ -732,6 +757,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Image error:', error);
       res.status(500).json({ message: "Failed to get image" });
+    }  });
+
+  // Get raw document file (for react-pdf and direct file access)
+  app.get("/api/documents/:id/raw", async (req, res) => {
+    try {
+      const documentId = parseInt(req.params.id);
+      const userId = (req as any).user.id;
+      
+      const document = await storage.getDocument(documentId);
+      if (!document || document.userId !== userId) {
+        return res.status(404).json({ message: "Document not found" });
+      }
+
+      const filePath = path.join(uploadsDir, document.filename);
+      
+      if (!fs.existsSync(filePath)) {
+        console.error(`Raw file not found: ${filePath}`);
+        return res.status(404).json({ message: "File not found" });
+      }
+
+      try {
+        // Set appropriate headers for the file type
+        res.setHeader('Content-Type', document.mimeType);
+        res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        
+        // Add CORS headers for react-pdf
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        
+        // Stream the file
+        const fileBuffer = await readFile(filePath);
+        res.send(fileBuffer);
+        
+      } catch (error) {
+        console.error('Raw file serve error:', error);
+        res.status(500).json({ message: "Failed to serve file" });
+      }
+    } catch (error) {
+      console.error('Raw file error:', error);
+      res.status(500).json({ message: "Failed to get file" });
     }
   });
 
