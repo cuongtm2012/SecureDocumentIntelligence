@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -35,33 +35,7 @@ import {
   Database
 } from 'lucide-react';
 import { nanoid } from 'nanoid';
-
-interface SystemStats {
-  totalDocuments: number;
-  completedDocuments: number;
-  processingDocuments: number;
-  failedDocuments: number;
-  averageConfidence: number;
-  averageProcessingTime: number;
-}
-
-interface ProcessingMetrics {
-  todayProcessed: number;
-  weeklyProcessed: number;
-  monthlyProcessed: number;
-  successRate: number;
-}
-
-interface BatchJobComplete {
-  id: string;
-  filename: string;
-  status: 'queued' | 'processing' | 'completed' | 'failed' | 'paused';
-  ocrResult?: {
-    text: string;
-    confidence: number;
-    language: string;
-  };
-}
+import { useToast } from "@/hooks/use-toast";
 
 export function AdvancedOCRDashboard() {
   const [activeTab, setActiveTab] = useState('upload');
@@ -69,13 +43,16 @@ export function AdvancedOCRDashboard() {
   const [selectedResult, setSelectedResult] = useState<OCRResult | null>(null);
   const [showViewer, setShowViewer] = useState(false);
   const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
-  const [batchFiles, setBatchFiles] = useState<File[]>([]);  const [showLanguageOCR, setShowLanguageOCR] = useState(false);
+  const [batchFiles, setBatchFiles] = useState<File[]>([]);
+  const [showLanguageOCR, setShowLanguageOCR] = useState(false);
   const [currentDocument, setCurrentDocument] = useState<any>(null);
   const [showPDFViewer, setShowPDFViewer] = useState(false);
   const [selectedFileForViewer, setSelectedFileForViewer] = useState<UploadedFile | null>(null);
+  
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
-  // Fetch documents from backend
+  // Fetch real documents from backend
   const { data: documents = [], isLoading } = useQuery({
     queryKey: ['documents'],
     queryFn: async () => {
@@ -83,18 +60,13 @@ export function AdvancedOCRDashboard() {
       if (!response.ok) throw new Error('Failed to fetch documents');
       return response.json();
     },
-    refetchInterval: 2000, // Refresh every 2 seconds for real-time updates
-  });
-
-  // Fetch system statistics
-  const { data: systemStats } = useQuery<SystemStats>({
-    queryKey: ['system-stats'],
-    queryFn: async () => {
-      const response = await fetch('/api/system/stats');
-      if (!response.ok) throw new Error('Failed to fetch system stats');
-      return response.json();
+    refetchInterval: (data) => {
+      // Only poll if there are documents being processed
+      // Ensure data is an array before calling .some()
+      if (!Array.isArray(data)) return false;
+      const hasProcessing = data.some((d: any) => d.processingStatus === 'processing');
+      return hasProcessing ? 5000 : false; // Poll every 5 seconds if processing, otherwise don't poll
     },
-    refetchInterval: 5000,
   });
 
   // Upload mutation
@@ -109,7 +81,7 @@ export function AdvancedOCRDashboard() {
           body: formData,
         });
         
-        if (!response.ok) throw new Error('Upload failed');
+        if (!response.ok) throw new Error(`Upload failed for ${file.name}`);
         return response.json();
       });
       
@@ -117,6 +89,17 @@ export function AdvancedOCRDashboard() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['documents'] });
+      toast({
+        title: "Upload successful",
+        description: "Files uploaded and ready for processing.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Upload failed",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -131,6 +114,17 @@ export function AdvancedOCRDashboard() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['documents'] });
+      toast({
+        title: "Processing completed",
+        description: "OCR processing completed successfully.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Processing failed",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -150,45 +144,26 @@ export function AdvancedOCRDashboard() {
     setUploadedFiles(prev => [...prev, ...newFiles]);
 
     try {
-      // Simulate upload progress
-      newFiles.forEach(file => {
-        const interval = setInterval(() => {
-          setUploadedFiles(prev => prev.map(f => 
-            f.id === file.id 
-              ? { ...f, uploadProgress: Math.min(f.uploadProgress + 10, 100) }
-              : f
-          ));
-        }, 200);
-
-        setTimeout(() => {
-          clearInterval(interval);
-          setUploadedFiles(prev => prev.map(f => 
-            f.id === file.id 
-              ? { ...f, status: 'queued', uploadProgress: 100 }
-              : f
-          ));
-        }, 2000);
-      });
-
       await uploadMutation.mutateAsync(files);
+      
+      // Update files to queued status
+      setUploadedFiles(prev => prev.map(f => 
+        newFiles.some(nf => nf.id === f.id) 
+          ? { ...f, status: 'queued', uploadProgress: 100 }
+          : f
+      ));
     } catch (error) {
-      newFiles.forEach(file => {
-        setUploadedFiles(prev => prev.map(f => 
-          f.id === file.id 
-            ? { ...f, status: 'error', error: 'Upload failed' }
-            : f
-        ));
-      });
+      console.error('Upload error:', error);
+      // Update files to error status
+      setUploadedFiles(prev => prev.map(f => 
+        newFiles.some(nf => nf.id === f.id) 
+          ? { ...f, status: 'error', error: 'Upload failed' }
+          : f
+      ));
     }
   };
 
-  // Batch upload handler
-  const handleBatchUpload = (files: File[]) => {
-    setBatchFiles(files);
-    setActiveTab('batch');
-  };
-
-  // Process file handler
+  // Process uploaded file
   const handleFileProcess = async (fileId: string) => {
     const file = uploadedFiles.find(f => f.id === fileId);
     if (!file) return;
@@ -199,59 +174,30 @@ export function AdvancedOCRDashboard() {
         : f
     ));
 
-    // Simulate processing progress
-    const interval = setInterval(() => {
-      setUploadedFiles(prev => prev.map(f => 
-        f.id === fileId 
-          ? { ...f, processingProgress: Math.min(f.processingProgress + 5, 95) }
-          : f
-      ));
-    }, 500);
-
     try {
+      // Find corresponding document and process it
       const document = documents.find((d: any) => d.originalName === file.name);
       if (document) {
-        await processMutation.mutateAsync(document.id.toString());
+        const result = await processMutation.mutateAsync(document.id.toString());
         
-        clearInterval(interval);        setUploadedFiles(prev => prev.map(f => 
+        setUploadedFiles(prev => prev.map(f => 
           f.id === fileId 
             ? { 
                 ...f, 
                 status: 'completed', 
                 processingProgress: 100,
                 result: {
-                  extractedText: document.extractedText || 'Sample extracted text from OCR processing...',
-                  confidence: document.confidence || 0.85,
-                  pageCount: file.type === 'pdf' ? 3 : undefined,
-                  wordCount: (document.extractedText || 'Sample text').split(/\s+/).filter((word: string) => word.length > 0).length,
-                  characterCount: (document.extractedText || 'Sample text').length,
-                  pages: file.type === 'pdf' ? [
-                    {
-                      pageNumber: 1,
-                      text: document.extractedText || 'First page content...',
-                      confidence: document.confidence || 0.85,
-                      imageUrl: `/api/documents/${document.id}/pdf?page=1`
-                    },
-                    {
-                      pageNumber: 2,
-                      text: 'Second page content...',
-                      confidence: 0.82,
-                      imageUrl: `/api/documents/${document.id}/pdf?page=2`
-                    },
-                    {
-                      pageNumber: 3,
-                      text: 'Third page content...',
-                      confidence: 0.88,
-                      imageUrl: `/api/documents/${document.id}/pdf?page=3`
-                    }
-                  ] : undefined
+                  extractedText: result.extractedText || '',
+                  confidence: result.confidence || 0,
+                  pageCount: result.pageCount,
+                  wordCount: result.extractedText ? result.extractedText.split(/\s+/).filter((word: string) => word.length > 0).length : 0,
+                  characterCount: result.extractedText ? result.extractedText.length : 0,
                 }
               }
             : f
         ));
       }
     } catch (error) {
-      clearInterval(interval);
       setUploadedFiles(prev => prev.map(f => 
         f.id === fileId 
           ? { ...f, status: 'error', error: 'Processing failed' }
@@ -260,42 +206,11 @@ export function AdvancedOCRDashboard() {
     }
   };
 
-  // Advanced language OCR handler
-  const handleAdvancedOCR = (document: any) => {
-    setCurrentDocument(document);
-    setShowLanguageOCR(true);
-  };
-
-  // OCR completion handler for multi-language
-  const handleOCRComplete = (result: {
-    text: string;
-    confidence: number;
-    language: string;
-    detectedLanguages: any[];
-  }) => {
-    console.log('OCR completed:', result);
-    setShowLanguageOCR(false);
-    // Update document with results
-    queryClient.invalidateQueries({ queryKey: ['documents'] });
-  };
-
-  // Batch job completion handler
-  const handleBatchJobComplete = (job: BatchJobComplete) => {
-    console.log('Batch job completed:', job);
-  };
-
-  // Batch completion handler
-  const handleBatchComplete = (stats: any) => {
-    console.log('Batch processing completed:', stats);
-    setActiveTab('results');
-  };
-
-  // File removal handler
+  // File handlers
   const handleFileRemove = (fileId: string) => {
     setUploadedFiles(prev => prev.filter(f => f.id !== fileId));
   };
 
-  // File cancellation handler
   const handleFileCancel = (fileId: string) => {
     setUploadedFiles(prev => prev.map(f => 
       f.id === fileId 
@@ -303,7 +218,12 @@ export function AdvancedOCRDashboard() {
         : f
     ));
   };
-  // View uploaded file result handler
+
+  const handleBatchUpload = (files: File[]) => {
+    setBatchFiles(files);
+    setActiveTab('batch');
+  };
+
   const handleViewUploadedFileResult = (file: UploadedFile) => {
     setSelectedFileForViewer(file);
     setShowPDFViewer(true);
@@ -329,13 +249,30 @@ export function AdvancedOCRDashboard() {
 
   // Text editing handler
   const handleTextEdit = (resultId: string, newText: string, pageNumber?: number) => {
-    // Update the text in the backend
     console.log('Updating text for document:', resultId, newText, pageNumber);
   };
 
   // Export handler
   const handleExport = (resultId: string, format: 'txt' | 'pdf' | 'docx') => {
     window.open(`/api/documents/${resultId}/export?format=${format}`, '_blank');
+  };
+
+  // Advanced language OCR handler
+  const handleAdvancedOCR = (document: any) => {
+    setCurrentDocument(document);
+    setShowLanguageOCR(true);
+  };
+
+  // OCR completion handler for multi-language
+  const handleOCRComplete = (result: {
+    text: string;
+    confidence: number;
+    language: string;
+    detectedLanguages: any[];
+  }) => {
+    console.log('OCR completed:', result);
+    setShowLanguageOCR(false);
+    queryClient.invalidateQueries({ queryKey: ['documents'] });
   };
 
   const getStatusIcon = (status: string) => {
@@ -346,6 +283,7 @@ export function AdvancedOCRDashboard() {
       default: return <Clock className="h-4 w-4 text-gray-500" />;
     }
   };
+
   // Convert documents to OCR results for export
   const ocrResults = documents
     .filter((doc: any) => doc.extractedText)
@@ -396,7 +334,7 @@ export function AdvancedOCRDashboard() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-blue-100 text-sm">Total Documents</p>
-                  <p className="text-2xl font-bold">{systemStats?.totalDocuments || documents.length}</p>
+                  <p className="text-2xl font-bold">{documents.length}</p>
                 </div>
                 <FileText className="h-8 w-8 text-blue-200" />
               </div>
@@ -408,8 +346,8 @@ export function AdvancedOCRDashboard() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-green-100 text-sm">Completed</p>
-                  <p className="text-2xl font-bold">                    {systemStats?.completedDocuments || 
-                     documents.filter((d: any) => d.processingStatus === 'completed').length}
+                  <p className="text-2xl font-bold">
+                    {documents.filter((d: any) => d.processingStatus === 'completed').length}
                   </p>
                 </div>
                 <CheckCircle className="h-8 w-8 text-green-200" />
@@ -422,8 +360,8 @@ export function AdvancedOCRDashboard() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-yellow-100 text-sm">Processing</p>
-                  <p className="text-2xl font-bold">                    {systemStats?.processingDocuments || 
-                     documents.filter((d: any) => d.processingStatus === 'processing').length}
+                  <p className="text-2xl font-bold">
+                    {documents.filter((d: any) => d.processingStatus === 'processing').length}
                   </p>
                 </div>
                 <Activity className="h-8 w-8 text-yellow-200" />
@@ -437,9 +375,9 @@ export function AdvancedOCRDashboard() {
                 <div>
                   <p className="text-purple-100 text-sm">Avg. Confidence</p>
                   <p className="text-2xl font-bold">
-                    {systemStats?.averageConfidence 
-                      ? Math.round(systemStats.averageConfidence * 100) + '%'
-                      : '85%'}
+                    {documents.length > 0 
+                      ? Math.round(documents.reduce((acc: number, doc: any) => acc + (doc.confidence || 0), 0) / documents.length * 100) + '%'
+                      : '0%'}
                   </p>
                 </div>
                 <TrendingUp className="h-8 w-8 text-purple-200" />
@@ -488,7 +426,8 @@ export function AdvancedOCRDashboard() {
           {/* Upload Tab */}
           <TabsContent value="upload" className="space-y-6">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2">                <EnhancedUploadManager
+              <div className="lg:col-span-2">
+                <EnhancedUploadManager
                   onFileUpload={handleFileUpload}
                   onFileRemove={handleFileRemove}
                   onFileProcess={handleFileProcess}
@@ -512,9 +451,13 @@ export function AdvancedOCRDashboard() {
                     <div className="space-y-2">
                       <div className="flex justify-between text-sm">
                         <span>Success Rate</span>
-                        <span className="font-medium">94%</span>
+                        <span className="font-medium">
+                          {documents.length > 0 
+                            ? Math.round(documents.filter((d: any) => d.processingStatus === 'completed').length / documents.length * 100) + '%'
+                            : '0%'}
+                        </span>
                       </div>
-                      <Progress value={94} className="h-2" />
+                      <Progress value={documents.length > 0 ? documents.filter((d: any) => d.processingStatus === 'completed').length / documents.length * 100 : 0} className="h-2" />
                     </div>
                     
                     <div className="space-y-2">
@@ -527,12 +470,12 @@ export function AdvancedOCRDashboard() {
                     
                     <div className="grid grid-cols-2 gap-4 pt-2">
                       <div className="text-center">
-                        <p className="text-2xl font-bold text-blue-600">127</p>
+                        <p className="text-2xl font-bold text-blue-600">{documents.filter((d: any) => new Date(d.uploadedAt).toDateString() === new Date().toDateString()).length}</p>
                         <p className="text-xs text-gray-500">Today</p>
                       </div>
                       <div className="text-center">
-                        <p className="text-2xl font-bold text-green-600">892</p>
-                        <p className="text-xs text-gray-500">This Week</p>
+                        <p className="text-2xl font-bold text-green-600">{documents.length}</p>
+                        <p className="text-xs text-gray-500">Total</p>
                       </div>
                     </div>
                   </CardContent>
@@ -580,8 +523,11 @@ export function AdvancedOCRDashboard() {
           <TabsContent value="batch" className="space-y-6">
             <BatchOCRProcessor
               files={batchFiles}
-              onJobComplete={handleBatchJobComplete}
-              onAllJobsComplete={handleBatchComplete}
+              onJobComplete={(job) => console.log('Batch job completed:', job)}
+              onAllJobsComplete={(stats) => {
+                console.log('Batch processing completed:', stats);
+                setActiveTab('results');
+              }}
             />
           </TabsContent>
 
@@ -691,33 +637,6 @@ export function AdvancedOCRDashboard() {
 
               <Card>
                 <CardHeader>
-                  <CardTitle>Language Distribution</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm">English</span>
-                      <Badge>65%</Badge>
-                    </div>
-                    <Progress value={65} className="h-2" />
-                    
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm">Vietnamese</span>
-                      <Badge>25%</Badge>
-                    </div>
-                    <Progress value={25} className="h-2" />
-                    
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm">Chinese</span>
-                      <Badge>10%</Badge>
-                    </div>
-                    <Progress value={10} className="h-2" />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
                   <CardTitle>Quality Metrics</CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -725,25 +644,25 @@ export function AdvancedOCRDashboard() {
                     <div>
                       <div className="flex justify-between text-sm mb-1">
                         <span>Avg. Confidence</span>
-                        <span>85%</span>
+                        <span>
+                          {documents.length > 0 
+                            ? Math.round(documents.reduce((acc: number, doc: any) => acc + (doc.confidence || 0), 0) / documents.length * 100) + '%'
+                            : '0%'}
+                        </span>
                       </div>
-                      <Progress value={85} className="h-2" />
+                      <Progress value={documents.length > 0 ? documents.reduce((acc: number, doc: any) => acc + (doc.confidence || 0), 0) / documents.length * 100 : 0} className="h-2" />
                     </div>
                     
                     <div>
                       <div className="flex justify-between text-sm mb-1">
                         <span>Success Rate</span>
-                        <span>94%</span>
+                        <span>
+                          {documents.length > 0 
+                            ? Math.round(documents.filter((d: any) => d.processingStatus === 'completed').length / documents.length * 100) + '%'
+                            : '0%'}
+                        </span>
                       </div>
-                      <Progress value={94} className="h-2" />
-                    </div>
-                    
-                    <div>
-                      <div className="flex justify-between text-sm mb-1">
-                        <span>Processing Speed</span>
-                        <span>2.3s avg</span>
-                      </div>
-                      <Progress value={75} className="h-2" />
+                      <Progress value={documents.length > 0 ? documents.filter((d: any) => d.processingStatus === 'completed').length / documents.length * 100 : 0} className="h-2" />
                     </div>
                   </div>
                 </CardContent>
@@ -776,7 +695,6 @@ export function AdvancedOCRDashboard() {
             setSelectedFileForViewer(null);
           }}
           onTextEdit={(fileId, newText, pageNumber) => {
-            // Update the file's extracted text
             setUploadedFiles(prev => prev.map(file => 
               file.id === fileId && file.result
                 ? {
@@ -791,10 +709,8 @@ export function AdvancedOCRDashboard() {
             console.log('Text updated for file:', fileId, 'Page:', pageNumber);
           }}
           onExport={(fileId, format) => {
-            // Handle export
             const file = uploadedFiles.find(f => f.id === fileId);
             if (file) {
-              // Create download URL for the export
               const exportData = file.result?.extractedText || '';
               const blob = new Blob([exportData], { type: 'text/plain' });
               const url = URL.createObjectURL(blob);

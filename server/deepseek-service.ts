@@ -183,35 +183,88 @@ Guidelines:
 
   private parseDeepSeekResponse(response: string): Omit<DeepSeekOCRResult, 'processingTime'> {
     try {
-      // Try to extract JSON from the response
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      console.log('Raw DeepSeek response:', response.substring(0, 500) + '...');
+      
+      // Clean the response first
+      let cleanedResponse = response.trim();
+      
+      // Remove markdown code blocks if present
+      cleanedResponse = cleanedResponse.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+      cleanedResponse = cleanedResponse.replace(/^```\s*/, '').replace(/\s*```$/, '');
+      
+      // Find JSON content between braces
+      const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}/);
+      
       if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        return {
-          extractedText: parsed.extractedText || '',
-          confidence: parsed.confidence || 0.8,
-          structuredData: parsed.structuredData || {}
-        };
+        let jsonString = jsonMatch[0];
+        
+        // Fix common JSON issues
+        jsonString = jsonString
+          .replace(/,\s*}/g, '}')  // Remove trailing commas
+          .replace(/,\s*]/g, ']')  // Remove trailing commas in arrays
+          .replace(/([{,]\s*)(\w+):/g, '$1"$2":')  // Add quotes to unquoted keys
+          .replace(/:\s*'([^']*?)'/g, ': "$1"')  // Replace single quotes with double quotes
+          .replace(/\\n/g, '\\n')  // Ensure proper newline escaping
+          .replace(/[\x00-\x1F\x7F-\x9F]/g, '');  // Remove control characters
+        
+        try {
+          const parsed = JSON.parse(jsonString);
+          
+          return {
+            extractedText: parsed.extractedText || parsed.text || '',
+            confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.8,
+            structuredData: parsed.structuredData || parsed.data || {}
+          };
+        } catch (parseError) {
+          console.error('JSON parsing failed:', parseError);
+          console.error('Attempted to parse:', jsonString.substring(0, 200));
+          
+          // Try to extract just the text content
+          const textMatch = response.match(/"extractedText":\s*"([^"]*?)"/);
+          const extractedText = textMatch ? textMatch[1] : response.substring(0, 1000);
+          
+          return {
+            extractedText: extractedText,
+            confidence: 0.7,
+            structuredData: {
+              documentType: 'Unknown',
+              classification: 'Unclassified',
+              error: 'JSON parsing failed, extracted partial content'
+            }
+          };
+        }
       }
       
-      // Fallback: treat entire response as extracted text
+      // If no JSON found, treat as plain text response
+      console.log('No JSON found in response, treating as plain text');
       return {
-        extractedText: response,
-        confidence: 0.7,
-        structuredData: {
-          documentType: 'Unknown',
-          classification: 'Unclassified'
-        }
-      };
-    } catch (error) {
-      console.error('Error parsing DeepSeek response:', error);
-      return {
-        extractedText: response,
+        extractedText: cleanedResponse.substring(0, 2000), // Limit text length
         confidence: 0.6,
         structuredData: {
           documentType: 'Unknown',
           classification: 'Unclassified',
-          error: 'Failed to parse structured data'
+          processingNote: 'Response was plain text, not JSON'
+        }
+      };
+      
+    } catch (error) {
+      console.error('Error parsing DeepSeek response:', error);
+      console.error('Original response length:', response.length);
+      
+      // Fallback: extract any readable text
+      const fallbackText = response
+        .replace(/[^\x20-\x7E\u00A0-\uFFFF]/g, ' ') // Remove non-printable chars
+        .replace(/\s+/g, ' ')
+        .trim()
+        .substring(0, 1000);
+      
+      return {
+        extractedText: fallbackText || 'Failed to extract text from response',
+        confidence: 0.5,
+        structuredData: {
+          documentType: 'Unknown',
+          classification: 'Unclassified',
+          error: `Parsing error: ${error instanceof Error ? error.message : 'Unknown error'}`
         }
       };
     }

@@ -72,9 +72,9 @@ export function PDFOCRViewer({ file, onClose, onTextEdit, onExport }: PDFOCRView
   // Simulate PDF/Image URL for display
   const getDocumentUrl = () => {
     if (file.type === 'pdf') {
-      return `/api/documents/${file.id}/pdf?page=${currentPage}`;
+      return `/api/documents/${file.id}/pdf?page=${currentPage}&t=${Date.now()}`;
     } else {
-      return `/api/documents/${file.id}/image`;
+      return `/api/documents/${file.id}/image?t=${Date.now()}`;
     }
   };
 
@@ -175,6 +175,70 @@ export function PDFOCRViewer({ file, onClose, onTextEdit, onExport }: PDFOCRView
       );
     });
   };
+
+  // Handle image loading errors with better fallback
+  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.currentTarget;
+    console.error(`Failed to load document image: ${img.src}`);
+    
+    // Unicode-safe base64 encoding function
+    const unicodeSafeBase64 = (str: string) => {
+      try {
+        // First encode to UTF-8, then to base64
+        return btoa(unescape(encodeURIComponent(str)));
+      } catch (error) {
+        // Fallback: remove non-Latin1 characters
+        const latin1Safe = str.replace(/[^\x00-\xFF]/g, '?');
+        return btoa(latin1Safe);
+      }
+    };
+    
+    // Create a safe filename for display (remove special characters)
+    const safeFileName = file.name.replace(/[^\w\s\-\.]/g, '_');
+    
+    // Create a more informative fallback SVG
+    const fallbackSvg = `data:image/svg+xml;base64,${unicodeSafeBase64(`
+      <svg width="600" height="800" xmlns="http://www.w3.org/2000/svg">
+        <rect width="600" height="800" fill="#f8f9fa" stroke="#dee2e6" stroke-width="2"/>
+        <rect x="30" y="30" width="540" height="60" fill="#e9ecef" rx="8"/>
+        <text x="300" y="65" text-anchor="middle" font-family="Arial" font-size="16" fill="#495057">
+          ${safeFileName}
+        </text>
+        
+        <circle cx="300" cy="300" r="60" fill="#ffc107" opacity="0.3"/>
+        <text x="300" y="290" text-anchor="middle" font-family="Arial" font-size="48" fill="#ffc107">⚠</text>
+        
+        <text x="300" y="400" text-anchor="middle" font-family="Arial" font-size="18" fill="#dc3545">
+          Document Preview Unavailable
+        </text>
+        <text x="300" y="430" text-anchor="middle" font-family="Arial" font-size="14" fill="#6c757d">
+          ${file.type === 'pdf' ? 'PDF processing required' : 'Image loading failed'}
+        </text>
+        <text x="300" y="460" text-anchor="middle" font-family="Arial" font-size="12" fill="#868e96">
+          Click "Process" to extract text content
+        </text>
+        
+        <rect x="200" y="500" width="200" height="40" fill="#007bff" rx="4"/>
+        <text x="300" y="525" text-anchor="middle" font-family="Arial" font-size="14" fill="white">
+          Process Document
+        </text>
+        
+        <text x="300" y="600" text-anchor="middle" font-family="Arial" font-size="12" fill="#adb5bd">
+          File size: ${(file.size / 1024 / 1024).toFixed(2)} MB
+        </text>
+        ${file.type === 'pdf' ? `
+        <text x="300" y="620" text-anchor="middle" font-family="Arial" font-size="12" fill="#adb5bd">
+          Page ${currentPage} of ${totalPages}
+        </text>` : ''}
+      </svg>
+    `)}`;
+    
+    img.src = fallbackSvg;
+  };
+
+  // Check if document has been processed
+  const isProcessed = file.result && file.result.extractedText;
+  const documentUrl = getDocumentUrl();
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -295,14 +359,11 @@ export function PDFOCRViewer({ file, onClose, onTextEdit, onExport }: PDFOCRView
               >
                 <div className="border border-gray-300 rounded-lg overflow-hidden shadow-lg">
                   <img
-                    src={getDocumentUrl()}
+                    src={documentUrl}
                     alt={`${file.name} - Page ${currentPage}`}
                     className="max-w-full h-auto"
                     style={{ maxHeight: '800px' }}
-                    onError={(e) => {
-                      // Fallback to placeholder if image fails to load
-                      e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjYwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjYwMCIgZmlsbD0iI2Y3ZjdmNyIvPjx0ZXh0IHg9IjIwMCIgeT0iMzAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTYiIGZpbGw9IiM5OTkiPkRvY3VtZW50IFByZXZpZXc8L3RleHQ+PC9zdmc+';
-                    }}
+                    onError={handleImageError}
                   />
                 </div>
               </div>
@@ -341,11 +402,11 @@ export function PDFOCRViewer({ file, onClose, onTextEdit, onExport }: PDFOCRView
               </div>
             </div>
 
-            <ScrollArea className="flex-1" onScrollCapture={handleTextScroll}>
-              <div ref={textRef} className="p-4">
+            <ScrollArea className="flex-1">
+              <div ref={textRef} className="p-4 h-full max-h-full overflow-y-auto">
                 {!isEditing ? (
                   <div className="prose max-w-none">
-                    <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                    <div className="whitespace-pre-wrap text-sm leading-relaxed break-words min-h-0">
                       {highlightLowConfidenceWords(currentText)}
                     </div>
                   </div>
@@ -353,7 +414,7 @@ export function PDFOCRViewer({ file, onClose, onTextEdit, onExport }: PDFOCRView
                   <Textarea
                     value={editedText}
                     onChange={(e) => setEditedText(e.target.value)}
-                    className="min-h-[400px] resize-none"
+                    className="min-h-[400px] w-full resize-none"
                     placeholder="Edit the extracted text here..."
                   />
                 )}
