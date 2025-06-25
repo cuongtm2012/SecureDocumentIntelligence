@@ -2,9 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { pdfjs } from 'react-pdf';
-import { validatePDFWorker, getPDFWorkerSrc } from '@/lib/pdf-worker';
 import { AlertTriangle, CheckCircle, RefreshCw, ExternalLink } from 'lucide-react';
+
+// PDF.js worker URL - using official CDN
+const PDF_WORKER_URL = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 
 interface PDFDebugConsoleProps {
   documentId?: number;
@@ -12,7 +13,6 @@ interface PDFDebugConsoleProps {
 
 export function PDFDebugConsole({ documentId }: PDFDebugConsoleProps) {
   const [workerStatus, setWorkerStatus] = useState<'checking' | 'valid' | 'invalid' | 'error'>('checking');
-  const [workerSrc, setWorkerSrc] = useState<string>('');
   const [urlTests, setUrlTests] = useState<{
     raw: { status: string; url: string };
     pdf: { status: string; url: string };
@@ -32,16 +32,10 @@ export function PDFDebugConsole({ documentId }: PDFDebugConsoleProps) {
   const checkPDFWorker = async () => {
     try {
       setWorkerStatus('checking');
-      const currentWorker = getPDFWorkerSrc();
-      setWorkerSrc(currentWorker || 'Not configured');
       
-      if (!currentWorker) {
-        setWorkerStatus('invalid');
-        return;
-      }
-
-      const isValid = await validatePDFWorker();
-      setWorkerStatus(isValid ? 'valid' : 'invalid');
+      // Test if the PDF.js worker is accessible
+      const response = await fetch(PDF_WORKER_URL, { method: 'HEAD' });
+      setWorkerStatus(response.ok ? 'valid' : 'invalid');
     } catch (error) {
       console.error('Worker check failed:', error);
       setWorkerStatus('error');
@@ -53,7 +47,9 @@ export function PDFDebugConsole({ documentId }: PDFDebugConsoleProps) {
 
     const baseUrl = import.meta.env.VITE_API_URL || window.location.origin;
     const rawUrl = `${baseUrl}/api/documents/${documentId}/raw`;
-    const pdfUrl = `${baseUrl}/api/documents/${documentId}/pdf?page=1`;    // Test raw URL
+    const pdfUrl = `${baseUrl}/api/documents/${documentId}/pdf?page=1`;
+
+    // Test raw URL
     try {
       const response = await fetch(rawUrl, { method: 'HEAD' });
       setUrlTests(prev => ({
@@ -97,10 +93,10 @@ export function PDFDebugConsole({ documentId }: PDFDebugConsoleProps) {
   const testNetworkConnectivity = async () => {
     setNetworkTest('testing');
     try {
-      // Test multiple endpoints
+      // Test multiple PDF.js worker endpoints
       const tests = [
-        fetch('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js', { method: 'HEAD' }),
         fetch('https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js', { method: 'HEAD' }),
+        fetch('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js', { method: 'HEAD' }),
         fetch('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js', { method: 'HEAD' })
       ];
 
@@ -146,16 +142,15 @@ export function PDFDebugConsole({ documentId }: PDFDebugConsoleProps) {
             </div>
             <div className="flex items-center justify-between">
               <span>Worker Source:</span>
-              <span className="text-sm font-mono truncate max-w-[200px]" title={workerSrc}>
-                {workerSrc}
+              <span className="text-sm font-mono truncate max-w-[200px]" title={PDF_WORKER_URL}>
+                {PDF_WORKER_URL}
               </span>
             </div>
           </div>
           {workerStatus !== 'valid' && (
             <div className="bg-yellow-50 border border-yellow-200 rounded p-3">
               <p className="text-sm text-yellow-800">
-                <strong>Issue:</strong> PDF.js worker is not properly configured or accessible.
-                This will cause infinite loading.
+                <strong>Issue:</strong> PDF.js worker is not accessible. This will prevent PDF loading.
               </p>
             </div>
           )}
@@ -217,13 +212,14 @@ export function PDFDebugConsole({ documentId }: PDFDebugConsoleProps) {
           </div>
         </div>
 
-        {/* Console Instructions */}        <div className="bg-gray-50 border rounded p-4">
+        {/* Console Instructions */}
+        <div className="bg-gray-50 border rounded p-4">
           <h4 className="font-semibold mb-2">Browser Console Debug Commands:</h4>
           <div className="space-y-1 text-sm font-mono">
-            <div>• Check worker: <code>console.log(pdfjs.GlobalWorkerOptions.workerSrc)</code></div>
+            <div>• Test PDF worker: <code>fetch('{PDF_WORKER_URL}').then(r => console.log(r.status))</code></div>
             <div>• Test PDF load: <code>{`fetch('/api/documents/${documentId}/raw').then(r => console.log(r.status))`}</code></div>
-            <div>• Check CORS: Look for CORS errors in Network tab</div>
-            <div>• Check PDF errors: Look for PDF.js errors in Console</div>
+            <div>• Check Network tab for failed requests</div>
+            <div>• Look for PDF.js errors in Console tab</div>
           </div>
         </div>
 
@@ -231,11 +227,12 @@ export function PDFDebugConsole({ documentId }: PDFDebugConsoleProps) {
         <div className="bg-blue-50 border border-blue-200 rounded p-4">
           <h4 className="font-semibold mb-2">Quick Fixes to Try:</h4>
           <ul className="text-sm space-y-1 list-disc list-inside">
-            <li>Refresh the page to reinitialize PDF worker</li>
-            <li>Clear browser cache and cookies</li>
+            <li>Refresh the page to reinitialize PDF viewer</li>
+            <li>Clear browser cache and reload</li>
             <li>Check if the document file exists on the server</li>
             <li>Verify the document was processed successfully</li>
             <li>Try opening the PDF URL directly in a new tab</li>
+            <li>Check Network tab for CORS or 404 errors</li>
           </ul>
         </div>
       </CardContent>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Document, Page, pdfjs } from 'react-pdf';
+import { Viewer } from '@react-pdf-viewer/core';
+import { defaultLayoutPlugin } from '@react-pdf-viewer/default-layout';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -18,10 +19,8 @@ import {
   Bug
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { PDFDebugConsole } from './pdf-debug-console';
 
-// Import PDF worker configuration
-import '@/lib/pdf-worker';
+// Remove the external CDN URL - worker is now configured in pdf-worker-config.ts
 
 interface EnhancedPDFViewerProps {
   file: {
@@ -52,75 +51,30 @@ export function EnhancedPDFViewer({
   const [numPages, setNumPages] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [showDebug, setShowDebug] = useState<boolean>(false);
+  const [pdfUrl, setPdfUrl] = useState<string>('');
   const { toast } = useToast();
 
-  // Get document URL
-  const getDocumentUrl = useCallback(() => {
-    if (file.type === 'pdf') {
-      return `/api/documents/${documentId}/pdf?page=${currentPage}&t=${Date.now()}`;
-    } else {
-      return `/api/documents/${documentId}/image?t=${Date.now()}`;
-    }
-  }, [file.type, documentId, currentPage]);
-  // Get PDF URL for react-pdf with better error handling
+  // Configure the default layout plugin
+  const defaultLayoutPluginInstance = defaultLayoutPlugin({
+    sidebarTabs: (defaultTabs) => [
+      defaultTabs[1], // Bookmarks
+      defaultTabs[2], // Attachments
+    ],
+  });
+
+  // Get PDF URL
   const getPdfUrl = useCallback(() => {
-    const baseUrl = import.meta.env.VITE_API_URL || window.location.origin;
-    const url = `${baseUrl}/api/documents/${documentId}/raw`;
-    console.log(`📄 PDF URL: ${url}`);
-    return url;
+    return `/api/documents/${documentId}/raw?t=${Date.now()}`;
   }, [documentId]);
 
-  // Enhanced document load handlers
-  const handleDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
-    console.log(`[OK] PDF loaded successfully: ${numPages} pages`);
-    setNumPages(numPages);
-    setLoading(false);
-    setError(null);
-    
-    toast({
-      title: "PDF Loaded",
-      description: `Successfully loaded ${numPages} page${numPages !== 1 ? 's' : ''}`,
-    });
-  };
-
-  const handleDocumentLoadError = (error: Error) => {
-    console.error('[ERROR] PDF load error:', error);
-    console.error('PDF URL was:', getPdfUrl());
-    
-    let errorMessage = 'Unknown error';
-    
-    if (error.message.includes('fetch')) {
-      errorMessage = 'Network error - could not fetch PDF file';
-    } else if (error.message.includes('worker')) {
-      errorMessage = 'PDF worker configuration error';
-    } else if (error.message.includes('cors')) {
-      errorMessage = 'CORS error - PDF not accessible';
-    } else if (error.message.includes('404')) {
-      errorMessage = 'PDF file not found on server';
-    } else {
-      errorMessage = `PDF load failed: ${error.message}`;
+  // Initialize PDF
+  useEffect(() => {
+    if (file.type === 'pdf') {
+      const url = getPdfUrl();
+      setPdfUrl(url);
+      console.log(`📄 PDF URL set: ${url}`);
     }
-    
-    setError(errorMessage);
-    setLoading(false);
-    
-    toast({
-      title: "PDF Load Failed",
-      description: errorMessage,
-      variant: "destructive",
-    });
-  };
-
-  const handlePageLoadSuccess = () => {
-    setLoading(false);
-  };
-
-  const handlePageLoadError = (error: Error) => {
-    console.error('📄 Page load error:', error);
-    setError(`Failed to load page: ${error.message}`);
-    setLoading(false);
-  };
+  }, [file.type, getPdfUrl]);
 
   // Navigation handlers
   const handlePrevPage = () => {
@@ -150,123 +104,65 @@ export function EnhancedPDFViewer({
     const newRotation = (rotation + 90) % 360;
     onRotationChange(newRotation);
   };
-  // Retry loading with enhanced diagnostics
-  const handleRetry = async () => {
-    console.log('🔄 Retrying PDF load...');
-    setLoading(true);
-    setError(null);
-    
-    // Test URL accessibility first
-    try {
-      const testUrl = getPdfUrl();
-      console.log(`🧪 Testing URL accessibility: ${testUrl}`);
-      
-      const response = await fetch(testUrl, { method: 'HEAD' });
-      console.log(`📊 URL test response: ${response.status} ${response.statusText}`);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      
-      console.log('[OK] URL is accessible, proceeding with PDF load...');    } catch (fetchError) {
-      console.error('[ERROR] URL test failed:', fetchError);
-      setError(`URL not accessible: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}`);
-      setLoading(false);
-      return;
-    }
-    
-    // Check PDF worker
-    try {
-      const workerSrc = pdfjs.GlobalWorkerOptions.workerSrc;
-      console.log(`🔧 Current worker: ${workerSrc}`);
-      
-      if (!workerSrc) {
-        throw new Error('PDF worker not configured');
-      }    } catch (workerError) {
-      console.error('[ERROR] Worker check failed:', workerError);
-      setError(`Worker error: ${workerError instanceof Error ? workerError.message : 'Unknown error'}`);
-      setLoading(false);
-      return;
-    }
-    
-    console.log('[OK] All tests passed, retrying PDF load...');
-  };
 
-  // PDF Viewer Component
+  // PDF Document Component
   const PDFDocument = () => {
     if (file.type !== 'pdf') return null;
 
     return (
-      <div className="flex flex-col items-center space-y-4">
-        {loading && (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-8 w-8 animate-spin mr-2" />
-            <span>Loading PDF...</span>
-          </div>
-        )}
-
-        {error && (
-          <Card className="w-full max-w-md">
-            <CardContent className="p-6 text-center">
-              <AlertTriangle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">Failed to Load PDF</h3>
-              <p className="text-sm text-gray-600 mb-4">{error}</p>
-              <Button onClick={handleRetry} size="sm">
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Retry
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-
-        {!error && (
-          <Document
-            file={getPdfUrl()}
-            onLoadSuccess={handleDocumentLoadSuccess}
-            onLoadError={handleDocumentLoadError}
-            loading={
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-8 w-8 animate-spin mr-2" />
-                <span>Loading PDF...</span>
+      <div className="h-full">
+        {/* Remove Worker wrapper - worker is now globally configured */}
+        <Viewer
+          fileUrl={pdfUrl}
+          plugins={[defaultLayoutPluginInstance]}
+          onDocumentLoad={(e) => {
+            console.log('✅ PDF document loaded:', e.doc.numPages, 'pages');
+            setNumPages(e.doc.numPages);
+            setLoading(false);
+            setError(null);
+            toast({
+              title: "PDF Loaded",
+              description: `Successfully loaded ${e.doc.numPages} page${e.doc.numPages !== 1 ? 's' : ''}`,
+            });
+          }}
+          onPageChange={(e) => {
+            onPageChange(e.currentPage + 1); // Convert 0-based to 1-based
+          }}
+          renderError={(error) => (
+            <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+              <AlertTriangle className="h-12 w-12 text-red-500 mb-4" />
+              <h3 className="text-lg font-semibold text-red-600 mb-2">PDF Render Error</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                {error.message || 'Failed to render PDF content'}
+              </p>
+              <div className="text-xs text-gray-500 mt-2">
+                <p><strong>CSP Fix Applied:</strong></p>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>PDF worker now loads locally (no external CDN)</li>
+                  <li>This should resolve CSP script-src violations</li>
+                  <li>Check console for any remaining errors</li>
+                </ul>
               </div>
-            }
-            error={
-              <Card className="w-full max-w-md">
-                <CardContent className="p-6 text-center">
-                  <AlertTriangle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold mb-2">PDF Load Error</h3>
-                  <p className="text-sm text-gray-600 mb-4">
-                    Unable to load the PDF file. Please check if the file exists and is accessible.
-                  </p>
-                  <Button onClick={handleRetry} size="sm">
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Try Again
-                  </Button>
-                </CardContent>
-              </Card>
-            }
-          >
-            <Page
-              pageNumber={currentPage}
-              scale={zoom}
-              rotate={rotation}
-              onLoadSuccess={handlePageLoadSuccess}
-              onLoadError={handlePageLoadError}
-              loading={
-                <div className="flex items-center justify-center py-4">
-                  <Loader2 className="h-6 w-6 animate-spin mr-2" />
-                  <span>Loading page...</span>
-                </div>
-              }
-              error={
-                <div className="text-center py-4">
-                  <AlertTriangle className="h-8 w-8 text-red-500 mx-auto mb-2" />
-                  <p className="text-sm text-gray-600">Failed to load page {currentPage}</p>
-                </div>
-              }
-            />
-          </Document>
-        )}
+              <Button size="sm" onClick={() => window.location.reload()}>
+                Reload Page
+              </Button>
+            </div>
+          )}
+          renderLoader={(percentages) => (
+            <div className="flex flex-col items-center justify-center h-full">
+              <Loader2 className="h-8 w-8 animate-spin mb-2" />
+              <div className="text-center">
+                <p className="text-sm font-medium">Loading PDF...</p>
+                <p className="text-xs text-gray-500">
+                  {Math.round(percentages * 100)}% complete
+                </p>
+                <p className="text-xs text-green-600 mt-1">
+                  ✅ Using CSP-compliant local worker
+                </p>
+              </div>
+            </div>
+          )}
+        />
       </div>
     );
   };
@@ -284,7 +180,7 @@ export function EnhancedPDFViewer({
           }}
         >
           <img
-            src={getDocumentUrl()}
+            src={`/api/documents/${documentId}/image?t=${Date.now()}`}
             alt={file.name}
             className="max-w-full h-auto border border-gray-300 rounded-lg shadow-lg"
             style={{ maxHeight: '800px' }}
@@ -302,15 +198,9 @@ export function EnhancedPDFViewer({
       </div>
     );
   };
+
   return (
     <div className="flex flex-col h-full">
-      {/* Debug Console */}
-      {showDebug && (
-        <div className="border-b">
-          <PDFDebugConsole documentId={documentId} />
-        </div>
-      )}
-
       {/* Controls Header */}
       <div className="p-3 border-b bg-gray-50 dark:bg-gray-700 flex-shrink-0">
         <div className="flex items-center justify-between">
@@ -329,62 +219,30 @@ export function EnhancedPDFViewer({
           </div>
           
           <div className="flex items-center gap-2">
-            {/* Zoom Controls */}
-            <Button size="sm" variant="outline" onClick={handleZoomOut}>
-              <ZoomOut className="h-4 w-4" />
-            </Button>
-            <span className="text-sm px-2 min-w-[60px] text-center">
-              {Math.round(zoom * 100)}%
-            </span>
-            <Button size="sm" variant="outline" onClick={handleZoomIn}>
-              <ZoomIn className="h-4 w-4" />
-            </Button>
-              <Button size="sm" variant="outline" onClick={handleRotate}>
-              <RotateCw className="h-4 w-4" />
-            </Button>
-
-            {/* Debug Toggle */}
-            <Button 
-              size="sm" 
-              variant={showDebug ? "default" : "outline"} 
-              onClick={() => setShowDebug(!showDebug)}
-            >
-              <Bug className="h-4 w-4" />
-            </Button>
-
-            {/* Page Navigation */}
-            {file.type === 'pdf' && numPages > 1 && (
-              <div className="flex items-center gap-1 ml-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handlePrevPage}
-                  disabled={currentPage === 1}
-                >
-                  <ChevronLeft className="h-4 w-4" />
+            {/* Basic controls for non-PDF files */}
+            {file.type !== 'pdf' && (
+              <>
+                <Button size="sm" variant="outline" onClick={handleZoomOut}>
+                  <ZoomOut className="h-4 w-4" />
                 </Button>
                 <span className="text-sm px-2 min-w-[60px] text-center">
-                  {currentPage} / {numPages}
+                  {Math.round(zoom * 100)}%
                 </span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleNextPage}
-                  disabled={currentPage === numPages}
-                >
-                  <ChevronRight className="h-4 w-4" />
+                <Button size="sm" variant="outline" onClick={handleZoomIn}>
+                  <ZoomIn className="h-4 w-4" />
                 </Button>
-              </div>
+                <Button size="sm" variant="outline" onClick={handleRotate}>
+                  <RotateCw className="h-4 w-4" />
+                </Button>
+              </>
             )}
           </div>
         </div>
       </div>
 
       {/* Document Content */}
-      <div className="flex-1 overflow-auto bg-gray-100 dark:bg-gray-900">
-        <div className="p-4 flex justify-center min-h-full">
-          {file.type === 'pdf' ? <PDFDocument /> : <ImageViewer />}
-        </div>
+      <div className="flex-1 overflow-hidden">
+        {file.type === 'pdf' ? <PDFDocument /> : <ImageViewer />}
       </div>
     </div>
   );

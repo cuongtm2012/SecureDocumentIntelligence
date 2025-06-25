@@ -224,8 +224,28 @@ export function AdvancedOCRDashboard() {
     setActiveTab('batch');
   };
 
+  // View OCR result from uploaded files
   const handleViewUploadedFileResult = (file: UploadedFile) => {
+    // Find the corresponding document from the backend
+    const correspondingDocument = documents.find((doc: any) => doc.originalName === file.name);
+    
+    if (!correspondingDocument) {
+      toast({
+        title: "Document not found",
+        description: "Could not find the corresponding document on the server.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    console.log('📄 Opening PDF viewer for document:', {
+      fileId: file.id,
+      documentId: correspondingDocument.id,
+      fileName: file.name
+    });
+    
     setSelectedFileForViewer(file);
+    setCurrentDocument(correspondingDocument); // Store the real document
     setShowPDFViewer(true);
   };
 
@@ -685,13 +705,14 @@ export function AdvancedOCRDashboard() {
           )}
         </DialogContent>
       </Dialog>      {/* PDF OCR Viewer Modal */}
-      {showPDFViewer && selectedFileForViewer && (
+      {showPDFViewer && selectedFileForViewer && currentDocument && (
         <OptimizedPDFOCRViewer
           file={selectedFileForViewer}
-          documentId={parseInt(selectedFileForViewer.id)}
+          documentId={currentDocument.id}
           onClose={() => {
             setShowPDFViewer(false);
             setSelectedFileForViewer(null);
+            setCurrentDocument(null);
           }}
           onTextEdit={(fileId, newText) => {
             setUploadedFiles(prev => prev.map(file => 
@@ -705,7 +726,7 @@ export function AdvancedOCRDashboard() {
                   }
                 : file
             ));
-            console.log('Text updated for file:', fileId, 'Page:', pageNumber);
+            console.log('Text updated for file:', fileId);
           }}
           onExport={(fileId, format) => {
             const file = uploadedFiles.find(f => f.id === fileId);

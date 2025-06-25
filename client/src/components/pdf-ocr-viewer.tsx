@@ -1,18 +1,25 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Viewer } from '@react-pdf-viewer/core';
+import { defaultLayoutPlugin } from '@react-pdf-viewer/default-layout';
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
+  Edit,
+  Save,
   X,
-  Download,
-  CheckCircle,
+  FileText,
+  Image as ImageIcon,
   AlertTriangle,
-  RefreshCw
+  CheckCircle,
+  Copy,
+  Loader2
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { EnhancedPDFViewer } from "./enhanced-pdf-viewer";
-import { ScrollableTextPanel } from "./scrollable-text-panel";
+
+// Remove the external CDN URL - worker is now configured in pdf-worker-config.ts
+// const PDF_WORKER_URL = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 
 interface PDFOCRViewerProps {
   file: {
@@ -38,53 +45,73 @@ interface PDFOCRViewerProps {
 }
 
 export function PDFOCRViewer({ file, onClose, onTextEdit, onExport }: PDFOCRViewerProps) {
-  const [currentPage, setCurrentPage] = useState(1);
-  const [zoom, setZoom] = useState(1);
-  const [rotation, setRotation] = useState(0);
   const [isEditing, setIsEditing] = useState(false);
   const [editedText, setEditedText] = useState('');
-  const [syncScroll, setSyncScroll] = useState(true);
-  const [selectedWords, setSelectedWords] = useState<string[]>([]);
-  const imageRef = useRef<HTMLDivElement>(null);
+  const [pdfUrl, setPdfUrl] = useState<string>('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [pdfError, setPdfError] = useState<string>('');
+  const [currentPage, setCurrentPage] = useState(1);
   const textRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
-  const totalPages = file.result?.pageCount || 1;
-  const currentPageData = file.result?.pages?.find(p => p.pageNumber === currentPage);
-  const currentText = currentPageData?.text || file.result?.extractedText || '';
-  const currentConfidence = currentPageData?.confidence || file.result?.confidence || 0;
+  // Configure the default layout plugin
+  const defaultLayoutPluginInstance = defaultLayoutPlugin({
+    sidebarTabs: (defaultTabs) => [
+      // Remove thumbnails tab for better performance
+      defaultTabs[1], // Bookmarks
+      defaultTabs[2], // Attachments
+    ],
+    toolbarPlugin: {
+      downloadPlugin: {
+        fileNameGenerator: () => `${file.name}_processed.pdf`,
+      },
+    },
+  });
 
-  // Initialize edited text when page changes
+  const currentText = file.result?.extractedText || '';
+  const currentConfidence = file.result?.confidence || 0;
+
+  // Initialize PDF URL
   useEffect(() => {
-    setEditedText(currentText);
-  }, [currentText, currentPage]);
+    const initializePDF = async () => {
+      setIsLoading(true);
+      setPdfError('');
+      
+      try {
+        if (file.type === 'pdf') {
+          console.log('🔍 Initializing PDF loading for:', file.name);
+          
+          // Create PDF URL with cache busting
+          const pdfUrl = `/api/documents/${file.id}/raw?t=${Date.now()}`;
+          
+          // Test if the URL is accessible
+          try {
+            const response = await fetch(pdfUrl, { method: 'HEAD' });
+            if (response.ok) {
+              setPdfUrl(pdfUrl);
+              console.log('✅ PDF URL validated:', pdfUrl);
+            } else {
+              throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+            }
+          } catch (fetchError: any) {
+            console.error('❌ PDF URL validation failed:', fetchError);
+            setPdfError(`Failed to access PDF file: ${fetchError.message}`);
+          }
+        } else {
+          setPdfError('This viewer only supports PDF files');
+        }
+        
+        setEditedText(currentText);
+      } catch (error: any) {
+        console.error('❌ PDF initialization error:', error);
+        setPdfError(`Failed to initialize PDF: ${error.message}`);
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
-  // Simulate PDF/Image URL for display
-  const getDocumentUrl = () => {
-    if (file.type === 'pdf') {
-      return `/api/documents/${file.id}/pdf?page=${currentPage}&t=${Date.now()}`;
-    } else {
-      return `/api/documents/${file.id}/image?t=${Date.now()}`;
-    }
-  };
-
-  // Handle zoom controls
-  const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.25, 3));
-  const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.25, 0.25));
-  const handleRotate = () => setRotation(prev => (prev + 90) % 360);
-
-  // Handle page navigation
-  const handlePrevPage = () => {
-    if (currentPage > 1) {
-      setCurrentPage(prev => prev - 1);
-    }
-  };
-
-  const handleNextPage = () => {
-    if (currentPage < totalPages) {
-      setCurrentPage(prev => prev + 1);
-    }
-  };
+    initializePDF();
+  }, [file.id, file.type, currentText]);
 
   // Handle text editing
   const handleStartEdit = () => {
@@ -93,7 +120,7 @@ export function PDFOCRViewer({ file, onClose, onTextEdit, onExport }: PDFOCRView
   };
 
   const handleSaveEdit = () => {
-    onTextEdit(file.id, editedText, file.type === 'pdf' ? currentPage : undefined);
+    onTextEdit(file.id, editedText);
     setIsEditing(false);
     toast({
       title: "Text updated",
@@ -105,21 +132,6 @@ export function PDFOCRViewer({ file, onClose, onTextEdit, onExport }: PDFOCRView
     setIsEditing(false);
     setEditedText(currentText);
   };
-
-  // Handle synchronized scrolling
-  const handleImageScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    if (syncScroll && textRef.current) {
-      const scrollRatio = e.currentTarget.scrollTop / (e.currentTarget.scrollHeight - e.currentTarget.clientHeight);
-      textRef.current.scrollTop = scrollRatio * (textRef.current.scrollHeight - textRef.current.clientHeight);
-    }
-  }, [syncScroll]);
-
-  const handleTextScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    if (syncScroll && imageRef.current) {
-      const scrollRatio = e.currentTarget.scrollTop / (e.currentTarget.scrollHeight - e.currentTarget.clientHeight);
-      imageRef.current.scrollTop = scrollRatio * (imageRef.current.scrollHeight - imageRef.current.clientHeight);
-    }
-  }, [syncScroll]);
 
   // Handle export
   const handleExport = (format: 'txt' | 'pdf' | 'docx') => {
@@ -149,8 +161,6 @@ export function PDFOCRViewer({ file, onClose, onTextEdit, onExport }: PDFOCRView
 
   // Highlight low confidence words
   const highlightLowConfidenceWords = (text: string, threshold: number = 0.7) => {
-    // This is a simplified implementation
-    // In a real scenario, you'd have word-level confidence data
     const words = text.split(/(\s+)/);
     return words.map((word, index) => {
       const isLowConfidence = Math.random() < 0.1; // Simulate low confidence
@@ -166,69 +176,26 @@ export function PDFOCRViewer({ file, onClose, onTextEdit, onExport }: PDFOCRView
     });
   };
 
-  // Handle image loading errors with better fallback
-  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
-    const img = e.currentTarget;
-    console.error(`Failed to load document image: ${img.src}`);
+  // PDF document load error handler
+  const handleDocumentLoadError = (error: any) => {
+    console.error('❌ PDF document load error:', error);
+    let errorMessage = 'Failed to load PDF document';
     
-    // Unicode-safe base64 encoding function
-    const unicodeSafeBase64 = (str: string) => {
-      try {
-        // First encode to UTF-8, then to base64
-        return btoa(unescape(encodeURIComponent(str)));
-      } catch (error) {
-        // Fallback: remove non-Latin1 characters
-        const latin1Safe = str.replace(/[^\x00-\xFF]/g, '?');
-        return btoa(latin1Safe);
+    if (error.message) {
+      if (error.message.includes('Invalid PDF')) {
+        errorMessage = 'The PDF file appears to be corrupted or invalid';
+      } else if (error.message.includes('network')) {
+        errorMessage = 'Network error while loading PDF - please check your connection';
+      } else if (error.message.includes('AbortError')) {
+        errorMessage = 'PDF loading was cancelled - please try again';
+      } else {
+        errorMessage = `PDF Error: ${error.message}`;
       }
-    };
+    }
     
-    // Create a safe filename for display (remove special characters)
-    const safeFileName = file.name.replace(/[^\w\s\-\.]/g, '_');
-    
-    // Create a more informative fallback SVG
-    const fallbackSvg = `data:image/svg+xml;base64,${unicodeSafeBase64(`
-      <svg width="600" height="800" xmlns="http://www.w3.org/2000/svg">
-        <rect width="600" height="800" fill="#f8f9fa" stroke="#dee2e6" stroke-width="2"/>
-        <rect x="30" y="30" width="540" height="60" fill="#e9ecef" rx="8"/>
-        <text x="300" y="65" text-anchor="middle" font-family="Arial" font-size="16" fill="#495057">
-          ${safeFileName}
-        </text>
-        
-        <circle cx="300" cy="300" r="60" fill="#ffc107" opacity="0.3"/>
-        <text x="300" y="290" text-anchor="middle" font-family="Arial" font-size="48" fill="#ffc107">⚠</text>
-        
-        <text x="300" y="400" text-anchor="middle" font-family="Arial" font-size="18" fill="#dc3545">
-          Document Preview Unavailable
-        </text>
-        <text x="300" y="430" text-anchor="middle" font-family="Arial" font-size="14" fill="#6c757d">
-          ${file.type === 'pdf' ? 'PDF processing required' : 'Image loading failed'}
-        </text>
-        <text x="300" y="460" text-anchor="middle" font-family="Arial" font-size="12" fill="#868e96">
-          Click "Process" to extract text content
-        </text>
-        
-        <rect x="200" y="500" width="200" height="40" fill="#007bff" rx="4"/>
-        <text x="300" y="525" text-anchor="middle" font-family="Arial" font-size="14" fill="white">
-          Process Document
-        </text>
-        
-        <text x="300" y="600" text-anchor="middle" font-family="Arial" font-size="12" fill="#adb5bd">
-          File size: ${(file.size / 1024 / 1024).toFixed(2)} MB
-        </text>
-        ${file.type === 'pdf' ? `
-        <text x="300" y="620" text-anchor="middle" font-family="Arial" font-size="12" fill="#adb5bd">
-          Page ${currentPage} of ${totalPages}
-        </text>` : ''}
-      </svg>
-    `)}`;
-    
-    img.src = fallbackSvg;
+    setPdfError(errorMessage);
+    setIsLoading(false);
   };
-
-  // Check if document has been processed
-  const isProcessed = file.result && file.result.extractedText;
-  const documentUrl = getDocumentUrl();
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -237,11 +204,7 @@ export function PDFOCRViewer({ file, onClose, onTextEdit, onExport }: PDFOCRView
         <div className="flex items-center justify-between p-4 border-b">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
-              {file.type === 'pdf' ? (
-                <FileText className="h-5 w-5 text-red-600" />
-              ) : (
-                <ImageIcon className="h-5 w-5 text-blue-600" />
-              )}
+              <FileText className="h-5 w-5 text-red-600" />
               <h2 className="text-lg font-semibold">{file.name}</h2>
             </div>
             
@@ -250,25 +213,15 @@ export function PDFOCRViewer({ file, onClose, onTextEdit, onExport }: PDFOCRView
                 {Math.round(currentConfidence * 100)}% confidence
               </Badge>
               
-              {file.type === 'pdf' && (
+              {file.result?.pageCount && (
                 <Badge variant="secondary">
-                  Page {currentPage} of {totalPages}
+                  {file.result.pageCount} pages
                 </Badge>
               )}
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Sync Scroll Toggle */}
-            <Button
-              variant={syncScroll ? "default" : "outline"}
-              size="sm"
-              onClick={() => setSyncScroll(!syncScroll)}
-            >
-              <RefreshCw className="h-4 w-4 mr-1" />
-              Sync Scroll
-            </Button>
-
             {/* Export Options */}
             <div className="flex items-center gap-1">
               <Button size="sm" variant="outline" onClick={() => handleExport('txt')}>
@@ -290,74 +243,93 @@ export function PDFOCRViewer({ file, onClose, onTextEdit, onExport }: PDFOCRView
 
         {/* Main Content */}
         <div className="flex-1 flex">
-          {/* Left Panel - Document Viewer */}
+          {/* Left Panel - PDF Viewer */}
           <div className="w-1/2 border-r flex flex-col">
             <div className="p-3 border-b bg-gray-50 dark:bg-gray-700">
-              <div className="flex items-center justify-between">
-                <h3 className="font-medium">Document Viewer</h3>
-                
-                <div className="flex items-center gap-2">
-                  {/* Zoom Controls */}
-                  <Button size="sm" variant="outline" onClick={handleZoomOut}>
-                    <ZoomOut className="h-4 w-4" />
-                  </Button>
-                  <span className="text-sm px-2">{Math.round(zoom * 100)}%</span>
-                  <Button size="sm" variant="outline" onClick={handleZoomIn}>
-                    <ZoomIn className="h-4 w-4" />
-                  </Button>
-                  
-                  <Button size="sm" variant="outline" onClick={handleRotate}>
-                    <RotateCw className="h-4 w-4" />
-                  </Button>
-
-                  {/* Page Navigation */}
-                  {file.type === 'pdf' && totalPages > 1 && (
-                    <div className="flex items-center gap-1 ml-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={handlePrevPage}
-                        disabled={currentPage === 1}
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                      </Button>
-                      <span className="text-sm px-2">
-                        {currentPage} / {totalPages}
-                      </span>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={handleNextPage}
-                        disabled={currentPage === totalPages}
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </div>
+              <h3 className="font-medium">PDF Document</h3>
             </div>
 
-            <ScrollArea className="flex-1" onScrollCapture={handleImageScroll}>
-              <div
-                ref={imageRef}
-                className="p-4 flex items-center justify-center min-h-full"
-                style={{
-                  transform: `scale(${zoom}) rotate(${rotation}deg)`,
-                  transformOrigin: 'center center',
-                }}
-              >
-                <div className="border border-gray-300 rounded-lg overflow-hidden shadow-lg">
-                  <img
-                    src={documentUrl}
-                    alt={`${file.name} - Page ${currentPage}`}
-                    className="max-w-full h-auto"
-                    style={{ maxHeight: '800px' }}
-                    onError={handleImageError}
+            <div className="flex-1 overflow-hidden">
+              {isLoading && (
+                <div className="flex items-center justify-center h-full">
+                  <Loader2 className="h-8 w-8 animate-spin" />
+                  <span className="ml-2">Loading PDF...</span>
+                </div>
+              )}
+              
+              {pdfError && (
+                <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+                  <AlertTriangle className="h-12 w-12 text-red-500 mb-4" />
+                  <h3 className="text-lg font-semibold text-red-600 mb-2">PDF Load Error</h3>
+                  <p className="text-sm text-gray-600 mb-4">{pdfError}</p>
+                  <div className="text-xs text-gray-500">
+                    <p>Possible solutions:</p>
+                    <ul className="list-disc list-inside mt-2 space-y-1">
+                      <li>Check if the PDF file is not corrupted</li>
+                      <li>Ensure the server is running and accessible</li>
+                      <li>Try refreshing the page</li>
+                      <li>Re-upload the document if the issue persists</li>
+                    </ul>
+                  </div>
+                </div>
+              )}
+              
+              {pdfUrl && !isLoading && !pdfError && (
+                <div className="h-full">
+                  {/* Remove Worker wrapper - worker is now globally configured */}
+                  <Viewer
+                    fileUrl={pdfUrl}
+                    plugins={[defaultLayoutPluginInstance]}
+                    onDocumentLoad={(e) => {
+                      console.log('✅ PDF document loaded successfully:', e.doc.numPages, 'pages');
+                      setIsLoading(false);
+                      setPdfError('');
+                    }}
+                    onPageChange={(e) => {
+                      setCurrentPage(e.currentPage + 1); // Convert 0-based to 1-based
+                    }}
+                    renderError={(error) => (
+                      <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+                        <AlertTriangle className="h-12 w-12 text-red-500 mb-4" />
+                        <h3 className="text-lg font-semibold text-red-600 mb-2">PDF Render Error</h3>
+                        <p className="text-sm text-gray-600 mb-4">
+                          {error.message || 'Failed to render PDF content'}
+                        </p>
+                        <div className="text-xs text-gray-500 mt-2">
+                          <p><strong>Troubleshooting:</strong></p>
+                          <ul className="list-disc list-inside space-y-1">
+                            <li>PDF worker is now configured locally to avoid CSP issues</li>
+                            <li>Check browser console for detailed error messages</li>
+                            <li>Ensure the PDF file is not corrupted</li>
+                          </ul>
+                        </div>
+                        <Button 
+                          size="sm" 
+                          onClick={() => window.location.reload()}
+                          className="mt-2"
+                        >
+                          Reload Page
+                        </Button>
+                      </div>
+                    )}
+                    renderLoader={(percentages) => (
+                      <div className="flex flex-col items-center justify-center h-full">
+                        <Loader2 className="h-8 w-8 animate-spin mb-2" />
+                        <div className="text-center">
+                          <p className="text-sm font-medium">Loading PDF...</p>
+                          <p className="text-xs text-gray-500">
+                            {Math.round(percentages * 100)}% complete
+                          </p>
+                          <p className="text-xs text-gray-400 mt-1">
+                            Using local PDF.js worker (CSP compliant)
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   />
                 </div>
-              </div>
-            </ScrollArea>
+              )}
+            </div>
           </div>
 
           {/* Right Panel - OCR Text */}
@@ -396,9 +368,19 @@ export function PDFOCRViewer({ file, onClose, onTextEdit, onExport }: PDFOCRView
               <div ref={textRef} className="p-4 h-full max-h-full overflow-y-auto">
                 {!isEditing ? (
                   <div className="prose max-w-none">
-                    <div className="whitespace-pre-wrap text-sm leading-relaxed break-words min-h-0">
-                      {highlightLowConfidenceWords(currentText)}
-                    </div>
+                    {currentText ? (
+                      <div className="whitespace-pre-wrap text-sm leading-relaxed break-words min-h-0">
+                        {highlightLowConfidenceWords(currentText)}
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center h-64 text-center">
+                        <FileText className="h-12 w-12 text-gray-400 mb-4" />
+                        <h3 className="text-lg font-medium text-gray-600 mb-2">No OCR Text Available</h3>
+                        <p className="text-sm text-gray-500">
+                          The document needs to be processed to extract text content.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <Textarea
@@ -420,6 +402,7 @@ export function PDFOCRViewer({ file, onClose, onTextEdit, onExport }: PDFOCRView
               <span>{currentText.length} characters</span>
               <span>{currentText.split(/\s+/).filter(word => word.length > 0).length} words</span>
               <span>File size: {(file.size / 1024 / 1024).toFixed(2)} MB</span>
+              {currentPage > 0 && <span>Current page: {currentPage}</span>}
             </div>
             
             <div className="flex items-center gap-2">
@@ -428,10 +411,15 @@ export function PDFOCRViewer({ file, onClose, onTextEdit, onExport }: PDFOCRView
                   <CheckCircle className="h-4 w-4" />
                   High Quality
                 </div>
-              ) : (
+              ) : currentConfidence > 0.6 ? (
                 <div className="flex items-center gap-1 text-yellow-600">
                   <AlertTriangle className="h-4 w-4" />
                   Review Recommended
+                </div>
+              ) : (
+                <div className="flex items-center gap-1 text-red-600">
+                  <AlertTriangle className="h-4 w-4" />
+                  Low Quality
                 </div>
               )}
             </div>

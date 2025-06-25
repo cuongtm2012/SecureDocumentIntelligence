@@ -5,7 +5,8 @@ import {
   X,
   FileText,
   Image as ImageIcon,
-  RefreshCw
+  RefreshCw,
+  AlertTriangle
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { EnhancedPDFViewer } from "./enhanced-pdf-viewer";
@@ -40,7 +41,25 @@ export function OptimizedPDFOCRViewer({
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
   const [syncScroll, setSyncScroll] = useState(false);
+  const [documentError, setDocumentError] = useState<string>('');
   const { toast } = useToast();
+
+  // Validate documentId to prevent NaN URLs
+  useEffect(() => {
+    if (!documentId || isNaN(documentId)) {
+      const errorMsg = `Invalid document ID: ${documentId}. Cannot load PDF.`;
+      console.error('❌', errorMsg);
+      setDocumentError(errorMsg);
+      toast({
+        title: "Invalid Document ID",
+        description: "Cannot load PDF due to invalid document ID",
+        variant: "destructive",
+      });
+    } else {
+      setDocumentError('');
+      console.log('✅ Valid document ID:', documentId);
+    }
+  }, [documentId, toast]);
 
   // Extract current text and confidence
   const extractedText = file.result?.extractedText || '';
@@ -60,6 +79,46 @@ export function OptimizedPDFOCRViewer({
       description: "Your file will be downloaded shortly.",
     });
   };
+
+  // If there's a document error, show error state
+  if (documentError) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-red-600">Document Load Error</h2>
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+          
+          <div className="flex items-start gap-3 mb-4">
+            <AlertTriangle className="h-5 w-5 text-red-500 mt-0.5" />
+            <div>
+              <p className="text-sm text-gray-700 mb-2">{documentError}</p>
+              <div className="text-xs text-gray-500">
+                <p><strong>Possible causes:</strong></p>
+                <ul className="list-disc list-inside mt-1 space-y-1">
+                  <li>Document was not uploaded properly</li>
+                  <li>Document ID is missing or corrupted</li>
+                  <li>Server processing error</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={onClose}>
+              Close
+            </Button>
+            <Button onClick={() => window.location.reload()}>
+              Reload Page
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -86,6 +145,10 @@ export function OptimizedPDFOCRViewer({
                   Page {currentPage} of {totalPages}
                 </Badge>
               )}
+              
+              <Badge variant="outline" className="text-xs">
+                Doc ID: {documentId}
+              </Badge>
             </div>
           </div>
 

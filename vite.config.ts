@@ -28,16 +28,8 @@ export default defineConfig({
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
     rollupOptions: {
-      // Ensure PDF.js worker is properly bundled
+      // Remove PDF worker bundling since we're using CDN
       external: [],
-      output: {
-        // Keep worker files separate for proper loading
-        manualChunks: (id) => {
-          if (id.includes('pdf.worker')) {
-            return 'pdf-worker';
-          }
-        }
-      }
     }
   },
   server: {
@@ -45,15 +37,17 @@ export default defineConfig({
       strict: true,
       deny: ["**/.*"],
     },
+    // Remove cache control headers as they're not needed for CDN worker
   },
   optimizeDeps: {
-    // Include pdfjs-dist in dependency optimization
-    include: ['pdfjs-dist'],
+    // Include react-pdf-viewer packages in dependency optimization
+    include: ['pdfjs-dist', '@react-pdf-viewer/core', '@react-pdf-viewer/default-layout'],
     esbuildOptions: {
-      // Handle PDF.js worker properly
       target: 'es2020'
     }
   },
-  // Add support for importing worker files
-  assetsInclude: ['**/*.worker.js', '**/*.worker.min.js']
+  // Remove worker file handling since we're using CDN
+  define: {
+    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV),
+  }
 });

@@ -759,7 +759,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to get image" });
     }  });
 
-  // Get raw document file (for react-pdf and direct file access)
+  // Get raw document file (for PDF viewer)
   app.get("/api/documents/:id/raw", async (req, res) => {
     try {
       const documentId = parseInt(req.params.id);
@@ -778,27 +778,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       try {
-        // Set appropriate headers for the file type
-        res.setHeader('Content-Type', document.mimeType);
-        res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
-        res.setHeader('Cache-Control', 'public, max-age=3600');
-        
-        // Add CORS headers for react-pdf
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Methods', 'GET');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-        
-        // Stream the file
         const fileBuffer = await readFile(filePath);
-        res.send(fileBuffer);
         
+        // Set appropriate headers based on file type
+        res.setHeader('Content-Type', document.mimeType);
+        res.setHeader('Content-Length', fileBuffer.length);
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+        res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
+        
+        console.log(`✅ Serving raw file: ${document.originalName} (${fileBuffer.length} bytes)`);
+        res.send(fileBuffer);
       } catch (error) {
         console.error('Raw file serve error:', error);
         res.status(500).json({ message: "Failed to serve file" });
       }
     } catch (error) {
       console.error('Raw file error:', error);
-      res.status(500).json({ message: "Failed to get file" });
+      res.status(500).json({ message: "Failed to get raw file" });
     }
   });
 
