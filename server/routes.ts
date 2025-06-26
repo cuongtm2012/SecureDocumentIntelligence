@@ -11,6 +11,7 @@ import { deepSeekService } from "./deepseek-service";
 import { vietnameseTextCleaner } from "./vietnamese-text-cleaner";
 import { enhancedVietnameseOCR } from "./enhanced-vietnamese-ocr";
 import { pdfProcessor } from "./pdf-processor";
+import { directOCRProcessor } from "./direct-ocr-processor";
 import helmet from "helmet";
 import { insertDocumentSchema, insertAuditLogSchema } from "@shared/schema";
 import { z } from "zod";
