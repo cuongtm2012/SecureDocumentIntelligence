@@ -16,15 +16,7 @@ import helmet from "helmet";
 import { insertDocumentSchema, insertAuditLogSchema } from "@shared/schema";
 import { z } from "zod";
 import { initializeDatabase } from "./init-db";
-import { 
-  healthCheck, 
-  processSingleFile, 
-  processBatchFiles, 
-  getBatchJobStatus, 
-  getSupportedLanguages,
-  uploadSingle,
-  uploadMultiple 
-} from "./controllers/ocr.controller.js";
+// OCR controller imports temporarily disabled to fix syntax error
 import FormData from 'form-data';
 import axios from 'axios';
 
@@ -54,39 +46,79 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Helper function to process file with fallback handling
+// Helper function to process file with DeepSeek API as primary workflow
 async function processFileWithFallback(filePath: string, document: any, documentId: number, userId: number, req: any, res: any) {
-  console.log(`🚀 Processing document ${document.originalName} with Python OCR Service...`);
+  console.log(`🚀 Processing document ${document.originalName} with DeepSeek API workflow...`);
   
-  // Use Python OCR service for processing
-  const formData = new FormData();
-  const fileBuffer = await readFile(filePath);
-  formData.append('file', fileBuffer, {
-    filename: document.originalName,
-    contentType: document.mimeType
-  });
-  formData.append('language', 'vie');
-  formData.append('confidence_threshold', '60.0');
-
-  // Try to call Python OCR service with axios instead of fetch
   let ocrResult;
-  try {
-    console.log('🔗 Calling Python OCR service with axios...');
-    
-    const response = await axios.post('http://localhost:8001/ocr/process', formData, {
-      headers: {
-        ...formData.getHeaders(),
-      },
-      timeout: 300000, // 5 minutes timeout for large files
-      maxContentLength: 50 * 1024 * 1024, // 50MB max
-    });
 
-    ocrResult = response.data;
-    console.log('✅ Python OCR service responded successfully');
+  // Primary workflow: DeepSeek API processing
+  if (process.env.OPENAI_API_KEY) {
+    console.log('🤖 Starting DeepSeek API document processing...');
     
-  } catch (serviceError) {
-    console.warn('⚠️ Python OCR service unavailable, using fallback Tesseract processing...');
-    console.error('Service error:', serviceError instanceof Error ? serviceError.message : serviceError);
+    try {
+      // First extract text using direct OCR for DeepSeek analysis
+      const directResult = await directOCRProcessor.processDocument(filePath);
+      
+      // Then enhance with DeepSeek analysis
+      const deepseekAnalysis = await deepSeekService.analyzeDocument(
+        directResult.extractedText, 
+        "Vietnamese government document analysis"
+      );
+      
+      ocrResult = {
+        success: true,
+        file_id: document.originalName,
+        text: directResult.extractedText,
+        confidence: directResult.confidence,
+        page_count: directResult.pageCount,
+        processing_time: directResult.processingTime / 1000,
+        metadata: {
+          character_count: directResult.extractedText.length,
+          word_count: directResult.extractedText.split(/\s+/).filter(word => word.length > 0).length,
+          language: 'vie',
+          confidence_threshold: 60.0,
+          processing_timestamp: new Date(),
+          file_size_bytes: document.fileSize,
+          processing_mode: 'deepseek-api',
+          deepseek_analysis: deepseekAnalysis,
+          note: 'Processed with DeepSeek API workflow'
+        }
+      };
+      
+      console.log('✅ DeepSeek API processing completed successfully');
+      
+    } catch (deepseekError) {
+      console.warn('⚠️ DeepSeek API processing failed, trying Python OCR service...');
+      console.error('DeepSeek error:', deepseekError instanceof Error ? deepseekError.message : deepseekError);
+      
+      // Fallback to Python OCR service
+      try {
+        const formData = new FormData();
+        const fileBuffer = await readFile(filePath);
+        formData.append('file', fileBuffer, {
+          filename: document.originalName,
+          contentType: document.mimeType
+        });
+        formData.append('language', 'vie');
+        formData.append('confidence_threshold', '60.0');
+
+        console.log('🔗 Calling Python OCR service as fallback...');
+        
+        const response = await axios.post('http://localhost:8001/ocr/process', formData, {
+          headers: {
+            ...formData.getHeaders(),
+          },
+          timeout: 300000,
+          maxContentLength: 50 * 1024 * 1024,
+        });
+
+        ocrResult = response.data;
+        console.log('✅ Python OCR service responded successfully');
+        
+      } catch (serviceError) {
+        console.warn('⚠️ Python OCR service also unavailable, using direct OCR fallback...');
+        console.error('Service error:', serviceError instanceof Error ? serviceError.message : serviceError);
     
     // Fallback to local Tesseract processing for images
     if (document.mimeType?.startsWith('image/')) {
