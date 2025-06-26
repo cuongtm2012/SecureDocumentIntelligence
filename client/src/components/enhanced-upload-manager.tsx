@@ -56,7 +56,7 @@ export function EnhancedUploadManager({
   acceptedFileTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf']
 }: EnhancedUploadManagerProps) {
   const [activeTab, setActiveTab] = useState<'images' | 'pdfs'>('images');
-  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [isProcessing, setIsProcessing] = useState(false); // Prevent multiple processing
 
   const getAcceptedTypes = () => {
@@ -73,22 +73,22 @@ export function EnhancedUploadManager({
     
     setIsProcessing(true);
     
-    // Prevent duplicate processing by checking if files are already uploaded
+    // Filter files by type and size requirements
     const validFiles = acceptedFiles.filter(file => {
       const isValidType = getAcceptedTypes().includes(file.type);
       const isValidSize = file.size <= maxFileSize;
       
-      // Check if file is already in the upload list
-      const isDuplicate = uploadedFiles.some(uf => 
-        uf.name === file.name && uf.size === file.size
-      );
-      
-      if (isDuplicate) {
-        console.warn(`File ${file.name} is already uploaded, skipping...`);
+      if (!isValidType) {
+        console.warn(`File ${file.name} has unsupported type: ${file.type}`);
         return false;
       }
       
-      return isValidType && isValidSize;
+      if (!isValidSize) {
+        console.warn(`File ${file.name} exceeds size limit: ${file.size} bytes`);
+        return false;
+      }
+      
+      return true;
     });
     
     if (validFiles.length > 0) {
@@ -106,26 +106,7 @@ export function EnhancedUploadManager({
     maxSize: maxFileSize,
     multiple: true
   });
-  const handleFileSelect = () => {
-    if (isProcessing) {
-      console.log('Already processing files, ignoring file select');
-      return;
-    }
-    
-    if (fileInputRef.current) {
-      fileInputRef.current.click();
-    }
-  };
-  const handleFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || []);
-    if (files.length > 0) {
-      // Use the same onDrop logic which already handles isProcessing
-      onDrop(files);
-      
-      // Reset the input value to allow selecting the same file again if needed
-      event.target.value = '';
-    }
-  };
+
 
   const getStatusColor = (status: UploadedFile['status']) => {
     switch (status) {
@@ -186,14 +167,6 @@ export function EnhancedUploadManager({
                 )}
               >
                 <input {...getInputProps()} />
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  accept={getAcceptedTypes().join(',')}
-                  onChange={handleFileInputChange}
-                  className="hidden"
-                />
                 
                 <div className="space-y-4">
                   <div className="mx-auto w-12 h-12 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center">
@@ -216,10 +189,6 @@ export function EnhancedUploadManager({
                     </p>
                   </div>
                     <div className="flex gap-2">
-                    <Button onClick={handleFileSelect} variant="outline">
-                      <Upload className="h-4 w-4 mr-2" />
-                      Select {activeTab === 'images' ? 'Images' : 'PDFs'}
-                    </Button>
                     
                     {onBatchUpload && (
                       <Button 
