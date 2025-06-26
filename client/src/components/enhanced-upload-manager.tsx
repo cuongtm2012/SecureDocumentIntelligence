@@ -66,6 +66,13 @@ export function EnhancedUploadManager({
     return acceptedFileTypes.filter(type => type === 'application/pdf');
   };
   const onDrop = useCallback((acceptedFiles: File[]) => {
+    if (isProcessing) {
+      console.log('Already processing files, ignoring drop');
+      return;
+    }
+    
+    setIsProcessing(true);
+    
     // Prevent duplicate processing by checking if files are already uploaded
     const validFiles = acceptedFiles.filter(file => {
       const isValidType = getAcceptedTypes().includes(file.type);
@@ -88,7 +95,10 @@ export function EnhancedUploadManager({
       console.log(`Processing ${validFiles.length} new files for upload`);
       onFileUpload(validFiles);
     }
-  }, [activeTab, maxFileSize, onFileUpload, uploadedFiles]);
+    
+    // Reset processing flag after upload
+    setTimeout(() => setIsProcessing(false), 1500);
+  }, [activeTab, maxFileSize, onFileUpload, uploadedFiles, isProcessing]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -107,21 +117,13 @@ export function EnhancedUploadManager({
     }
   };
   const handleFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (isProcessing) {
-      console.log('Already processing files, ignoring input change');
-      return;
-    }
-    
     const files = Array.from(event.target.files || []);
     if (files.length > 0) {
-      setIsProcessing(true);
+      // Use the same onDrop logic which already handles isProcessing
       onDrop(files);
       
       // Reset the input value to allow selecting the same file again if needed
       event.target.value = '';
-      
-      // Reset processing flag after a short delay
-      setTimeout(() => setIsProcessing(false), 1000);
     }
   };
 
