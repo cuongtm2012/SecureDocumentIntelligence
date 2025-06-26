@@ -16,7 +16,7 @@ import { EnhancedOCRViewer, OCRResult } from './enhanced-ocr-viewer';
 import { DocumentExportManager } from './document-export-manager';
 import { MultiLanguageOCR } from './multi-language-ocr';
 import { BatchOCRProcessor } from './batch-ocr-processor';
-import { DashboardPDFViewer } from './dashboard-pdf-viewer';
+import { SimplePDFViewer } from './simple-pdf-viewer';
 
 import { 
   Upload, 

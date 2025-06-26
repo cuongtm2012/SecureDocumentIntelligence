@@ -3,17 +3,39 @@
 
 import { GlobalWorkerOptions, version } from 'pdfjs-dist';
 
-// Vite-compatible PDF.js worker configuration
-export const configurePDFJSWorker = () => {
+// Multiple CDN fallbacks for PDF.js worker
+const WORKER_URLS = [
+  `https://cdn.jsdelivr.net/npm/pdfjs-dist@${version}/build/pdf.worker.min.js`,
+  `https://unpkg.com/pdfjs-dist@${version}/build/pdf.worker.min.js`,
+  `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${version}/pdf.worker.min.js`
+];
+
+// Check if worker URL is accessible
+async function checkWorkerUrl(url: string): Promise<boolean> {
+  try {
+    const response = await fetch(url, { method: 'HEAD' });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+// Vite-compatible PDF.js worker configuration with fallbacks
+export const configurePDFJSWorker = async () => {
   try {
     if (typeof window !== 'undefined') {
-      // Use unpkg CDN which is more reliable for PDF.js workers
-      const workerUrl = `https://unpkg.com/pdfjs-dist@${version}/build/pdf.worker.min.js`;
+      // Try each worker URL until one works
+      for (const workerUrl of WORKER_URLS) {
+        const isAccessible = await checkWorkerUrl(workerUrl);
+        if (isAccessible) {
+          GlobalWorkerOptions.workerSrc = workerUrl;
+          console.log('✅ PDF.js worker configured successfully:', workerUrl);
+          return { success: true, workerUrl };
+        }
+      }
       
-      GlobalWorkerOptions.workerSrc = workerUrl;
-      console.log('✅ PDF.js worker configured with unpkg CDN:', workerUrl);
-      
-      return { success: true, workerUrl };
+      // If no CDN works, try creating a local worker
+      return await createLocalWorker();
     }
     return { success: false, error: 'Window object not available' };
   } catch (error) {
@@ -22,13 +44,27 @@ export const configurePDFJSWorker = () => {
   }
 };
 
+// Create a local blob worker as ultimate fallback
+async function createLocalWorker() {
+  try {
+    // Use a fallback approach that disables worker for compatibility
+    GlobalWorkerOptions.workerSrc = '';
+    console.log('✅ PDF.js configured without worker (compatibility mode)');
+    
+    return { success: true, workerUrl: 'compatibility-mode' };
+  } catch (error) {
+    console.error('❌ Failed to create local worker:', error);
+    return { success: false, error };
+  }
+}
+
 // Alternative: Use a different approach for production builds
 export const configureWorkerForProduction = () => {
   try {
-    // Use the same unpkg CDN approach for both development and production
-    const workerUrl = `https://unpkg.com/pdfjs-dist@${version}/build/pdf.worker.min.js`;
+    // Use the same jsdelivr CDN approach for both development and production
+    const workerUrl = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${version}/build/pdf.worker.min.js`;
     GlobalWorkerOptions.workerSrc = workerUrl;
-    console.log('✅ Production PDF.js worker configured with unpkg CDN:', workerUrl);
+    console.log('✅ Production PDF.js worker configured with jsdelivr CDN:', workerUrl);
     return { success: true, workerUrl };
   } catch (error) {
     console.error('❌ Production worker configuration failed:', error);

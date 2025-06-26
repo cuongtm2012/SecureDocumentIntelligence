@@ -1,290 +1,273 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
 import { 
-  Upload, 
-  FileText, 
-  AlertTriangle,
-  CheckCircle,
-  Eye,
-  RefreshCw
+  ChevronLeft, 
+  ChevronRight, 
+  ZoomIn, 
+  ZoomOut, 
+  Download,
+  FileText,
+  X,
+  Loader2
 } from 'lucide-react';
-import * as pdfjsLib from 'pdfjs-dist';
 
-// Configure PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
+interface SimplePDFViewerProps {
+  documentId: number;
+  fileName: string;
+  extractedText: string;
+  confidence: number;
+  onClose: () => void;
+  onTextEdit?: (newText: string) => void;
+  onExport?: (format: string) => void;
+}
 
-export function SimplePDFViewer() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [pdfDocument, setPdfDocument] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
+export function SimplePDFViewer({
+  documentId,
+  fileName,
+  extractedText,
+  confidence,
+  onClose,
+  onTextEdit,
+  onExport
+}: SimplePDFViewerProps) {
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [totalPages, setTotalPages] = useState(1);
+  const [zoom, setZoom] = useState(100);
+  const [editedText, setEditedText] = useState(extractedText);
+  const [isLoading, setIsLoading] = useState(true);
+  const [pdfImages, setPdfImages] = useState<string[]>([]);
+  const [error, setError] = useState<string>('');
 
-  const logMessage = (message: string, type: 'info' | 'error' | 'success' = 'info') => {
-    console.log(`[PDF Viewer] ${message}`);
-    if (type === 'error') {
-      setError(message);
-      setSuccess(null);
-    } else if (type === 'success') {
-      setSuccess(message);
-      setError(null);
-    }
-  };
+  // Load PDF as images from the server
+  useEffect(() => {
+    const loadPdfImages = async () => {
+      try {
+        setIsLoading(true);
+        setError('');
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      if (file.type === 'application/pdf') {
-        setSelectedFile(file);
-        setError(null);
-        logMessage(`Selected file: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
-      } else {
-        logMessage('Please select a PDF file', 'error');
+        // Request PDF pages as images from the server
+        const response = await fetch(`/api/documents/${documentId}/pages`);
+        
+        if (!response.ok) {
+          throw new Error(`Failed to load PDF pages: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.success && data.images) {
+          setPdfImages(data.images);
+          setTotalPages(data.images.length);
+          console.log(`✅ Loaded ${data.images.length} PDF pages as images`);
+        } else {
+          // Fallback: show the raw PDF in an iframe
+          const pdfUrl = `/api/documents/${documentId}/raw?t=${Date.now()}`;
+          setPdfImages([pdfUrl]);
+          setTotalPages(1);
+          console.log('📄 Falling back to direct PDF display');
+        }
+      } catch (error: any) {
+        console.error('❌ Failed to load PDF images:', error);
+        setError(error.message || 'Failed to load PDF content');
+        
+        // Ultimate fallback: try to show the raw PDF
+        const pdfUrl = `/api/documents/${documentId}/raw?t=${Date.now()}`;
+        setPdfImages([pdfUrl]);
+        setTotalPages(1);
+      } finally {
+        setIsLoading(false);
       }
+    };
+
+    loadPdfImages();
+  }, [documentId]);
+
+  const handlePrevPage = () => {
+    setCurrentPage(prev => Math.max(1, prev - 1));
+  };
+
+  const handleNextPage = () => {
+    setCurrentPage(prev => Math.min(totalPages, prev + 1));
+  };
+
+  const handleZoomIn = () => {
+    setZoom(prev => Math.min(200, prev + 25));
+  };
+
+  const handleZoomOut = () => {
+    setZoom(prev => Math.max(50, prev - 25));
+  };
+
+  const handleTextSave = () => {
+    if (onTextEdit && editedText !== extractedText) {
+      onTextEdit(editedText);
     }
   };
 
-  const loadPDF = async () => {
-    if (!selectedFile) {
-      logMessage('No file selected', 'error');
-      return;
+  const renderPdfContent = () => {
+    if (isLoading) {
+      return (
+        <div className="flex items-center justify-center h-96">
+          <div className="text-center">
+            <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2" />
+            <p className="text-sm text-gray-500">Loading PDF content...</p>
+          </div>
+        </div>
+      );
     }
 
-    setLoading(true);
-    setError(null);
-    setSuccess(null);
-
-    try {
-      logMessage('Starting PDF loading...');
-      
-      // Convert file to array buffer
-      const arrayBuffer = await selectedFile.arrayBuffer();
-      logMessage('File converted to array buffer');
-
-      // Create loading task
-      const loadingTask = pdfjsLib.getDocument({
-        data: arrayBuffer,
-        // Add these options to handle potential issues
-        isEvalSupported: false,
-        useSystemFonts: true,
-        standardFontDataUrl: null
-      });
-
-      logMessage('PDF loading task created');
-
-      // Load the document
-      const pdf = await loadingTask.promise;
-      logMessage(`PDF loaded successfully! Pages: ${pdf.numPages}`, 'success');
-
-      setPdfDocument(pdf);
-      setTotalPages(pdf.numPages);
-      setCurrentPage(1);
-
-      // Render the first page
-      await renderPage(pdf, 1);
-
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      logMessage(`Failed to load PDF: ${errorMessage}`, 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const renderPage = async (pdf: pdfjsLib.PDFDocumentProxy, pageNumber: number) => {
-    if (!canvasRef.current) {
-      logMessage('Canvas not available', 'error');
-      return;
+    if (error) {
+      return (
+        <div className="flex items-center justify-center h-96">
+          <div className="text-center text-red-600">
+            <FileText className="h-12 w-12 mx-auto mb-2" />
+            <p className="font-medium">Failed to load PDF</p>
+            <p className="text-sm">{error}</p>
+          </div>
+        </div>
+      );
     }
 
-    try {
-      logMessage(`Rendering page ${pageNumber}...`);
+    const currentImage = pdfImages[currentPage - 1];
+    const isPdfFile = currentImage?.endsWith('.pdf') || currentImage?.includes('/raw');
 
-      const page = await pdf.getPage(pageNumber);
-      const canvas = canvasRef.current;
-      const context = canvas.getContext('2d');
-
-      if (!context) {
-        throw new Error('Cannot get 2D context');
-      }
-
-      // Clear previous content
-      context.clearRect(0, 0, canvas.width, canvas.height);
-
-      // Calculate scale to fit container
-      const containerWidth = canvas.parentElement?.clientWidth || 800;
-      const viewport = page.getViewport({ scale: 1 });
-      const scale = Math.min(containerWidth / viewport.width, 1.5);
-      const scaledViewport = page.getViewport({ scale });
-
-      // Set canvas dimensions
-      canvas.height = scaledViewport.height;
-      canvas.width = scaledViewport.width;
-      canvas.style.width = `${scaledViewport.width}px`;
-      canvas.style.height = `${scaledViewport.height}px`;
-
-      logMessage(`Canvas dimensions: ${canvas.width}x${canvas.height}, scale: ${scale.toFixed(2)}`);
-
-      // Render the page
-      const renderTask = page.render({
-        canvasContext: context,
-        viewport: scaledViewport
-      });
-
-      await renderTask.promise;
-      logMessage(`Page ${pageNumber} rendered successfully!`, 'success');
-
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      logMessage(`Failed to render page ${pageNumber}: ${errorMessage}`, 'error');
-      throw err;
-    }
-  };
-
-  const goToPage = async (pageNumber: number) => {
-    if (pdfDocument && pageNumber >= 1 && pageNumber <= totalPages) {
-      setCurrentPage(pageNumber);
-      await renderPage(pdfDocument, pageNumber);
-    }
-  };
-
-  const testBasicCanvas = () => {
-    if (!canvasRef.current) return;
-
-    const canvas = canvasRef.current;
-    const context = canvas.getContext('2d');
-
-    if (!context) {
-      logMessage('Cannot get canvas context', 'error');
-      return;
+    if (isPdfFile) {
+      // Show raw PDF in iframe as fallback
+      return (
+        <div className="h-full w-full">
+          <iframe
+            src={currentImage}
+            className="w-full h-full border-0"
+            style={{ minHeight: '600px' }}
+            title={`PDF Document - ${fileName}`}
+          />
+        </div>
+      );
     }
 
-    // Draw test pattern
-    canvas.width = 400;
-    canvas.height = 300;
-
-    context.fillStyle = '#f8f9fa';
-    context.fillRect(0, 0, 400, 300);
-
-    context.fillStyle = '#007bff';
-    context.fillRect(50, 50, 300, 200);
-
-    context.fillStyle = 'white';
-    context.font = '24px Arial';
-    context.textAlign = 'center';
-    context.fillText('Canvas Working!', 200, 150);
-
-    logMessage('Canvas test completed successfully', 'success');
+    // Show image pages
+    return (
+      <div className="flex items-center justify-center h-full">
+        <img
+          src={currentImage}
+          alt={`Page ${currentPage} of ${fileName}`}
+          style={{ 
+            transform: `scale(${zoom / 100})`,
+            maxWidth: '100%',
+            maxHeight: '100%'
+          }}
+          className="border border-gray-200 shadow-lg"
+        />
+      </div>
+    );
   };
 
   return (
-    <div className="space-y-6 p-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5" />
-            Simple PDF Viewer
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* File Selection */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Select PDF File:</label>
-            <div className="flex gap-2">
-              <Input
-                type="file"
-                accept=".pdf,application/pdf"
-                onChange={handleFileSelect}
-                ref={fileInputRef}
-                className="flex-1"
-              />
-              <Button onClick={testBasicCanvas} variant="outline">
-                Test Canvas
-              </Button>
-            </div>
+    <div className="flex h-full max-h-[95vh]">
+      {/* PDF Viewer Panel */}
+      <div className="flex-1 flex flex-col">
+        {/* Header Controls */}
+        <div className="flex items-center justify-between p-4 border-b bg-white">
+          <div className="flex items-center gap-4">
+            <h3 className="text-lg font-semibold truncate">{fileName}</h3>
+            <Badge variant={confidence > 80 ? "default" : confidence > 60 ? "secondary" : "destructive"}>
+              {confidence.toFixed(1)}% confidence
+            </Badge>
           </div>
-
-          {/* Controls */}
-          <div className="flex gap-2 flex-wrap">
-            <Button 
-              onClick={loadPDF} 
-              disabled={!selectedFile || loading}
-              className="flex-1"
+          
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleZoomOut}
+              disabled={zoom <= 50}
             >
-              {loading ? (
-                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Eye className="h-4 w-4 mr-2" />
-              )}
-              Load PDF
+              <ZoomOut className="h-4 w-4" />
+            </Button>
+            <span className="text-sm min-w-[60px] text-center">{zoom}%</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleZoomIn}
+              disabled={zoom >= 200}
+            >
+              <ZoomIn className="h-4 w-4" />
+            </Button>
+            
+            <Separator orientation="vertical" className="h-6" />
+            
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handlePrevPage}
+              disabled={currentPage <= 1}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="text-sm min-w-[80px] text-center">
+              {currentPage} / {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleNextPage}
+              disabled={currentPage >= totalPages}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            
+            <Separator orientation="vertical" className="h-6" />
+            
+            <Button variant="outline" size="sm" onClick={onClose}>
+              <X className="h-4 w-4" />
             </Button>
           </div>
+        </div>
 
-          {/* Status Messages */}
-          {error && (
-            <Alert variant="destructive">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
+        {/* PDF Content */}
+        <div className="flex-1 overflow-auto bg-gray-50">
+          {renderPdfContent()}
+        </div>
+      </div>
 
-          {success && (
-            <Alert>
-              <CheckCircle className="h-4 w-4" />
-              <AlertDescription>{success}</AlertDescription>
-            </Alert>
-          )}
-
-          {/* Page Navigation */}
-          {pdfDocument && (
-            <div className="flex items-center justify-between">
-              <Button 
-                variant="outline" 
-                onClick={() => goToPage(currentPage - 1)}
-                disabled={currentPage <= 1}
-              >
-                Previous
-              </Button>
-              
-              <Badge variant="outline">
-                Page {currentPage} of {totalPages}
-              </Badge>
-              
-              <Button 
-                variant="outline" 
-                onClick={() => goToPage(currentPage + 1)}
-                disabled={currentPage >= totalPages}
-              >
-                Next
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* PDF Display */}
-      <Card>
-        <CardHeader>
-          <CardTitle>PDF Content</CardTitle>
+      {/* Text Editor Panel */}
+      <div className="w-96 border-l bg-white flex flex-col">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Extracted Text</CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="border border-gray-300 rounded-lg p-4 bg-gray-50 flex justify-center">
-            <canvas
-              ref={canvasRef}
-              className="border border-gray-400 bg-white shadow-lg max-w-full"
-              style={{ height: 'auto' }}
+        <CardContent className="flex-1 flex flex-col">
+          <ScrollArea className="flex-1 mb-4">
+            <textarea
+              value={editedText}
+              onChange={(e) => setEditedText(e.target.value)}
+              className="w-full h-full min-h-[400px] p-3 border rounded resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              placeholder="Extracted text will appear here..."
             />
+          </ScrollArea>
+          
+          <div className="flex gap-2">
+            <Button
+              onClick={handleTextSave}
+              disabled={editedText === extractedText}
+              className="flex-1"
+            >
+              Save Changes
+            </Button>
+            {onExport && (
+              <Button
+                variant="outline"
+                onClick={() => onExport('txt')}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Export
+              </Button>
+            )}
           </div>
         </CardContent>
-      </Card>
+      </div>
     </div>
   );
 }
