@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import * as pdfjsLib from 'pdfjs-dist';
+import { configurePDFJSWorker } from '@/lib/pdf-worker-config';
 
 interface DashboardPDFViewerProps {
   file: {
@@ -73,8 +74,9 @@ export function DashboardPDFViewer({
   // Initialize PDF.js worker
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
-      console.log('✅ PDF.js worker initialized for dashboard');
+      // Use the CDN worker URL as fallback to ensure it loads properly
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+      console.log('✅ PDF.js worker initialized for dashboard with CDN fallback');
     }
   }, []);
 
