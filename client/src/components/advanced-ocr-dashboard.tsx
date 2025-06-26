@@ -908,9 +908,11 @@ export function AdvancedOCRDashboard() {
               View and edit the document content with OCR text extraction results
             </DialogDescription>
           </DialogHeader>
-          <DashboardPDFViewer
-            file={selectedFileForViewer}
+          <SimplePDFViewer
             documentId={currentDocument.id}
+            fileName={selectedFileForViewer.name}
+            extractedText={selectedFileForViewer.result?.extractedText || ''}
+            confidence={selectedFileForViewer.result?.confidence || 0}
             onTextEdit={handleTextEdit}
             onExport={handleExport}
             onClose={() => setShowPDFViewer(false)}
