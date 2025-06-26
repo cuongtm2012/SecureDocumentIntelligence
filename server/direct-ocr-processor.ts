@@ -2,6 +2,7 @@ import { createWorker } from 'tesseract.js';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import sharp from 'sharp';
+import { spawn } from 'child_process';
 
 export interface DirectOCRResult {
   extractedText: string;
@@ -36,40 +37,147 @@ export class DirectOCRProcessor {
   }
 
   async processPDF(filePath: string, startTime: number): Promise<DirectOCRResult> {
-    console.log(`📄 Processing PDF - treating as scanned document for OCR: ${path.basename(filePath)}`);
+    console.log(`📄 Processing PDF with OCR: ${path.basename(filePath)}`);
     
     try {
-      // For now, treat PDFs as single-page scanned documents
-      // This is a simplified approach until proper PDF-to-image conversion is set up
+      // Convert PDF to images using ImageMagick
+      const tempDir = `/tmp/pdf_ocr_${Date.now()}`;
+      await fs.mkdir(tempDir, { recursive: true });
+      
+      const outputPattern = path.join(tempDir, 'page-%d.png');
+      
+      // Use ImageMagick to convert PDF to PNG images
+      console.log('🔄 Converting PDF to images...');
+      await this.convertPDFToImages(filePath, outputPattern);
+      
+      // Get list of generated images
+      const imageFiles = await fs.readdir(tempDir);
+      const pngFiles = imageFiles.filter(f => f.endsWith('.png')).sort();
+      
+      if (pngFiles.length === 0) {
+        throw new Error('No images generated from PDF');
+      }
+      
+      console.log(`📄 Processing ${pngFiles.length} pages with Tesseract OCR...`);
+      
+      let allText = '';
+      let totalConfidence = 0;
+      
+      // Process each page with OCR
+      for (let i = 0; i < pngFiles.length; i++) {
+        const imagePath = path.join(tempDir, pngFiles[i]);
+        console.log(`🔍 Processing page ${i + 1}/${pngFiles.length}...`);
+        
+        const pageResult = await this.processImageWithTesseract(imagePath);
+        allText += pageResult.text + '\n\n';
+        totalConfidence += pageResult.confidence;
+      }
+      
+      // Clean up temporary files
+      await fs.rm(tempDir, { recursive: true, force: true });
+      
+      const averageConfidence = totalConfidence / pngFiles.length;
       const processingTime = Date.now() - startTime;
       
-      // Simulate OCR processing for PDF documents
-      console.log(`⚠️ PDF OCR processing requires image conversion - using simplified approach`);
+      console.log(`✅ PDF OCR completed: ${pngFiles.length} pages, ${averageConfidence.toFixed(1)}% confidence`);
+      
       return {
-        extractedText: this.generateVietnameseContent(path.basename(filePath)),
-        confidence: 75.0,
-        pageCount: 1,
-        processingMethod: 'pdf-simplified-processing',
+        extractedText: this.cleanVietnameseText(allText),
+        confidence: averageConfidence,
+        pageCount: pngFiles.length,
+        processingMethod: 'pdf-tesseract-ocr',
         processingTime
       };
+      
     } catch (error: any) {
-      console.error('PDF processing error:', error);
-      throw new Error(`PDF processing failed: ${error.message}`);
+      console.error('PDF OCR processing error:', error);
+      throw new Error(`PDF OCR failed: ${error.message}`);
     }
   }
 
-  private generateVietnameseContent(filename: string): string {
-    return `CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM
-Độc lập - Tự do - Hạnh phúc
+  private async convertPDFToImages(pdfPath: string, outputPattern: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      // Use ImageMagick convert to convert PDF to PNG
+      const args = [
+        '-density', '300',
+        '-quality', '100',
+        pdfPath,
+        outputPattern
+      ];
+      
+      console.log(`🔄 Running: convert ${args.join(' ')}`);
+      
+      const process = spawn('convert', args);
+      let stderr = '';
+      
+      process.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+      
+      process.on('close', (code) => {
+        if (code === 0) {
+          console.log('✅ PDF to images conversion completed');
+          resolve();
+        } else {
+          console.error('❌ PDF conversion failed:', stderr);
+          reject(new Error(`PDF conversion failed with code ${code}: ${stderr}`));
+        }
+      });
+      
+      process.on('error', (error) => {
+        console.error('❌ PDF conversion process error:', error);
+        reject(error);
+      });
+    });
+  }
 
-CĂN CƯỚC CÔNG DAN
-Số: 001234567890
-Họ và tên: NGUYỄN VĂN A
-Ngày sinh: 01/01/1990
-Giới tính: Nam
-Quốc tịch: Việt Nam
-
-[Processed ${filename} - Scanned PDF without extractable text]`;
+  private async processImageWithTesseract(imagePath: string): Promise<{ text: string; confidence: number }> {
+    return new Promise((resolve, reject) => {
+      // Use command-line Tesseract for better performance
+      const args = [
+        imagePath,
+        'stdout',
+        '-l', 'vie+eng',
+        '--psm', '6',
+        '-c', 'preserve_interword_spaces=1'
+      ];
+      
+      console.log(`🤖 Running: tesseract ${args.join(' ')}`);
+      
+      const process = spawn('tesseract', args);
+      let stdout = '';
+      let stderr = '';
+      
+      process.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+      
+      process.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+      
+      process.on('close', (code) => {
+        if (code === 0) {
+          // Extract confidence from stderr if available
+          const confidenceMatch = stderr.match(/Mean confidence: (\d+)/);
+          const confidence = confidenceMatch ? parseInt(confidenceMatch[1]) : 85;
+          
+          console.log(`✅ Tesseract OCR completed for ${path.basename(imagePath)}`);
+          resolve({
+            text: stdout.trim(),
+            confidence: confidence
+          });
+        } else {
+          console.error('❌ Tesseract OCR failed:', stderr);
+          reject(new Error(`Tesseract failed with code ${code}: ${stderr}`));
+        }
+      });
+      
+      process.on('error', (error) => {
+        console.error('❌ Tesseract process error:', error);
+        reject(error);
+      });
+    });
   }
 
   async processImage(filePath: string, startTime: number): Promise<DirectOCRResult> {
