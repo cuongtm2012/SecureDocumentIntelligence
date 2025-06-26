@@ -143,6 +143,46 @@ async function processFileWithFallback(filePath: string, document: any, document
   // Extract data from Python OCR result
   const extractedText = ocrResult.text || '';
   const confidence = (ocrResult.confidence || 0) / 100; // Convert to 0-1 range
+  
+  // **NEW: Add Deepseek analysis to main workflow**
+  console.log('🤖 Starting Deepseek analysis integration...');
+  let deepseekAnalysis = null;
+  
+  if (extractedText && process.env.OPENAI_API_KEY) {
+    try {
+      console.log('📋 Calling Deepseek document analysis...');
+      deepseekAnalysis = await deepSeekService.analyzeDocument(
+        extractedText, 
+        "Vietnamese government document analysis"
+      );
+      console.log('✅ Deepseek analysis completed successfully');
+      
+      // Log the analysis
+      await storage.createAuditLog({
+        userId,
+        action: `Deepseek AI analysis completed: ${document.originalName}`,
+        documentId: document.id,
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent'),
+      });
+      
+    } catch (deepseekError) {
+      const errorMessage = deepseekError instanceof Error ? deepseekError.message : 'Unknown error';
+      console.warn('⚠️ DeepSeek analysis failed:', errorMessage);
+      
+      // Log the warning but don't fail the entire process
+      await storage.createAuditLog({
+        userId,
+        action: `Deepseek AI analysis failed for ${document.originalName}: ${errorMessage}`,
+        documentId: document.id,
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent'),
+      });
+    }
+  } else {
+    console.log('⚠️ Skipping Deepseek analysis: No API key configured or no text extracted');
+  }
+  
   const structuredData = {
     pageCount: ocrResult.page_count || 1,
     characterCount: ocrResult.metadata?.character_count || extractedText.length,
@@ -150,6 +190,21 @@ async function processFileWithFallback(filePath: string, document: any, document
     language: ocrResult.metadata?.language || 'vie',
     processingMode: ocrResult.metadata?.processing_mode || 'python-ocr',
     processingTime: ocrResult.processing_time || 0,
+    
+    // **NEW: Add Deepseek analysis results to structured data**
+    deepseekAnalysis: deepseekAnalysis ? {
+      applied: true,
+      summary: deepseekAnalysis.summary || 'Analysis completed',
+      keyFindings: deepseekAnalysis.keyFindings || [],
+      entities: deepseekAnalysis.entities || [],
+      confidence: deepseekAnalysis.confidence || 0.8,
+      documentType: deepseekAnalysis.documentType || 'Unknown',
+      timestamp: new Date().toISOString()
+    } : {
+      applied: false,
+      reason: process.env.OPENAI_API_KEY ? 'Analysis failed' : 'No API key configured'
+    },
+    
     ...extractStructuredData(extractedText)
   };
 
@@ -302,27 +357,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }      try {
         return await processFileWithFallback(filePath, document, documentId, userId, req, res);
       } catch (processingError) {
-        console.error('Processing error:', processingError);
+        const errorMessage = processingError instanceof Error ? processingError.message : 'Unknown processing error';
+        const errorStep = (processingError as any)?.step || 'unknown';
         
-        await storage.updateDocument(documentId, {
-          processingStatus: "failed",
-          processingCompletedAt: new Date().toISOString(),
-          errorMessage: `Processing failed: ${processingError instanceof Error ? processingError.message : 'Unknown error'}`,
-        });
-
-        // Log the error
-        await storage.createAuditLog({
-          userId,
-          action: `Document processing failed: ${document.originalName} - ${processingError instanceof Error ? processingError.message : 'Unknown error'}`,
-          documentId: document.id,
-          ipAddress: req.ip,
-          userAgent: req.get('User-Agent'),
-        });
-
-        res.status(500).json({ 
-          message: "Document processing failed", 
-          error: processingError instanceof Error ? processingError.message : 'Unknown error'
-        });
+        console.error('❌ Enhanced processing failed:', errorMessage);
+        
+        return res.json({
+          success: false,
+          error: 'Enhanced processing failed',
+          details: errorMessage,
+          step: errorStep
+        }, 500);
       }
 
     } catch (error) {
@@ -610,157 +655,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!fs.existsSync(tempDir)) {
           fs.mkdirSync(tempDir, { recursive: true });
         }
+
+        // Use pdf-poppler or pdf2pic to convert PDF page to image
+        const outputPath = path.join(tempDir, `pdf_page_${documentId}_${page}.png`);
         
-        // Use Poppler's pdftoppm directly
-        const outputBase = path.join(tempDir, `pdf-${documentId}-${page}-${Date.now()}`);
-        const { exec } = require('child_process');
-        const { promisify } = require('util');
-        const execAsync = promisify(exec);
+        // For now, return the PDF file directly for client-side rendering
+        const pdfBuffer = await readFile(filePath);
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', 'inline');
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        res.send(pdfBuffer);
         
-        // Convert specific page using pdftoppm - fixed command
-        const command = `pdftoppm -png -f ${page} -l ${page} -r 150 "${filePath}" "${outputBase}"`;
-        
-        console.log(`Executing: ${command}`);
-        await execAsync(command);
-        
-        // The output file will be named "outputBase-pageNumber.png"
-        const outputFile = `${outputBase}-${page}.png`;
-        
-        console.log(`Looking for output file: ${outputFile}`);
-        
-        if (fs.existsSync(outputFile)) {
-          console.log(`✅ PDF page ${page} converted successfully`);
-          const imageBuffer = await readFile(outputFile);
-          
-          // Clean up temp file
-          setTimeout(async () => {
-            try {
-              await unlink(outputFile);
-            } catch (cleanupError) {
-              console.warn('Failed to cleanup temp file:', cleanupError);
-            }
-          }, 5000); // Cleanup after 5 seconds
-          
-          res.setHeader('Content-Type', 'image/png');
-          res.setHeader('Cache-Control', 'public, max-age=3600');
-          res.send(imageBuffer);
-          return;
-        } else {
-          throw new Error(`PDF conversion output file not found: ${outputFile}`);
-        }
-        
-      } catch (pdfError: any) {
-        console.error('PDF conversion error:', pdfError.message);
-        console.error('PDF conversion stack:', pdfError.stack);
-        
-        // Enhanced fallback SVG with actual document info
-        const fallbackSvg = `
-          <svg width="800" height="1000" xmlns="http://www.w3.org/2000/svg">
-            <rect width="800" height="1000" fill="#ffffff" stroke="#e0e0e0" stroke-width="2"/>
-            
-            <!-- Header -->
-            <rect x="40" y="40" width="720" height="80" fill="#f8f9fa" stroke="#dee2e6" rx="8"/>
-            <text x="400" y="70" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" fill="#495057" font-weight="bold">
-              📄 ${document.originalName}
-            </text>
-            <text x="400" y="95" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#6c757d">
-              Page ${page} • ${(document.fileSize / 1024 / 1024).toFixed(2)} MB
-            </text>
-            
-            <!-- Status indicator -->
-            <circle cx="400" cy="200" r="50" fill="#28a745" opacity="0.1"/>
-            <text x="400" y="195" text-anchor="middle" font-family="Arial, sans-serif" font-size="36" fill="#28a745">✓</text>
-            <text x="400" y="220" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#28a745" font-weight="bold">
-              Processing Complete
-            </text>
-            
-            <!-- Document preview placeholder -->
-            <rect x="80" y="280" width="640" height="20" fill="#e9ecef" rx="4"/>
-            <rect x="80" y="310" width="580" height="20" fill="#e9ecef" rx="4"/>
-            <rect x="80" y="340" width="620" height="20" fill="#e9ecef" rx="4"/>
-            <rect x="80" y="370" width="520" height="20" fill="#e9ecef" rx="4"/>
-            <rect x="80" y="400" width="680" height="20" fill="#e9ecef" rx="4"/>
-            
-            <!-- Vietnamese text sample -->
-            <text x="400" y="480" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#007bff" font-weight="bold">
-              CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM
-            </text>
-            <text x="400" y="500" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#6c757d">
-              Độc lập - Tự do - Hạnh phúc
-            </text>
-            
-            <!-- Instructions -->
-            <rect x="150" y="550" width="500" height="120" fill="#fff3cd" stroke="#ffeaa7" rx="8"/>
-            <text x="400" y="580" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#856404" font-weight="bold">
-              📋 Text Successfully Extracted (93% confidence)
-            </text>
-            <text x="400" y="605" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#856404">
-              PDF preview loading... Check right panel for extracted text
-            </text>
-            <text x="400" y="625" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#856404">
-              All Vietnamese text content is available on the right
-            </text>
-            <text x="400" y="645" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#856404">
-              Use TXT/PDF/DOCX buttons to export content
-            </text>
-            
-            <!-- Footer -->
-            <rect x="40" y="920" width="720" height="40" fill="#f8f9fa" stroke="#dee2e6" rx="4"/>
-            <text x="400" y="945" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#6c757d">
-              Vietnamese OCR Engine • ${document.originalName} • Ready for Export
-            </text>
-          </svg>
-        `;
-        
-        res.setHeader('Content-Type', 'image/svg+xml');
-        res.setHeader('Cache-Control', 'public, max-age=300');
-        res.send(fallbackSvg);
+      } catch (error) {
+        console.error('PDF conversion error:', error);
+        res.status(500).json({ message: "Failed to process PDF" });
       }
     } catch (error) {
-      console.error('PDF page error:', error);
-      res.status(500).json({ message: "Failed to get PDF page" });
+      console.error('PDF endpoint error:', error);
+      res.status(500).json({ message: "Failed to serve PDF" });
     }
   });
 
-  // Get document image (for non-PDF files) - Fixed version
-  app.get("/api/documents/:id/image", async (req, res) => {
-    try {
-      const documentId = parseInt(req.params.id);
-      const userId = (req as any).user.id;
-      
-      const document = await storage.getDocument(documentId);
-      if (!document || document.userId !== userId) {
-        return res.status(404).json({ message: "Document not found" });
-      }
-
-      if (document.mimeType === 'application/pdf') {
-        return res.status(400).json({ message: "Use /pdf endpoint for PDF files" });
-      }
-
-      // Fix: Use correct property name 'filename'
-      const filePath = path.join(uploadsDir, document.filename);
-      
-      if (!fs.existsSync(filePath)) {
-        console.error(`Image file not found: ${filePath}`);
-        return res.status(404).json({ message: "Image file not found" });
-      }
-
-      try {
-        const imageBuffer = await readFile(filePath);
-        res.setHeader('Content-Type', document.mimeType);
-        res.setHeader('Cache-Control', 'public, max-age=3600');
-        res.send(imageBuffer);
-      } catch (error) {
-        console.error('Image serve error:', error);
-        res.status(500).json({ message: "Failed to serve image" });
-      }
-    } catch (error) {
-      console.error('Image error:', error);
-      res.status(500).json({ message: "Failed to get image" });
-    }  });
-
-  // Get raw document file (for PDF viewer)
-  app.get("/api/documents/:id/raw", async (req, res) => {
+  // Serve PDF files directly
+  app.get("/api/documents/:id/file", async (req, res) => {
     try {
       const documentId = parseInt(req.params.id);
       const userId = (req as any).user.id;
@@ -773,30 +690,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const filePath = path.join(uploadsDir, document.filename);
       
       if (!fs.existsSync(filePath)) {
-        console.error(`Raw file not found: ${filePath}`);
-        return res.status(404).json({ message: "File not found" });
-      }
-
-      try {
+        // Try to find an alternative file
+        const files = fs.readdirSync(uploadsDir);
+        const alternativeFile = files.find(file => 
+          file.includes(document.originalName.replace(/\s+/g, ' ')) ||
+          file.endsWith(document.originalName)
+        );
+        
+        if (alternativeFile) {
+          const alternativePath = path.join(uploadsDir, alternativeFile);
+          const fileBuffer = await readFile(alternativePath);
+          
+          res.setHeader('Content-Type', document.mimeType || 'application/octet-stream');
+          res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
+          res.setHeader('Cache-Control', 'public, max-age=3600');
+          res.send(fileBuffer);
+        } else {
+          return res.status(404).json({ message: "File not found" });
+        }
+      } else {
         const fileBuffer = await readFile(filePath);
         
-        // Set appropriate headers based on file type
-        res.setHeader('Content-Type', document.mimeType);
-        res.setHeader('Content-Length', fileBuffer.length);
-        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-        res.setHeader('Pragma', 'no-cache');
-        res.setHeader('Expires', '0');
+        res.setHeader('Content-Type', document.mimeType || 'application/octet-stream');
         res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
-        
-        console.log(`✅ Serving raw file: ${document.originalName} (${fileBuffer.length} bytes)`);
+        res.setHeader('Cache-Control', 'public, max-age=3600');
         res.send(fileBuffer);
-      } catch (error) {
-        console.error('Raw file serve error:', error);
-        res.status(500).json({ message: "Failed to serve file" });
       }
     } catch (error) {
-      console.error('Raw file error:', error);
-      res.status(500).json({ message: "Failed to get raw file" });
+      console.error('File serving error:', error);
+      res.status(500).json({ message: "Failed to serve file" });
     }
   });
 
@@ -1011,28 +933,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
 
       } catch (processingError) {
-        console.error('Enhanced processing error:', processingError);
+        const errorMessage = processingError instanceof Error ? processingError.message : 'Unknown processing error';
+        const errorStep = (processingError as any)?.step || 'unknown';
         
-        await storage.updateDocument(documentId, {
-          processingStatus: "failed",
-          processingCompletedAt: new Date().toISOString(),
-          errorMessage: `Enhanced processing failed: ${processingError instanceof Error ? processingError.message : 'Unknown error'}`,
-        });
-
-        // Log the error
-        await storage.createAuditLog({
-          userId,
-          action: `Enhanced document processing failed: ${document.originalName} - ${processingError instanceof Error ? processingError.message : 'Unknown error'}`,
-          documentId: document.id,
-          ipAddress: req.ip,
-          userAgent: req.get('User-Agent'),
-        });
-
-        res.status(500).json({ 
-          message: "Enhanced document processing failed", 
-          error: processingError instanceof Error ? processingError.message : 'Unknown error',
-          step: processingError.step || 'unknown'
-        });
+        console.error('❌ Enhanced processing failed:', errorMessage);
+        
+        return res.json({
+          success: false,
+          error: 'Enhanced processing failed',
+          details: errorMessage,
+          step: errorStep
+        }, 500);
       }
 
     } catch (error) {

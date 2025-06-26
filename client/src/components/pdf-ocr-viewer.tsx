@@ -61,11 +61,6 @@ export function PDFOCRViewer({ file, onClose, onTextEdit, onExport }: PDFOCRView
       defaultTabs[1], // Bookmarks
       defaultTabs[2], // Attachments
     ],
-    toolbarPlugin: {
-      downloadPlugin: {
-        fileNameGenerator: () => `${file.name}_processed.pdf`,
-      },
-    },
   });
 
   const currentText = file.result?.extractedText || '';

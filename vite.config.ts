@@ -28,25 +28,46 @@ export default defineConfig({
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
     rollupOptions: {
-      // Remove PDF worker bundling since we're using CDN
       external: [],
-    }
+      output: {
+        manualChunks: {
+          // Separate react-pdf and PDF.js into its own chunk
+          "react-pdf": ["react-pdf", "pdfjs-dist"],
+          // Separate UI components
+          "ui-components": [
+            "@radix-ui/react-dialog",
+            "@radix-ui/react-dropdown-menu",
+            "@radix-ui/react-select",
+          ],
+          // Separate utilities
+          utils: ["clsx", "tailwind-merge", "date-fns"],
+        },
+      },
+    },
+    // Increase chunk size warning limit for PDF.js
+    chunkSizeWarningLimit: 1000,
+    // Enable minification
+    minify: "terser",
+    terserOptions: {
+      compress: {
+        drop_console: true, // Remove console logs in production
+        drop_debugger: true,
+      },
+    },
   },
   server: {
     fs: {
       strict: true,
       deny: ["**/.*"],
     },
-    // Remove cache control headers as they're not needed for CDN worker
   },
   optimizeDeps: {
-    // Include react-pdf-viewer packages in dependency optimization
-    include: ['pdfjs-dist', '@react-pdf-viewer/core', '@react-pdf-viewer/default-layout'],
+    // Include react-pdf packages in dependency optimization
+    include: ['react-pdf', 'pdfjs-dist'],
     esbuildOptions: {
       target: 'es2020'
     }
   },
-  // Remove worker file handling since we're using CDN
   define: {
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV),
   }

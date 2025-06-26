@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 // Import our enhanced components
 import { EnhancedUploadManager, UploadedFile } from './enhanced-upload-manager';
@@ -32,7 +33,11 @@ import {
   Download,
   Languages,
   Activity,
-  Database
+  Database,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight
 } from 'lucide-react';
 import { nanoid } from 'nanoid';
 import { useToast } from "@/hooks/use-toast";
@@ -48,6 +53,10 @@ export function AdvancedOCRDashboard() {
   const [currentDocument, setCurrentDocument] = useState<any>(null);
   const [showPDFViewer, setShowPDFViewer] = useState(false);
   const [selectedFileForViewer, setSelectedFileForViewer] = useState<UploadedFile | null>(null);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -317,6 +326,9 @@ export function AdvancedOCRDashboard() {
       processedAt: new Date(doc.processedAt || doc.uploadedAt),
     }));
 
+  // Paginated documents
+  const paginatedDocuments = documents.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
       <div className="container mx-auto p-6 space-y-6">
@@ -481,7 +493,7 @@ export function AdvancedOCRDashboard() {
                     </div>
                     
                     <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
+                      <div className="flex justify-between text-sm mb-1">
                         <span>Average Processing Time</span>
                         <span className="font-medium">2.3s</span>
                       </div>
@@ -553,214 +565,354 @@ export function AdvancedOCRDashboard() {
 
           {/* Results Tab */}
           <TabsContent value="results" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Document Processing Results</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {isLoading ? (
-                    <div className="text-center py-8">Loading documents...</div>
-                  ) : documents.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                      No documents processed yet
-                    </div>
-                  ) : (
-                    documents.map((document: any) => (
-                      <div key={document.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800">
-                        <div className="flex items-center gap-3">
-                          {getStatusIcon(document.processingStatus)}
-                          <div>
-                            <p className="font-medium">{document.originalName}</p>
-                            <p className="text-sm text-gray-500">
-                              {new Date(document.uploadedAt).toLocaleDateString()} • 
-                              {Math.round(document.fileSize / 1024)} KB
-                              {document.detectedLanguage && ` • ${document.detectedLanguage.toUpperCase()}`}
-                            </p>
-                          </div>
-                        </div>
-                        
-                        <div className="flex items-center gap-2">
-                          {document.confidence && (
-                            <Badge variant="outline">
-                              {Math.round(document.confidence * 100)}%
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">Processing Results</h2>
+              <p className="text-gray-600">
+                View and manage processed documents ({documents?.length || 0} total)
+              </p>
+            </div>
+            <div className="flex items-center space-x-4">
+              <Select value={pageSize.toString()} onValueChange={(value) => {
+                setPageSize(Number(value));
+                setCurrentPage(1);
+              }}>
+                <SelectTrigger className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="5">5 per page</SelectItem>
+                  <SelectItem value="10">10 per page</SelectItem>
+                  <SelectItem value="20">20 per page</SelectItem>
+                  <SelectItem value="50">50 per page</SelectItem>
+                </SelectContent>
+              </Select>
+              <Badge variant="outline" className="text-sm">
+                Page {currentPage} of {Math.ceil((documents?.length || 0) / pageSize)}
+              </Badge>
+            </div>
+          </div>
+
+          {isLoading ? (
+            <div className="space-y-4">
+              {[...Array(3)].map((_, i) => (
+                <Card key={i} className="animate-pulse">
+                  <CardContent className="p-6">
+                    <div className="h-4 bg-gray-200 rounded w-1/4 mb-2"></div>
+                    <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : documents && documents.length > 0 ? (
+            <>
+              <div className="space-y-4">
+                {documents
+                  .slice((currentPage - 1) * pageSize, currentPage * pageSize)
+                  .map((doc: any) => (
+                  <Card key={doc.id} className="border border-gray-200 hover:border-blue-300 transition-colors">
+                    <CardContent className="p-6">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-2 mb-2">
+                            <FileText className="h-5 w-5 text-blue-600" />
+                            <h3 className="font-semibold text-gray-900">{doc.filename}</h3>
+                            <Badge 
+                              variant={doc.status === 'completed' ? 'default' : 
+                                     doc.status === 'processing' ? 'secondary' : 'destructive'}
+                              className="text-xs"
+                            >
+                              {doc.status}
                             </Badge>
-                          )}
+                          </div>
                           
-                          <Button 
-                            size="sm" 
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600 mb-4">
+                            <div>
+                              <span className="font-medium">Uploaded:</span>
+                              <div>{new Date(doc.uploadedAt).toLocaleDateString()}</div>
+                            </div>
+                            {doc.processedAt && (
+                              <div>
+                                <span className="font-medium">Processed:</span>
+                                <div>{new Date(doc.processedAt).toLocaleDateString()}</div>
+                              </div>
+                            )}
+                            <div>
+                              <span className="font-medium">Type:</span>
+                              <div className="capitalize">{doc.type}</div>
+                            </div>
+                            {doc.confidence && (
+                              <div>
+                                <span className="font-medium">Confidence:</span>
+                                <div>{Math.round(doc.confidence * 100)}%</div>
+                              </div>
+                            )}
+                          </div>
+
+                          {doc.extractedText && (
+                            <div className="mb-4">
+                              <span className="font-medium text-sm text-gray-700">Extracted Text Preview:</span>
+                              <p className="text-sm text-gray-600 mt-1 line-clamp-3">
+                                {doc.extractedText.substring(0, 200)}
+                                {doc.extractedText.length > 200 && '...'}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex flex-col space-y-2 ml-4">
+                          <Button
                             variant="outline"
-                            onClick={() => handleAdvancedOCR(document)}
+                            size="sm"
+                            onClick={() => {
+                              setSelectedResult({
+                                id: doc.id,
+                                fileName: doc.filename,
+                                fileType: doc.type === 'pdf' ? 'pdf' : 'image',
+                                extractedText: doc.extractedText || '',
+                                confidence: doc.confidence || 0,
+                                pageCount: doc.structuredData?.pageCount || 1,
+                                imageUrl: `/api/documents/${doc.id}/thumbnail`,
+                                lowConfidenceWords: []
+                              });
+                              setShowViewer(true);
+                            }}
+                            className="whitespace-nowrap"
                           >
-                            <Languages className="h-3 w-3 mr-1" />
-                            Advanced OCR
+                            <FileText className="h-4 w-4 mr-2" />
+                            View Details
                           </Button>
                           
-                          {document.extractedText && (
-                            <Button 
-                              size="sm" 
+                          {doc.type === 'pdf' && (
+                            <Button
                               variant="outline"
-                              onClick={() => handleViewResult(document)}
+                              size="sm"
+                              onClick={() => {
+                                setSelectedFileForViewer({
+                                  id: doc.id,
+                                  name: doc.filename,
+                                  size: 0,
+                                  type: 'pdf' as const,
+                                  status: 'completed',
+                                  uploadProgress: 100,
+                                  processingProgress: 100,
+                                  file: new File([], doc.filename, { type: 'application/pdf' })
+                                });
+                                setCurrentDocument(doc);
+                                setShowPDFViewer(true);
+                              }}
+                              className="whitespace-nowrap"
                             >
-                              View Result
+                              <FileText className="h-4 w-4 mr-2" />
+                              PDF Viewer
                             </Button>
                           )}
                         </div>
                       </div>
-                    ))
-                  )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+
+              {/* Pagination Controls */}
+              {documents.length > pageSize && (
+                <div className="flex items-center justify-between border-t pt-6">
+                  <div className="text-sm text-gray-600">
+                    Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, documents.length)} of {documents.length} results
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(1)}
+                      disabled={currentPage === 1}
+                      className="p-2"
+                    >
+                      <ChevronsLeft className="h-4 w-4" />
+                    </Button>
+                    
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                      disabled={currentPage === 1}
+                      className="p-2"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    
+                    <span className="text-sm font-medium px-3 py-1 bg-gray-100 rounded">
+                      {currentPage}
+                    </span>
+                    
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(prev => Math.min(Math.ceil(documents.length / pageSize), prev + 1))}
+                      disabled={currentPage >= Math.ceil(documents.length / pageSize)}
+                      className="p-2"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                    
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(Math.ceil(documents.length / pageSize))}
+                      disabled={currentPage >= Math.ceil(documents.length / pageSize)}
+                      className="p-2"
+                    >
+                      <ChevronsRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <Card className="border-dashed border-2 border-gray-300">
+              <CardContent className="p-12 text-center">
+                <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">No Results Yet</h3>
+                <p className="text-gray-600 mb-4">
+                  Upload and process documents to see results here
+                </p>
+                <Button onClick={() => setActiveTab('upload')}>
+                  Start Uploading
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        {/* Export Tab */}
+        <TabsContent value="export" className="space-y-6">
+          <DocumentExportManager
+            ocrResults={ocrResults}
+            selectedResults={selectedDocuments}
+            onSelectionChange={setSelectedDocuments}
+          />
+        </TabsContent>
+
+        {/* Analytics Tab */}
+        <TabsContent value="analytics" className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Processing Volume</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="text-center">
+                    <p className="text-3xl font-bold text-blue-600">{documents.length}</p>
+                    <p className="text-sm text-gray-500">Total Documents</p>
+                  </div>
+                  <Separator />
+                  <div className="grid grid-cols-2 gap-4 text-center">
+                    <div>
+                      <p className="text-xl font-bold text-green-600">
+                        {documents.filter((d: any) => d.processingStatus === 'completed').length}
+                      </p>
+                      <p className="text-xs text-gray-500">Completed</p>
+                    </div>
+                    <div>
+                      <p className="text-xl font-bold text-red-600">
+                        {documents.filter((d: any) => d.processingStatus === 'failed').length}  
+                      </p>
+                      <p className="text-xs text-gray-500">Failed</p>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>
-          </TabsContent>
 
-          {/* Export Tab */}
-          <TabsContent value="export" className="space-y-6">
-            <DocumentExportManager
-              ocrResults={ocrResults}
-              selectedResults={selectedDocuments}
-              onSelectionChange={setSelectedDocuments}
-            />
-          </TabsContent>
-
-          {/* Analytics Tab */}
-          <TabsContent value="analytics" className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Processing Volume</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="text-center">
-                      <p className="text-3xl font-bold text-blue-600">{documents.length}</p>
-                      <p className="text-sm text-gray-500">Total Documents</p>
+            <Card>
+              <CardHeader>
+                <CardTitle>Quality Metrics</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span>Avg. Confidence</span>
+                      <span>
+                        {documents.length > 0 
+                          ? Math.round(documents.reduce((acc: number, doc: any) => acc + (doc.confidence || 0), 0) / documents.length * 100) + '%'
+                          : '0%'}
+                      </span>
                     </div>
-                    <Separator />
-                    <div className="grid grid-cols-2 gap-4 text-center">
-                      <div>
-                        <p className="text-xl font-bold text-green-600">
-                          {documents.filter((d: any) => d.processingStatus === 'completed').length}
-                        </p>
-                        <p className="text-xs text-gray-500">Completed</p>
-                      </div>
-                      <div>
-                        <p className="text-xl font-bold text-red-600">
-                          {documents.filter((d: any) => d.processingStatus === 'failed').length}  
-                        </p>
-                        <p className="text-xs text-gray-500">Failed</p>
-                      </div>
-                    </div>
+                    <Progress value={documents.length > 0 ? documents.reduce((acc: number, doc: any) => acc + (doc.confidence || 0), 0) / documents.length * 100 : 0} className="h-2" />
                   </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Quality Metrics</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div>
-                      <div className="flex justify-between text-sm mb-1">
-                        <span>Avg. Confidence</span>
-                        <span>
-                          {documents.length > 0 
-                            ? Math.round(documents.reduce((acc: number, doc: any) => acc + (doc.confidence || 0), 0) / documents.length * 100) + '%'
-                            : '0%'}
-                        </span>
-                      </div>
-                      <Progress value={documents.length > 0 ? documents.reduce((acc: number, doc: any) => acc + (doc.confidence || 0), 0) / documents.length * 100 : 0} className="h-2" />
+                  
+                  <div>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span>Success Rate</span>
+                      <span>
+                        {documents.length > 0 
+                          ? Math.round(documents.filter((d: any) => d.processingStatus === 'completed').length / documents.length * 100) + '%'
+                          : '0%'}
+                      </span>
                     </div>
-                    
-                    <div>
-                      <div className="flex justify-between text-sm mb-1">
-                        <span>Success Rate</span>
-                        <span>
-                          {documents.length > 0 
-                            ? Math.round(documents.filter((d: any) => d.processingStatus === 'completed').length / documents.length * 100) + '%'
-                            : '0%'}
-                        </span>
-                      </div>
-                      <Progress value={documents.length > 0 ? documents.filter((d: any) => d.processingStatus === 'completed').length / documents.length * 100 : 0} className="h-2" />
-                    </div>
+                    <Progress value={documents.length > 0 ? documents.filter((d: any) => d.processingStatus === 'completed').length / documents.length * 100 : 0} className="h-2" />
                   </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-        </Tabs>
-      </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+      </Tabs>
+    </div>
 
-      {/* OCR Viewer Modal */}
+    {/* OCR Viewer Modal */}
+    {selectedResult && (
       <Dialog open={showViewer} onOpenChange={setShowViewer}>
-        <DialogContent className="max-w-7xl max-h-[90vh] p-0">
-          {selectedResult && (
-            <EnhancedOCRViewer
-              result={selectedResult}
-              onTextEdit={handleTextEdit}
-              onExport={handleExport}
-              onClose={() => setShowViewer(false)}
-            />
-          )}
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>OCR Results - {selectedResult.fileName}</DialogTitle>
+          </DialogHeader>
+          <EnhancedOCRViewer
+            result={selectedResult}
+            onTextEdit={handleTextEdit}
+            onExport={handleExport}
+            onClose={() => setShowViewer(false)}
+          />
         </DialogContent>
-      </Dialog>      {/* PDF OCR Viewer Modal */}
-      {showPDFViewer && selectedFileForViewer && currentDocument && (
-        <OptimizedPDFOCRViewer
-          file={selectedFileForViewer}
-          documentId={currentDocument.id}
-          onClose={() => {
-            setShowPDFViewer(false);
-            setSelectedFileForViewer(null);
-            setCurrentDocument(null);
-          }}
-          onTextEdit={(fileId, newText) => {
-            setUploadedFiles(prev => prev.map(file => 
-              file.id === fileId && file.result
-                ? {
-                    ...file,
-                    result: {
-                      ...file.result,
-                      extractedText: newText
-                    }
-                  }
-                : file
-            ));
-            console.log('Text updated for file:', fileId);
-          }}
-          onExport={(fileId, format) => {
-            const file = uploadedFiles.find(f => f.id === fileId);
-            if (file) {
-              const exportData = file.result?.extractedText || '';
-              const blob = new Blob([exportData], { type: 'text/plain' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = `${file.name}_ocr.${format}`;
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
-              URL.revokeObjectURL(url);
-            }
-          }}
-        />
-      )}
+      </Dialog>
+    )}
 
-      {/* Multi-Language OCR Modal */}
+    {/* Multi-Language OCR Dialog */}
+    {currentDocument && (
       <Dialog open={showLanguageOCR} onOpenChange={setShowLanguageOCR}>
-        <DialogContent className="max-w-4xl max-h-[90vh]">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Advanced Multi-Language OCR</DialogTitle>
           </DialogHeader>
-          {currentDocument && (
-            <MultiLanguageOCR
-              documentId={currentDocument.id.toString()}
-              imageUrl={`/api/documents/${currentDocument.id}/thumbnail`}
-              onOCRComplete={handleOCRComplete}
-            />
-          )}
+          <MultiLanguageOCR
+            documentId={currentDocument.id}
+            imageUrl={currentDocument.filePath}
+            onOCRComplete={handleOCRComplete}
+          />
         </DialogContent>
       </Dialog>
-    </div>
-  );
+    )}
+
+    {/* PDF Viewer Dialog */}
+    {selectedFileForViewer && currentDocument && (
+      <Dialog open={showPDFViewer} onOpenChange={setShowPDFViewer}>
+        <DialogContent className="max-w-7xl max-h-[95vh] overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>PDF OCR Viewer - {selectedFileForViewer.name}</DialogTitle>
+          </DialogHeader>
+          <OptimizedPDFOCRViewer
+            file={selectedFileForViewer}
+            documentId={currentDocument.id}
+            onTextEdit={handleTextEdit}
+            onExport={handleExport}
+            onClose={() => setShowPDFViewer(false)}
+          />
+        </DialogContent>
+      </Dialog>
+    )}
+  </div>
+);
 }

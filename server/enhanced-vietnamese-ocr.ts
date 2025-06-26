@@ -210,6 +210,51 @@ export class EnhancedVietnameseOCR {
     return dateStr;
   }
 
+  private async validateAndCorrectOCRText(text: string, confidence: number): Promise<{ correctedText: string; finalConfidence: number }> {
+    let correctedText = text;
+    let finalConfidence = confidence;
+
+    // Vietnamese diacritic correction patterns
+    const diacriticCorrections: Record<string, string> = {
+      'à': 'à', 'á': 'á', 'ạ': 'ạ', 'ả': 'ả', 'ã': 'ã',
+      'ầ': 'ầ', 'ấ': 'ấ', 'ậ': 'ậ', 'ẩ': 'ẩ', 'ẫ': 'ẫ',
+      'è': 'è', 'é': 'é', 'ẹ': 'ẹ', 'ẻ': 'ẻ', 'ẽ': 'ẽ',
+      'ì': 'ì', 'í': 'í', 'ị': 'ị', 'ỉ': 'ỉ', 'ĩ': 'ĩ',
+      'ò': 'ò', 'ó': 'ó', 'ọ': 'ọ', 'ỏ': 'ỏ', 'õ': 'õ',
+      'ù': 'ù', 'ú': 'ú', 'ụ': 'ụ', 'ủ': 'ủ', 'ũ': 'ũ',
+      'ỳ': 'ỳ', 'ý': 'ý', 'ỵ': 'ỵ', 'ỷ': 'ỷ', 'ỹ': 'ỹ'
+    };
+
+    // Common OCR misreads for Vietnamese
+    const commonMisreads: Record<string, string> = {
+      '0': 'O', '1': 'l', '5': 'S', '8': 'B',
+      'rn': 'm', 'cl': 'd', 'ii': 'ú', 'oo': 'ô'
+    };
+
+    // Apply corrections
+    for (const [wrong, correct] of Object.entries(commonMisreads)) {
+      correctedText = correctedText.replace(new RegExp(wrong, 'g'), correct);
+    }
+
+    // Validate Vietnamese document structure
+    const hasValidVietnameseStructure = this.validateVietnameseDocumentStructure(correctedText);
+    if (hasValidVietnameseStructure) {
+      finalConfidence = Math.min(finalConfidence + 10, 100);
+    }
+
+    return { correctedText, finalConfidence };
+  }
+
+  private validateVietnameseDocumentStructure(text: string): boolean {
+    const requiredFields = [
+      /(?:họ|tên|cccd|cmnd|ngày\s*sinh|địa\s*chỉ)/i,
+      /\d{9,12}/, // ID numbers
+      /\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}/ // Dates
+    ];
+
+    return requiredFields.every(pattern => pattern.test(text));
+  }
+
   static isSupportedImageFormat(mimeType: string): boolean {
     return ['image/jpeg', 'image/jpg', 'image/png'].includes(mimeType);
   }

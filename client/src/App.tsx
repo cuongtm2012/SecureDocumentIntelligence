@@ -7,11 +7,13 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { LanguageProvider } from "@/hooks/use-language";
 import Dashboard from "@/pages/dashboard";
 import NotFound from "@/pages/not-found";
+import { PDFViewerDemo } from "@/components/pdf-viewer-demo";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
+      <Route path="/pdf-demo" component={PDFViewerDemo} />
       <Route component={NotFound} />
     </Switch>
   );
