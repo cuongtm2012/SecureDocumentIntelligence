@@ -127,7 +127,7 @@ async function processFileWithFallback(filePath: string, document: any, document
           word_count: text.split(/\s+/).filter(word => word.length > 0).length,
           language: 'vie',
           confidence_threshold: 60.0,
-          processing_timestamp: new Date().toISOString(),
+          processing_timestamp: new Date(),
           file_size_bytes: document.fileSize,
           processing_mode: 'fallback-tesseract',
           note: 'Processed with local Tesseract (Python service unavailable)'
@@ -211,7 +211,7 @@ async function processFileWithFallback(filePath: string, document: any, document
   // Update document with results
   await storage.updateDocument(documentId, {
     processingStatus: "completed",
-    processingCompletedAt: new Date().toISOString(),
+    processingCompletedAt: new Date(),
     confidence,
     extractedText,
     structuredData: JSON.stringify(structuredData),
@@ -328,7 +328,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Update status to processing
       await storage.updateDocument(documentId, {
         processingStatus: "processing",
-        processingStartedAt: new Date().toISOString(),
+        processingStartedAt: new Date(),
       });      const filePath = path.join(uploadsDir, document.filename);
       
       // Check if file exists, if not try to find an alternative
@@ -818,7 +818,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Update status to processing
       await storage.updateDocument(documentId, {
         processingStatus: "processing",
-        processingStartedAt: new Date().toISOString(),
+        processingStartedAt: new Date(),
       });
 
       const filePath = path.join(uploadsDir, document.filename);
@@ -849,7 +849,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           try {
             deepSeekAnalysis = await analyzeWithDeepSeek(cleaningResult.cleaned_text, document.originalName);
             console.log('✅ DeepSeek analysis completed');
-          } catch (deepSeekError) {
+          } catch (deepSeekError: any) {
             console.warn('⚠️ DeepSeek analysis failed:', deepSeekError.message);
             // Continue without DeepSeek analysis
           }
@@ -893,7 +893,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // STEP 5: Update Database
         await storage.updateDocument(documentId, {
           processingStatus: "completed",
-          processingCompletedAt: new Date().toISOString(),
+          processingCompletedAt: new Date(),
           confidence: (ocrResult.confidence || 0) / 100,
           extractedText: finalText,
           structuredData: JSON.stringify(structuredData),
