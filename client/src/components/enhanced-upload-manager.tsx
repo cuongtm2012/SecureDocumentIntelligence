@@ -57,6 +57,7 @@ export function EnhancedUploadManager({
 }: EnhancedUploadManagerProps) {
   const [activeTab, setActiveTab] = useState<'images' | 'pdfs'>('images');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isProcessing, setIsProcessing] = useState(false); // Prevent multiple processing
 
   const getAcceptedTypes = () => {
     if (activeTab === 'images') {
@@ -64,18 +65,30 @@ export function EnhancedUploadManager({
     }
     return acceptedFileTypes.filter(type => type === 'application/pdf');
   };
-
   const onDrop = useCallback((acceptedFiles: File[]) => {
+    // Prevent duplicate processing by checking if files are already uploaded
     const validFiles = acceptedFiles.filter(file => {
       const isValidType = getAcceptedTypes().includes(file.type);
       const isValidSize = file.size <= maxFileSize;
+      
+      // Check if file is already in the upload list
+      const isDuplicate = uploadedFiles.some(uf => 
+        uf.name === file.name && uf.size === file.size
+      );
+      
+      if (isDuplicate) {
+        console.warn(`File ${file.name} is already uploaded, skipping...`);
+        return false;
+      }
+      
       return isValidType && isValidSize;
     });
     
     if (validFiles.length > 0) {
+      console.log(`Processing ${validFiles.length} new files for upload`);
       onFileUpload(validFiles);
     }
-  }, [activeTab, maxFileSize, onFileUpload]);
+  }, [activeTab, maxFileSize, onFileUpload, uploadedFiles]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -83,17 +96,32 @@ export function EnhancedUploadManager({
     maxSize: maxFileSize,
     multiple: true
   });
-
   const handleFileSelect = () => {
+    if (isProcessing) {
+      console.log('Already processing files, ignoring file select');
+      return;
+    }
+    
     if (fileInputRef.current) {
       fileInputRef.current.click();
     }
   };
-
   const handleFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (isProcessing) {
+      console.log('Already processing files, ignoring input change');
+      return;
+    }
+    
     const files = Array.from(event.target.files || []);
     if (files.length > 0) {
+      setIsProcessing(true);
       onDrop(files);
+      
+      // Reset the input value to allow selecting the same file again if needed
+      event.target.value = '';
+      
+      // Reset processing flag after a short delay
+      setTimeout(() => setIsProcessing(false), 1000);
     }
   };
 

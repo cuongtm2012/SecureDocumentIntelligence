@@ -24,7 +24,6 @@ export function DocumentUpload({ documents, isLoading }: DocumentUploadProps) {
   const { toast } = useToast();
   const { t } = useLanguage();
   const queryClient = useQueryClient();
-
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
       const formData = new FormData();
@@ -74,8 +73,8 @@ export function DocumentUpload({ documents, isLoading }: DocumentUploadProps) {
         title: t('uploadComplete'),
         description: `${document.originalName} ${t('uploadComplete').toLowerCase()}`,
       });
-      // Start processing automatically
-      processMutation.mutate(document.id);
+      // DO NOT start processing automatically to prevent multiple reopening
+      // User must manually click "Process" button
     },
     onError: (error: Error) => {
       toast({

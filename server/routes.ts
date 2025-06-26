@@ -233,8 +233,7 @@ async function processFileWithFallback(filePath: string, document: any, document
 export async function registerRoutes(app: Express): Promise<Server> {
   // Initialize database with default user
   await initializeDatabase();
-
-  // Apply security headers with updated CSP for image loading
+  // Apply security headers with updated CSP for image loading and VS Code Simple Browser support
   app.use(helmet({
     contentSecurityPolicy: {
       directives: {
@@ -244,6 +243,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         imgSrc: ["'self'", "data:", "blob:", "http://localhost:5000", "http://localhost:3000"],
         connectSrc: ["'self'", "ws:", "wss:", "http://localhost:8001"],
         fontSrc: ["'self'", "data:"],
+        frameAncestors: ["'self'", "vscode-webview:", "https://vscode-cdn.net"],
+        frameSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
       },
     },
   }));
@@ -359,15 +362,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } catch (processingError) {
         const errorMessage = processingError instanceof Error ? processingError.message : 'Unknown processing error';
         const errorStep = (processingError as any)?.step || 'unknown';
+          console.error('❌ Enhanced processing failed:', errorMessage);
         
-        console.error('❌ Enhanced processing failed:', errorMessage);
-        
-        return res.json({
+        return res.status(500).json({
           success: false,
           error: 'Enhanced processing failed',
           details: errorMessage,
           step: errorStep
-        }, 500);
+        });
       }
 
     } catch (error) {
@@ -937,13 +939,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const errorStep = (processingError as any)?.step || 'unknown';
         
         console.error('❌ Enhanced processing failed:', errorMessage);
-        
-        return res.json({
+          return res.status(500).json({
           success: false,
           error: 'Enhanced processing failed',
           details: errorMessage,
           step: errorStep
-        }, 500);
+        });
       }
 
     } catch (error) {

@@ -24,6 +24,23 @@ export default defineConfig({
     },
   },
   root: path.resolve(import.meta.dirname, "client"),
+  define: {
+    global: "globalThis",
+    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV),
+  },
+  optimizeDeps: {
+    include: [
+      "react", 
+      "react-dom",
+      "pdfjs-dist"
+    ],
+    exclude: [
+      "pdfjs-dist/build/pdf.worker.js"
+    ],
+    esbuildOptions: {
+      target: 'es2020'
+    }
+  },
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
@@ -31,44 +48,29 @@ export default defineConfig({
       external: [],
       output: {
         manualChunks: {
-          // Separate react-pdf and PDF.js into its own chunk
-          "react-pdf": ["react-pdf", "pdfjs-dist"],
-          // Separate UI components
+          "pdfjs": ["pdfjs-dist"],
           "ui-components": [
             "@radix-ui/react-dialog",
             "@radix-ui/react-dropdown-menu",
             "@radix-ui/react-select",
           ],
-          // Separate utilities
           utils: ["clsx", "tailwind-merge", "date-fns"],
         },
       },
     },
-    // Increase chunk size warning limit for PDF.js
     chunkSizeWarningLimit: 1000,
-    // Enable minification
-    minify: "terser",
-    terserOptions: {
-      compress: {
-        drop_console: true, // Remove console logs in production
-        drop_debugger: true,
-      },
-    },
-  },
-  server: {
+    minify: true,
+  },  server: {
     fs: {
       strict: true,
       deny: ["**/.*"],
     },
+    proxy: {
+      '/api': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+        secure: false
+      }
+    },
   },
-  optimizeDeps: {
-    // Include react-pdf packages in dependency optimization
-    include: ['react-pdf', 'pdfjs-dist'],
-    esbuildOptions: {
-      target: 'es2020'
-    }
-  },
-  define: {
-    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV),
-  }
 });

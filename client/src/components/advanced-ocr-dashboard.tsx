@@ -16,7 +16,7 @@ import { EnhancedOCRViewer, OCRResult } from './enhanced-ocr-viewer';
 import { DocumentExportManager } from './document-export-manager';
 import { MultiLanguageOCR } from './multi-language-ocr';
 import { BatchOCRProcessor } from './batch-ocr-processor';
-import { OptimizedPDFOCRViewer } from './optimized-pdf-ocr-viewer';
+import { DashboardPDFViewer } from './dashboard-pdf-viewer';
 
 import { 
   Upload, 
@@ -682,21 +682,25 @@ export function AdvancedOCRDashboard() {
                             <FileText className="h-4 w-4 mr-2" />
                             View Details
                           </Button>
-                          
-                          {doc.type === 'pdf' && (
+                            {doc.type === 'pdf' && (
                             <Button
                               variant="outline"
                               size="sm"
                               onClick={() => {
                                 setSelectedFileForViewer({
-                                  id: doc.id,
+                                  id: doc.id.toString(), // Convert to string
                                   name: doc.filename,
-                                  size: 0,
+                                  size: doc.fileSize || 0,
                                   type: 'pdf' as const,
                                   status: 'completed',
                                   uploadProgress: 100,
                                   processingProgress: 100,
-                                  file: new File([], doc.filename, { type: 'application/pdf' })
+                                  file: new File([], doc.filename, { type: 'application/pdf' }),
+                                  result: {
+                                    extractedText: doc.extractedText || '',
+                                    confidence: doc.confidence || 0,
+                                    pageCount: doc.structuredData?.pageCount || 1
+                                  }
                                 });
                                 setCurrentDocument(doc);
                                 setShowPDFViewer(true);
@@ -894,16 +898,11 @@ export function AdvancedOCRDashboard() {
           />
         </DialogContent>
       </Dialog>
-    )}
-
-    {/* PDF Viewer Dialog */}
+    )}    {/* PDF Viewer Dialog */}
     {selectedFileForViewer && currentDocument && (
       <Dialog open={showPDFViewer} onOpenChange={setShowPDFViewer}>
-        <DialogContent className="max-w-7xl max-h-[95vh] overflow-hidden">
-          <DialogHeader>
-            <DialogTitle>PDF OCR Viewer - {selectedFileForViewer.name}</DialogTitle>
-          </DialogHeader>
-          <OptimizedPDFOCRViewer
+        <DialogContent className="max-w-7xl max-h-[95vh] p-0">
+          <DashboardPDFViewer
             file={selectedFileForViewer}
             documentId={currentDocument.id}
             onTextEdit={handleTextEdit}
