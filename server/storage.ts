@@ -10,6 +10,7 @@ export interface IStorage {
 
   // Document methods
   getDocument(id: number): Promise<Document | undefined>;
+  getAllDocuments(): Promise<Document[]>;
   getDocumentsByUserId(userId: number): Promise<Document[]>;
   createDocument(document: InsertDocument): Promise<Document>;
   updateDocument(id: number, updates: Partial<Document>): Promise<Document | undefined>;
@@ -69,6 +70,12 @@ export class MemStorage implements IStorage {
 
   async getDocument(id: number): Promise<Document | undefined> {
     return this.documents.get(id);
+  }
+
+  async getAllDocuments(): Promise<Document[]> {
+    return Array.from(this.documents.values()).sort(
+      (a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime()
+    );
   }
 
   async getDocumentsByUserId(userId: number): Promise<Document[]> {
@@ -158,6 +165,11 @@ export class DatabaseStorage implements IStorage {
   async getDocument(id: number): Promise<Document | undefined> {
     const [document] = await db.select().from(documents).where(eq(documents.id, id));
     return document || undefined;
+  }
+
+  async getAllDocuments(): Promise<Document[]> {
+    return await db.select().from(documents)
+      .orderBy(desc(documents.uploadedAt));
   }
 
   async getDocumentsByUserId(userId: number): Promise<Document[]> {
