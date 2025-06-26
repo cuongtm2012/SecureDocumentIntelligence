@@ -138,7 +138,32 @@ async function processFileWithFallback(filePath: string, document: any, document
   }
 
   if (!ocrResult || !ocrResult.success) {
-    throw new Error('OCR processing failed: ' + (ocrResult?.error || 'Unknown error'));
+    console.log("Using direct OCR fallback processing...");
+    
+    try {
+      const directResult = await directOCRProcessor.processDocument(filePath);
+      
+      ocrResult = {
+        success: true,
+        file_id: document.originalName,
+        text: directResult.extractedText,
+        confidence: directResult.confidence,
+        page_count: directResult.pageCount,
+        processing_time: directResult.processingTime / 1000,
+        metadata: {
+          character_count: directResult.extractedText.length,
+          word_count: directResult.extractedText.split(/\s+/).filter(word => word.length > 0).length,
+          language: 'vie',
+          confidence_threshold: 60.0,
+          processing_timestamp: new Date(),
+          file_size_bytes: document.fileSize,
+          processing_mode: directResult.processingMethod,
+          note: 'Processed with direct OCR fallback'
+        }
+      };
+    } catch (directError: any) {
+      throw new Error('OCR processing failed: ' + (directError.message || 'Unknown error'));
+    }
   }
 
   // Extract data from Python OCR result
