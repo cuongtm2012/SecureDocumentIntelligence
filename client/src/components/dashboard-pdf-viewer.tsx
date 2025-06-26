@@ -74,10 +74,10 @@ export function DashboardPDFViewer({
   // Initialize PDF.js worker
   useEffect(() => {
     const result = configurePDFJSWorker();
-    if (result.success) {
+    if (result?.success) {
       console.log('✅ PDF.js worker initialized for dashboard:', result.workerUrl);
     } else {
-      console.error('❌ Failed to configure PDF.js worker for dashboard:', result.error);
+      console.error('❌ Failed to configure PDF.js worker for dashboard:', result?.error);
     }
   }, []);
 

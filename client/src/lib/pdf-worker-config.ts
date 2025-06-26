@@ -7,14 +7,15 @@ import { GlobalWorkerOptions, version } from 'pdfjs-dist';
 export const configurePDFJSWorker = () => {
   try {
     if (typeof window !== 'undefined') {
-      // Use CDN worker for reliable loading - this avoids local file issues
-      const workerUrl = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${version}/pdf.worker.min.js`;
+      // Use unpkg CDN which is more reliable for PDF.js workers
+      const workerUrl = `https://unpkg.com/pdfjs-dist@${version}/build/pdf.worker.min.js`;
       
       GlobalWorkerOptions.workerSrc = workerUrl;
-      console.log('✅ PDF.js worker configured with CDN:', workerUrl);
+      console.log('✅ PDF.js worker configured with unpkg CDN:', workerUrl);
       
       return { success: true, workerUrl };
     }
+    return { success: false, error: 'Window object not available' };
   } catch (error) {
     console.error('❌ Failed to configure PDF.js worker:', error);
     return { success: false, error };
@@ -24,10 +25,10 @@ export const configurePDFJSWorker = () => {
 // Alternative: Use a different approach for production builds
 export const configureWorkerForProduction = () => {
   try {
-    // Use the same CDN approach for both development and production
-    const workerUrl = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${version}/pdf.worker.min.js`;
+    // Use the same unpkg CDN approach for both development and production
+    const workerUrl = `https://unpkg.com/pdfjs-dist@${version}/build/pdf.worker.min.js`;
     GlobalWorkerOptions.workerSrc = workerUrl;
-    console.log('✅ Production PDF.js worker configured with CDN:', workerUrl);
+    console.log('✅ Production PDF.js worker configured with unpkg CDN:', workerUrl);
     return { success: true, workerUrl };
   } catch (error) {
     console.error('❌ Production worker configuration failed:', error);

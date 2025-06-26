@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
@@ -904,6 +904,9 @@ export function AdvancedOCRDashboard() {
         <DialogContent className="max-w-7xl max-h-[95vh] p-0">
           <DialogHeader className="sr-only">
             <DialogTitle>Document Viewer - {selectedFileForViewer.name}</DialogTitle>
+            <DialogDescription>
+              View and edit the document content with OCR text extraction results
+            </DialogDescription>
           </DialogHeader>
           <DashboardPDFViewer
             file={selectedFileForViewer}
