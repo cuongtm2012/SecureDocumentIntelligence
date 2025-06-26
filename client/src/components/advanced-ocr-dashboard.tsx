@@ -913,8 +913,14 @@ export function AdvancedOCRDashboard() {
             fileName={selectedFileForViewer.name}
             extractedText={selectedFileForViewer.result?.extractedText || ''}
             confidence={selectedFileForViewer.result?.confidence || 0}
-            onTextEdit={handleTextEdit}
-            onExport={handleExport}
+            onTextEdit={(newText) => {
+              console.log('Text edited:', newText);
+              // For now, just log the text edit
+            }}
+            onExport={(format) => {
+              console.log('Export requested:', format);
+              // For now, just log the export request
+            }}
             onClose={() => setShowPDFViewer(false)}
           />
         </DialogContent>

@@ -143,6 +143,7 @@ export function SimplePDFViewer({
             className="w-full h-full border-0"
             style={{ minHeight: '600px' }}
             title={`PDF Document - ${fileName}`}
+            allow="autoplay; clipboard-read; clipboard-write"
           />
         </div>
       );

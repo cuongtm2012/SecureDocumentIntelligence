@@ -361,6 +361,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get PDF pages as images (fallback endpoint)
+  app.get("/api/documents/:id/pages", async (req, res) => {
+    try {
+      const documentId = parseInt(req.params.id);
+      const document = await storage.getDocument(documentId);
+      
+      if (!document) {
+        return res.status(404).json({ message: "Document not found" });
+      }
+
+      const filePath = path.join(process.cwd(), 'uploads', document.filename);
+      
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ message: "File not found" });
+      }
+
+      // For now, return the raw PDF URL as fallback
+      // In a full implementation, this would convert PDF pages to images
+      const pdfUrl = `/api/documents/${documentId}/raw?t=${Date.now()}`;
+      
+      res.json({
+        success: false, // Indicates fallback mode
+        images: [pdfUrl],
+        message: "Falling back to direct PDF display"
+      });
+    } catch (error) {
+      console.error('Get PDF pages error:', error);
+      res.status(500).json({ message: "Failed to fetch PDF pages" });
+    }
+  });
+
   // Get user info
   app.get("/api/user", async (req, res) => {
     try {
