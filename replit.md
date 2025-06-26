@@ -110,6 +110,12 @@ This is a sophisticated OCR (Optical Character Recognition) document processing 
 ```
 Changelog:
 - June 26, 2025. Initial setup
+- June 26, 2025. Fixed PostgreSQL timestamp errors and implemented proper DeepSeek API workflow prioritization
+  - Resolved "toISOString is not a function" database crashes
+  - Configured DeepSeek API as primary processing method with direct OCR fallback
+  - Added getAllDocuments method to storage interface
+  - Fixed syntax errors preventing application startup
+  - Verified Vietnamese text extraction with proper diacritics handling
 ```
 
 ## User Preferences
