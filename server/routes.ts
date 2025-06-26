@@ -199,7 +199,7 @@ async function processFileWithFallback(filePath: string, document: any, document
       entities: deepseekAnalysis.entities || [],
       confidence: deepseekAnalysis.confidence || 0.8,
       documentType: deepseekAnalysis.documentType || 'Unknown',
-      timestamp: new Date().toISOString()
+      timestamp: new Date()
     } : {
       applied: false,
       reason: process.env.OPENAI_API_KEY ? 'Analysis failed' : 'No API key configured'
@@ -508,7 +508,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({
         documentId,
         analysis,
-        timestamp: new Date().toISOString()
+        timestamp: new Date()
       });
 
     } catch (error) {
@@ -750,13 +750,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({
         success: true,
         message: "Cleanup endpoint - implement in controller",
-        timestamp: new Date().toISOString()
+        timestamp: new Date()
       });
     } catch (error) {
       res.status(500).json({
         success: false,
         error: "Cleanup failed",
-        timestamp: new Date().toISOString()
+        timestamp: new Date()
       });
     }
   });
@@ -787,13 +787,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
             'Metadata extraction'
           ]
         },
-        timestamp: new Date().toISOString()
+        timestamp: new Date()
       });
     } catch (error) {
       res.status(500).json({
         success: false,
         error: "Failed to get service info",
-        timestamp: new Date().toISOString()
+        timestamp: new Date()
       });
     }
   });
@@ -1241,7 +1241,7 @@ Respond with valid JSON only.`;
       return {
         ...analysis,
         processingTime,
-        timestamp: new Date().toISOString(),
+        timestamp: new Date(),
         model: 'deepseek-chat'
       };
       

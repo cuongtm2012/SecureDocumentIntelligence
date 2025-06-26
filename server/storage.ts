@@ -175,22 +175,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateDocument(id: number, updates: Partial<Document>): Promise<Document | undefined> {
-    // Convert Date objects to ISO strings for SQLite compatibility
-    const sqliteUpdates = { ...updates };
-    
-    if (sqliteUpdates.processingStartedAt instanceof Date) {
-      sqliteUpdates.processingStartedAt = sqliteUpdates.processingStartedAt.toISOString();
-    }
-    if (sqliteUpdates.processingCompletedAt instanceof Date) {
-      sqliteUpdates.processingCompletedAt = sqliteUpdates.processingCompletedAt.toISOString();
-    }
-    if (sqliteUpdates.uploadedAt instanceof Date) {
-      sqliteUpdates.uploadedAt = sqliteUpdates.uploadedAt.toISOString();
-    }
-
     const [document] = await db
       .update(documents)
-      .set(sqliteUpdates)
+      .set(updates)
       .where(eq(documents.id, id))
       .returning();
     return document || undefined;
