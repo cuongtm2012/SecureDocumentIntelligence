@@ -1,38 +1,38 @@
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import { pgTable, text, integer, real, serial, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-export const users = sqliteTable("users", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const users = pgTable("users", {
+  id: serial().primaryKey(),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
   clearanceLevel: text("clearance_level").notNull().default("Level 1"),
   name: text("name").notNull(),
 });
 
-export const documents = sqliteTable("documents", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const documents = pgTable("documents", {
+  id: serial().primaryKey(),
   filename: text("filename").notNull(),
   originalName: text("original_name").notNull(),
   fileSize: integer("file_size").notNull(),
   mimeType: text("mime_type").notNull(),
-  uploadedAt: text("uploaded_at").notNull().default("CURRENT_TIMESTAMP"),
+  uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
   userId: integer("user_id").notNull(),
   processingStatus: text("processing_status").notNull().default("pending"), // pending, processing, completed, failed
-  processingStartedAt: text("processing_started_at"),
-  processingCompletedAt: text("processing_completed_at"),
+  processingStartedAt: timestamp("processing_started_at"),
+  processingCompletedAt: timestamp("processing_completed_at"),
   confidence: real("confidence"),
   extractedText: text("extracted_text"),
   structuredData: text("structured_data"), // JSON string
   errorMessage: text("error_message"),
 });
 
-export const auditLogs = sqliteTable("audit_logs", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const auditLogs = pgTable("audit_logs", {
+  id: serial().primaryKey(),
   userId: integer("user_id").notNull(),
   action: text("action").notNull(),
   documentId: integer("document_id"),
-  timestamp: text("timestamp").notNull().default("CURRENT_TIMESTAMP"),
+  timestamp: timestamp("timestamp").notNull().defaultNow(),
   ipAddress: text("ip_address"),
   userAgent: text("user_agent"),
 });
