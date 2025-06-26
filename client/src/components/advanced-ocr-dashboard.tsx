@@ -902,6 +902,9 @@ export function AdvancedOCRDashboard() {
     {selectedFileForViewer && currentDocument && (
       <Dialog open={showPDFViewer} onOpenChange={setShowPDFViewer}>
         <DialogContent className="max-w-7xl max-h-[95vh] p-0">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Document Viewer - {selectedFileForViewer.name}</DialogTitle>
+          </DialogHeader>
           <DashboardPDFViewer
             file={selectedFileForViewer}
             documentId={currentDocument.id}
