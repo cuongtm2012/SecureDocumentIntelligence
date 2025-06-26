@@ -2,7 +2,8 @@ import { createWorker } from 'tesseract.js';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import sharp from 'sharp';
-import pdf2pic from 'pdf2pic';
+import { spawn } from 'child_process';
+import { promisify } from 'util';
 
 export interface DirectOCRResult {
   extractedText: string;
@@ -40,20 +41,33 @@ export class DirectOCRProcessor {
     console.log(`📄 Converting PDF to images for OCR: ${path.basename(filePath)}`);
     
     try {
-      // Convert PDF to images using pdf2pic
-      const convert = pdf2pic.fromPath(filePath, {
-        density: 300,
-        saveFilename: "page",
-        savePath: "/tmp/",
-        format: "png",
-        width: 2000,
-        height: 2000
-      });
-
-      const results = await convert.bulk(-1);
+      // Convert PDF to images using ImageMagick directly
+      const tempDir = '/tmp/pdf_ocr_' + Date.now();
+      await fs.mkdir(tempDir, { recursive: true });
       
-      if (!results || results.length === 0) {
-        throw new Error('Failed to convert PDF pages to images');
+      const outputPattern = path.join(tempDir, 'page-%d.png');
+      
+      // Use ImageMagick convert to extract pages as images
+      await this.executeCommand('convert', [
+        '-density', '300',
+        '-quality', '100',
+        '-background', 'white',
+        '-alpha', 'remove',
+        filePath,
+        outputPattern
+      ]);
+
+      // Find all generated page images
+      const files = await fs.readdir(tempDir);
+      const pageFiles = files.filter(f => f.startsWith('page-') && f.endsWith('.png'))
+                           .sort((a, b) => {
+                             const numA = parseInt(a.match(/page-(\d+)\.png/)?.[1] || '0');
+                             const numB = parseInt(b.match(/page-(\d+)\.png/)?.[1] || '0');
+                             return numA - numB;
+                           });
+
+      if (pageFiles.length === 0) {
+        throw new Error('No pages extracted from PDF');
       }
 
       let allText = '';
@@ -61,24 +75,23 @@ export class DirectOCRProcessor {
       let processedPages = 0;
 
       // Process each page
-      for (const result of results) {
-        if (result.path) {
-          try {
-            const pageResult = await this.processImage(result.path, Date.now());
-            allText += pageResult.extractedText + '\n\n';
-            totalConfidence += pageResult.confidence;
-            processedPages++;
-            
-            // Clean up temporary image file
-            try {
-              await fs.unlink(result.path);
-            } catch (cleanupError) {
-              console.warn('Failed to cleanup temp file:', result.path);
-            }
-          } catch (pageError) {
-            console.warn(`Failed to process page ${processedPages + 1}:`, pageError);
-          }
+      for (const pageFile of pageFiles) {
+        const pagePath = path.join(tempDir, pageFile);
+        try {
+          const pageResult = await this.processImage(pagePath, Date.now());
+          allText += pageResult.extractedText + '\n\n';
+          totalConfidence += pageResult.confidence;
+          processedPages++;
+        } catch (pageError) {
+          console.warn(`Failed to process page ${processedPages + 1}:`, pageError);
         }
+      }
+
+      // Clean up temporary directory
+      try {
+        await fs.rmdir(tempDir, { recursive: true });
+      } catch (cleanupError) {
+        console.warn('Failed to cleanup temp directory:', tempDir);
       }
 
       const processingTime = Date.now() - startTime;
@@ -102,6 +115,29 @@ export class DirectOCRProcessor {
     }
   }
 
+  private executeCommand(command: string, args: string[]): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const process = spawn(command, args);
+      let stderr = '';
+      
+      process.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+      
+      process.on('close', (code) => {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`Command failed with code ${code}: ${stderr}`));
+        }
+      });
+      
+      process.on('error', (error) => {
+        reject(error);
+      });
+    });
+  }
+
   async processImage(filePath: string, startTime: number): Promise<DirectOCRResult> {
     console.log(`🔍 Processing image with Tesseract.js: ${path.basename(filePath)}`);
     
@@ -122,8 +158,7 @@ export class DirectOCRProcessor {
       });
       
       await worker.setParameters({
-        'preserve_interword_spaces': '1',
-        'tessedit_pageseg_mode': '6'
+        'preserve_interword_spaces': '1'
       });
 
       console.log('🤖 Running Tesseract OCR...');
