@@ -56,6 +56,9 @@ export function EnhancedOCRViewer({
   onExport,
   onClose
 }: EnhancedOCRViewerProps) {
+  // Debug log to check data structure
+  console.log('EnhancedOCRViewer received result:', result);
+  
   const [currentPage, setCurrentPage] = useState(1);
   const [zoom, setZoom] = useState(100);
   const [rotation, setRotation] = useState(0);
@@ -344,7 +347,7 @@ export function EnhancedOCRViewer({
               <div 
                 className="prose prose-sm max-w-none font-mono text-sm whitespace-pre-wrap"
                 dangerouslySetInnerHTML={{ 
-                  __html: highlightLowConfidenceWords(currentPageData.extractedText) 
+                  __html: highlightLowConfidenceWords(currentPageData.extractedText || '') 
                 }}
               />
             )}
