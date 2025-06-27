@@ -22,6 +22,51 @@ import axios from 'axios';
 const writeFile = promisify(fs.writeFile);
 const readFile = promisify(fs.readFile);
 
+// PDF to images conversion function
+async function convertPDFToImages(pdfPath: string, outputPattern: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const { spawn } = require('child_process');
+    const args = [
+      '-density', '200',
+      '-colorspace', 'RGB',
+      '-alpha', 'remove',
+      '-background', 'white',
+      pdfPath,
+      outputPattern
+    ];
+    
+    console.log(`🔄 Running: convert ${args.join(' ')}`);
+    
+    const convert = spawn('convert', args, {
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+    
+    let stderr = '';
+    
+    convert.stderr.on('data', (data: Buffer) => {
+      stderr += data.toString();
+    });
+    
+    convert.on('close', (code: number) => {
+      if (code === 0) {
+        console.log('✅ PDF to images conversion completed');
+        resolve();
+      } else {
+        reject(new Error(`ImageMagick failed with code ${code}: ${stderr}`));
+      }
+    });
+    
+    convert.on('error', (error: any) => {
+      reject(new Error(`Failed to start ImageMagick: ${error.message}`));
+    });
+    
+    setTimeout(() => {
+      convert.kill('SIGTERM');
+      reject(new Error('PDF conversion timeout'));
+    }, 30000);
+  });
+}
+
 // Configure multer for file uploads
 const storage_config = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -425,7 +470,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         // Convert PDF pages to images
         const outputPattern = path.join(tempDir, 'page-%d.png');
-        await localPaddleOCRProcessor.convertPDFToImages(filePath, outputPattern);
+        // Convert PDF to images using ImageMagick directly
+        await convertPDFToImages(filePath, outputPattern);
         
         // Get generated page images
         const pageFiles = await fs.promises.readdir(tempDir);
