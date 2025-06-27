@@ -227,7 +227,7 @@ export function SimplePDFViewer({
           <div className="flex items-center gap-4">
             <h3 className="text-lg font-semibold truncate">{fileName}</h3>
             <Badge variant={confidence > 80 ? "default" : confidence > 60 ? "secondary" : "destructive"}>
-              {confidence.toFixed(1)}% confidence
+              {confidence}% confidence
             </Badge>
           </div>
           

@@ -670,7 +670,7 @@ export function AdvancedOCRDashboard() {
                                 fileName: doc.filename,
                                 fileType: doc.type === 'pdf' ? 'pdf' : 'image',
                                 extractedText: doc.extractedText || '',
-                                confidence: doc.confidence || 0,
+                                confidence: Math.round((doc.confidence || 0) * 100),
                                 pageCount: doc.structuredData?.pageCount || 1,
                                 imageUrl: `/api/documents/${doc.id}/thumbnail`,
                                 lowConfidenceWords: []
@@ -698,7 +698,7 @@ export function AdvancedOCRDashboard() {
                                   file: new File([], doc.filename, { type: 'application/pdf' }),
                                   result: {
                                     extractedText: doc.extractedText || '',
-                                    confidence: doc.confidence || 0,
+                                    confidence: Math.round((doc.confidence || 0) * 100),
                                     pageCount: doc.structuredData?.pageCount || 1
                                   }
                                 });
@@ -912,7 +912,7 @@ export function AdvancedOCRDashboard() {
             documentId={currentDocument.id}
             fileName={selectedFileForViewer.name}
             extractedText={selectedFileForViewer.result?.extractedText || ''}
-            confidence={selectedFileForViewer.result?.confidence || 0}
+            confidence={Math.round((selectedFileForViewer.result?.confidence || 0) * 100)}
             onTextEdit={(newText) => {
               console.log('Text edited:', newText);
               // For now, just log the text edit
