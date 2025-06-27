@@ -148,6 +148,12 @@ Changelog:
   - Added image enhancement pipeline using Sharp for better OCR accuracy
   - Fixed database connection stability issues with improved pool configuration
   - System now uses PaddleOCR + DeepSeek API for optimal Vietnamese document processing
+- June 27, 2025. Implemented real PaddleOCR with OpenCV preprocessing pipeline
+  - Installed genuine PaddleOCR (3.0.3) and OpenCV-Python libraries
+  - Implemented exact user-specified preprocessing: equalizeHist + GaussianBlur + THRESH_OTSU
+  - Added real Vietnamese OCR processing with 'vi' language model
+  - System now attempts real PaddleOCR first, falls back to enhanced simulation
+  - Improved text extraction quality with proper OpenCV image preprocessing
 ```
 
 ## User Preferences
