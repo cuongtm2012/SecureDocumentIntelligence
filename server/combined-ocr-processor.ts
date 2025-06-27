@@ -245,52 +245,85 @@ export class CombinedOCRProcessor {
   }
 
   private async callOpenCVService(imagePath: string): Promise<any> {
-    const formData = new FormData();
-    const fileStream = await fs.readFile(imagePath);
-    formData.append('file', fileStream, path.basename(imagePath));
-    formData.append('enhance_contrast', 'true');
-    formData.append('denoise', 'true');
-    formData.append('sharpen', 'true');
-    formData.append('deskew', 'true');
-    formData.append('resize_factor', '1.5');
+    try {
+      // First check if service is available
+      const healthCheck = await axios.get(`${this.opencvServiceUrl}/health`, { timeout: 5000 });
+      if (!healthCheck.data || healthCheck.data.status !== 'healthy') {
+        throw new Error('OpenCV service not healthy');
+      }
 
-    const response = await axios.post(`${this.opencvServiceUrl}/process-image`, formData, {
-      headers: formData.getHeaders(),
-      timeout: 30000
-    });
+      const formData = new FormData();
+      const fileStream = await fs.readFile(imagePath);
+      formData.append('file', fileStream, path.basename(imagePath));
+      formData.append('enhance_contrast', 'true');
+      formData.append('denoise', 'true');
+      formData.append('sharpen', 'true');
+      formData.append('deskew', 'true');
+      formData.append('resize_factor', '1.5');
 
-    return response.data;
+      const response = await axios.post(`${this.opencvServiceUrl}/process-image`, formData, {
+        headers: formData.getHeaders(),
+        timeout: 30000
+      });
+
+      return response.data;
+    } catch (error: any) {
+      console.warn(`⚠️ OpenCV service unavailable: ${error.message}`);
+      return null;
+    }
   }
 
   private async callPaddleOCRService(imagePath: string): Promise<any> {
-    const formData = new FormData();
-    const fileStream = await fs.readFile(imagePath);
-    formData.append('file', fileStream, path.basename(imagePath));
-    formData.append('language', 'ch');
-    formData.append('use_angle_cls', 'true');
+    try {
+      // First check if service is available
+      const healthCheck = await axios.get(`${this.paddleServiceUrl}/health`, { timeout: 5000 });
+      if (!healthCheck.data || healthCheck.data.status !== 'healthy') {
+        throw new Error('PaddleOCR service not healthy');
+      }
 
-    const response = await axios.post(`${this.paddleServiceUrl}/paddle-ocr`, formData, {
-      headers: formData.getHeaders(),
-      timeout: 30000
-    });
+      const formData = new FormData();
+      const fileStream = await fs.readFile(imagePath);
+      formData.append('file', fileStream, path.basename(imagePath));
+      formData.append('language', 'ch');
+      formData.append('use_angle_cls', 'true');
 
-    return response.data;
+      const response = await axios.post(`${this.paddleServiceUrl}/paddle-ocr`, formData, {
+        headers: formData.getHeaders(),
+        timeout: 30000
+      });
+
+      return response.data;
+    } catch (error: any) {
+      console.warn(`⚠️ PaddleOCR service unavailable: ${error.message}`);
+      return null;
+    }
   }
 
   private async callOpenCVOCRService(imagePath: string): Promise<any> {
-    const formData = new FormData();
-    const fileStream = await fs.readFile(imagePath);
-    formData.append('file', fileStream, path.basename(imagePath));
-    formData.append('language', 'vie');
-    formData.append('psm_mode', '6');
-    formData.append('preprocess', 'false'); // Already preprocessed
+    try {
+      // First check if service is available
+      const healthCheck = await axios.get(`${this.opencvServiceUrl}/health`, { timeout: 5000 });
+      if (!healthCheck.data || healthCheck.data.status !== 'healthy') {
+        throw new Error('OpenCV OCR service not healthy');
+      }
 
-    const response = await axios.post(`${this.opencvServiceUrl}/ocr`, formData, {
-      headers: formData.getHeaders(),
-      timeout: 30000
-    });
+      const formData = new FormData();
+      const fileStream = await fs.readFile(imagePath);
+      formData.append('file', fileStream, path.basename(imagePath));
+      formData.append('language', 'vie');
+      formData.append('psm_mode', '6');
+      formData.append('preprocess', 'false'); // Already preprocessed
 
-    return response.data;
+      const response = await axios.post(`${this.opencvServiceUrl}/ocr`, formData, {
+        headers: formData.getHeaders(),
+        timeout: 30000
+      });
+
+      return response.data;
+    } catch (error: any) {
+      console.warn(`⚠️ OpenCV OCR service unavailable: ${error.message}`);
+      return null;
+    }
   }
 
   async processImage(filePath: string, startTime: number): Promise<CombinedOCRResult> {
