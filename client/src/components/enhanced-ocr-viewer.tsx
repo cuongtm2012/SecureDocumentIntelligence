@@ -70,13 +70,13 @@ export function EnhancedOCRViewer({
 
   const currentPageData = result.pages?.[currentPage - 1] || {
     pageNumber: 1,
-    imageUrl: result.imageUrl,
-    extractedText: result.extractedText,
-    confidence: result.confidence
+    imageUrl: result.imageUrl || '',
+    extractedText: result.extractedText || '',
+    confidence: result.confidence || 0
   };
 
   useEffect(() => {
-    setEditedText(currentPageData.extractedText);
+    setEditedText(currentPageData.extractedText || '');
   }, [currentPageData.extractedText, currentPage]);
 
   // Scroll synchronization
@@ -154,7 +154,7 @@ export function EnhancedOCRViewer({
             </div>
             
             <Badge variant="outline">
-              Confidence: {Math.round(currentPageData.confidence * 100)}%
+              Confidence: {Math.round((currentPageData.confidence || 0) * 100)}%
             </Badge>
             
             {result.pageCount && result.pageCount > 1 && (
@@ -356,11 +356,11 @@ export function EnhancedOCRViewer({
       <div className="border-t p-3 bg-gray-50 dark:bg-gray-900">
         <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400">
           <div>
-            Characters: {currentPageData.extractedText.length} • 
-            Words: {currentPageData.extractedText.split(/\s+/).filter(w => w).length}
+            Characters: {(currentPageData.extractedText || '').length} • 
+            Words: {(currentPageData.extractedText || '').split(/\s+/).filter(w => w).length}
           </div>
           <div>
-            Processing confidence: {Math.round(currentPageData.confidence * 100)}%
+            Processing confidence: {Math.round((currentPageData.confidence || 0) * 100)}%
           </div>
         </div>
       </div>

@@ -666,14 +666,20 @@ export function AdvancedOCRDashboard() {
                             size="sm"
                             onClick={() => {
                               setSelectedResult({
-                                id: doc.id,
+                                id: doc.id.toString(),
                                 fileName: doc.filename,
                                 fileType: doc.type === 'pdf' ? 'pdf' : 'image',
                                 extractedText: doc.extractedText || '',
-                                confidence: Math.round((doc.confidence || 0) * 100),
+                                confidence: (doc.confidence || 0), // Keep as decimal for EnhancedOCRViewer
                                 pageCount: doc.structuredData?.pageCount || 1,
                                 imageUrl: `/api/documents/${doc.id}/thumbnail`,
-                                lowConfidenceWords: []
+                                lowConfidenceWords: [],
+                                pages: doc.type === 'pdf' ? undefined : [{
+                                  pageNumber: 1,
+                                  imageUrl: `/api/documents/${doc.id}/thumbnail`,
+                                  extractedText: doc.extractedText || '',
+                                  confidence: (doc.confidence || 0)
+                                }]
                               });
                               setShowViewer(true);
                             }}
