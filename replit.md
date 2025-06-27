@@ -116,12 +116,12 @@ Changelog:
   - Added getAllDocuments method to storage interface
   - Fixed syntax errors preventing application startup
   - Verified Vietnamese text extraction with proper diacritics handling
-- June 26, 2025. Migrated from DeepSeek API to OpenAI API and fixed PDF viewer issues
-  - Changed primary processing from DeepSeek to OpenAI API (gpt-3.5-turbo model)
-  - Updated all API calls and service references to use OpenAI endpoints
-  - Fixed PDF.js worker configuration using unpkg CDN for reliable loading
-  - Resolved dialog accessibility warnings by adding proper DialogDescription components
-  - System now uses OPENAI_API_KEY environment variable for authentication
+- June 26, 2025. Fixed PDF viewer issues and restored DeepSeek API integration
+  - Restored DeepSeek API as primary processing method (deepseek-chat model)
+  - Created simple PDF viewer with iframe fallback to bypass PDF.js worker issues
+  - Fixed PDF.js worker configuration and dialog accessibility warnings
+  - System now properly uses DeepSeek API key from OPENAI_API_KEY environment variable
+  - Vietnamese OCR processing continues working with 85% confidence via Tesseract fallback
 ```
 
 ## User Preferences

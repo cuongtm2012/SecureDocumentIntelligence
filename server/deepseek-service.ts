@@ -5,35 +5,36 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-// Initialize OpenAI client
+// Initialize OpenAI client for DeepSeek
 const openai = new OpenAI({
+  baseURL: 'https://api.deepseek.com',
   apiKey: process.env.OPENAI_API_KEY,
   timeout: 60000, // 60 second timeout
 });
 
 // Test API connection
-async function testOpenAIConnection() {
+async function testDeepSeekConnection() {
   try {
     if (!process.env.OPENAI_API_KEY) {
-      console.warn('⚠️ OpenAI API key not configured');
+      console.warn('⚠️ DeepSeek API key not configured');
       return false;
     }
     
-    console.log('🔄 Testing OpenAI API connection...');
+    console.log('🔄 Testing DeepSeek API connection...');
     const response = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
+      model: "deepseek-chat",
       messages: [{ role: "user", content: "Hello" }],
       max_tokens: 10
     });
     
-    console.log('✅ OpenAI API connection successful');
+    console.log('✅ DeepSeek API connection successful');
     return true;
   } catch (error: any) {
-    console.error('❌ OpenAI API connection failed:', error.message);
+    console.error('❌ DeepSeek API connection failed:', error.message);
     if (error.status === 401) {
       console.error('🔑 Invalid API key - please check your OPENAI_API_KEY in .env file');
     } else if (error.status === 402) {
-      console.error('💳 Insufficient balance - please add credits to your OpenAI account');
+      console.error('💳 Insufficient balance - please add credits to your DeepSeek account');
     } else if (error.status === 429) {
       console.error('⏱️ Rate limit exceeded - please try again later');
     }
@@ -42,7 +43,7 @@ async function testOpenAIConnection() {
 }
 
 // Test connection on import
-testOpenAIConnection();
+testDeepSeekConnection();
 
 export interface DeepSeekOCRResult {
   extractedText: string;
@@ -96,9 +97,9 @@ export class DeepSeekService {
       const { data: { text: ocrText, confidence: ocrConfidence } } = await worker.recognize(processedImageBuffer);
       await worker.terminate();
 
-      // Now use OpenAI to enhance the OCR results and extract structured data
+      // Now use DeepSeek to enhance the OCR results and extract structured data
       const completion = await openai.chat.completions.create({
-        model: "gpt-3.5-turbo",
+        model: "deepseek-chat",
         messages: [
           {
             role: "system",
@@ -307,7 +308,7 @@ Guidelines:
   async analyzeDocument(extractedText: string, documentContext?: string): Promise<any> {
     try {
       const completion = await openai.chat.completions.create({
-        model: "gpt-3.5-turbo",
+        model: "deepseek-chat",
         messages: [
           {
             role: "system",
@@ -397,9 +398,9 @@ Return in JSON format:
   "improvements": ["list of corrections applied"]
 }`;
 
-      // Process with OpenAI
+      // Process with DeepSeek
       const completion = await openai.chat.completions.create({
-        model: "gpt-3.5-turbo",
+        model: "deepseek-chat",
         messages: [
           {
             role: "system",
