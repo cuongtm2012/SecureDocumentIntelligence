@@ -65,7 +65,7 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 // Helper function to process file with DeepSeek API as primary workflow
-async function processFileWithFallback(filePath: string, document: any, documentId: number, userId: number, req: any, res: any) {
+async function processFileWithFallback(filePath: string, document: any, documentId: number, userId: number, req?: any, res?: any) {
   console.log(`🚀 Processing document ${document.originalName} with DeepSeek API workflow...`);
   
   let ocrResult;
@@ -199,12 +199,18 @@ async function processFileWithFallback(filePath: string, document: any, document
     userId,
     action: `Document processed: ${document.originalName} (${structuredData.pageCount} pages, ${Math.round(confidence * 100)}% confidence)`,
     documentId: document.id,
-    ipAddress: req.ip,
-    userAgent: req.get('User-Agent'),
+    ipAddress: req?.ip || '127.0.0.1',
+    userAgent: req?.get('User-Agent') || 'Background Process',
   });
 
   const updatedDocument = await storage.getDocument(documentId);
-  res.json(updatedDocument);
+  
+  // Only send response if res is provided (not background processing)
+  if (res) {
+    res.json(updatedDocument);
+  }
+  
+  return updatedDocument;
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -256,6 +262,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         documentId: document.id,
         ipAddress: req.ip,
         userAgent: req.get('User-Agent'),
+      });
+
+      // Automatically start OCR processing after upload (background)
+      console.log(`🚀 Auto-starting OCR processing for document ${document.id}...`);
+      
+      // Process in background without blocking the response
+      setImmediate(async () => {
+        try {
+          const filePath = path.join(process.cwd(), 'uploads', document.filename);
+          
+          // Update status to processing
+          await storage.updateDocument(document.id, { processingStatus: 'processing' });
+          
+          // Process the document
+          await processFileWithFallback(filePath, document, document.id, userId, undefined, undefined);
+          
+          console.log(`✅ Auto-processing completed for document ${document.id}`);
+        } catch (error) {
+          console.error(`❌ Auto-processing failed for document ${document.id}:`, error);
+          // Update status to failed
+          await storage.updateDocument(document.id, { processingStatus: 'failed' });
+        }
       });
 
       res.json(document);
