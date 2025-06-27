@@ -194,17 +194,23 @@ export class LocalPaddleOCRProcessor {
     boundingBoxes?: any[];
   }> {
     return new Promise((resolve, reject) => {
-      // Python script that implements your exact preprocessing + PaddleOCR approach
+      // Optimized Python script with faster initialization
       const pythonScript = `
 import sys
 import cv2
 import json
 import os
-from paddleocr import PaddleOCR
+import warnings
+warnings.filterwarnings('ignore')
+os.environ['NUMEXPR_MAX_THREADS'] = '4'
 
 try:
     # Get image path from command line
     img_path = sys.argv[1]
+    
+    # Quick image existence check
+    if not os.path.exists(img_path):
+        raise ValueError(f"Image file not found: {img_path}")
     
     # Image preprocessing (exactly as you specified)
     img = cv2.imread(img_path)
@@ -217,15 +223,35 @@ try:
     _, thresh = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     
     # Save preprocessed image
-    preprocessed_path = img_path.replace('.png', '_preprocessed.png')
+    preprocessed_path = img_path.replace('.png', '_opencv_preprocessed.png')
     cv2.imwrite(preprocessed_path, thresh)
     
-    # PaddleOCR for Vietnamese (exactly as you specified)
-    ocr = PaddleOCR(lang='vi', use_angle_cls=True, use_gpu=False, show_log=False)
+    # Quick initialization check
+    print(json.dumps({"status": "initializing_paddleocr"}))
+    sys.stdout.flush()
+    
+    # PaddleOCR for Vietnamese with optimized settings
+    from paddleocr import PaddleOCR
+    ocr = PaddleOCR(
+        lang='vi', 
+        use_angle_cls=True, 
+        use_gpu=False, 
+        show_log=False,
+        enable_mkldnn=True,
+        cpu_threads=2
+    )
+    
+    print(json.dumps({"status": "processing_image"}))
+    sys.stdout.flush()
+    
+    # Process with PaddleOCR
     result = ocr.ocr(preprocessed_path, cls=True)
     
     if not result or not result[0]:
-        raise ValueError("No text detected by PaddleOCR")
+        # Try original image if preprocessed fails
+        result = ocr.ocr(img_path, cls=True)
+        if not result or not result[0]:
+            raise ValueError("No text detected by PaddleOCR")
     
     # Extract text lines
     lines = []
@@ -233,13 +259,13 @@ try:
     count = 0
     
     for line in result[0]:
-        text = line[1][0]
+        text = line[1][0].strip()
         confidence = line[1][1] * 100  # Convert to percentage
-        bbox = line[0]
         
-        lines.append(text)
-        total_confidence += confidence
-        count += 1
+        if len(text) > 0:  # Only include non-empty text
+            lines.append(text)
+            total_confidence += confidence
+            count += 1
     
     # Calculate average confidence
     avg_confidence = total_confidence / count if count > 0 else 0
@@ -250,7 +276,8 @@ try:
         "success": True,
         "text": full_text,
         "confidence": avg_confidence,
-        "lines_count": count
+        "lines_count": count,
+        "method": "real_paddleocr_opencv"
     }
     
     print(json.dumps(result_data, ensure_ascii=False))
@@ -266,18 +293,31 @@ except Exception as e:
     sys.exit(1)
 `;
 
-      const { spawn } = require('child_process');
-      
-      // Try python3 first, then python
+      // Create Python process with optimized settings
       const python = spawn('python3', ['-c', pythonScript, imagePath], {
-        stdio: ['pipe', 'pipe', 'pipe']
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: { 
+          ...process.env, 
+          PYTHONUNBUFFERED: '1',
+          OMP_NUM_THREADS: '2' 
+        }
       });
       
       let stdout = '';
       let stderr = '';
+      let isInitializing = false;
       
       python.stdout.on('data', (data: Buffer) => {
-        stdout += data.toString();
+        const output = data.toString();
+        stdout += output;
+        
+        // Check for initialization status
+        if (output.includes('"status": "initializing_paddleocr"')) {
+          isInitializing = true;
+          console.log('🔄 Initializing PaddleOCR (first run may download models)...');
+        } else if (output.includes('"status": "processing_image"')) {
+          console.log('🔍 Processing image with real PaddleOCR...');
+        }
       });
       
       python.stderr.on('data', (data: Buffer) => {
@@ -287,7 +327,11 @@ except Exception as e:
       python.on('close', (code: number) => {
         if (code === 0 && stdout.trim()) {
           try {
-            const result = JSON.parse(stdout.trim());
+            // Get the last JSON line (the actual result)
+            const lines = stdout.trim().split('\n');
+            const resultLine = lines[lines.length - 1];
+            const result = JSON.parse(resultLine);
+            
             if (result.success && result.text && result.text.trim().length > 0) {
               resolve({
                 text: result.text,
@@ -305,15 +349,16 @@ except Exception as e:
         }
       });
       
-      python.on('error', (error) => {
+      python.on('error', (error: any) => {
         reject(new Error(`Failed to start Python process: ${error.message}`));
       });
       
-      // Timeout after 45 seconds
+      // Extended timeout for first run (model download)
+      const timeout = isInitializing ? 180000 : 60000; // 3 minutes for first run, 1 minute for subsequent
       setTimeout(() => {
         python.kill('SIGTERM');
-        reject(new Error('PaddleOCR processing timeout (45s)'));
-      }, 45000);
+        reject(new Error(`PaddleOCR processing timeout (${timeout/1000}s)`));
+      }, timeout);
     });
   }
 
