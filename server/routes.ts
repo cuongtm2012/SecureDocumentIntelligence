@@ -5,6 +5,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { promisify } from "util";
+import { spawn } from "child_process";
 
 import sharp from "sharp";
 import { deepSeekService } from "./deepseek-service";
@@ -25,7 +26,6 @@ const readFile = promisify(fs.readFile);
 // PDF to images conversion function
 async function convertPDFToImages(pdfPath: string, outputPattern: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    const { spawn } = require('child_process');
     const args = [
       '-density', '200',
       '-colorspace', 'RGB',

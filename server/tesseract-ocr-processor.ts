@@ -199,10 +199,10 @@ def test_ocr_approach(img_path, approach_name, processed_img, languages=['vie', 
     best_length = 0
     
     for lang in languages:
-        for psm in [3, 6, 7, 8]:
+        for psm in [3, 6]:  # Reduced PSM modes for faster processing
             cmd = ['tesseract', temp_path, 'stdout', '-l', lang, '--psm', str(psm)]
             try:
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=8)
                 text = result.stdout.strip()
                 
                 if result.returncode == 0 and len(text) > best_length:
@@ -215,7 +215,7 @@ def test_ocr_approach(img_path, approach_name, processed_img, languages=['vie', 
                     }
                     best_length = len(text)
                     
-                    if len(text) > 100:
+                    if len(text) > 50:  # Lower threshold for faster completion
                         return best_result
                         
             except (subprocess.TimeoutExpired, Exception):
@@ -234,13 +234,13 @@ def main():
         if img is None:
             raise ValueError(f"Cannot read image: {img_path}")
         
-        # Multiple preprocessing approaches
+        # Optimized preprocessing approaches (faster processing)
         approaches = {}
         
         # 1. Original grayscale
         approaches['original'] = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         
-        # 2. Your exact preprocessing (equalizeHist + GaussianBlur + THRESH_OTSU)
+        # 2. Your exact preprocessing (primary approach)
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         gray = cv2.equalizeHist(gray)
         blur = cv2.GaussianBlur(gray, (3,3), 0)
@@ -251,22 +251,6 @@ def main():
         gray2 = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         _, simple_thresh = cv2.threshold(gray2, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         approaches['simple_threshold'] = simple_thresh
-        
-        # 4. Adaptive threshold
-        gray3 = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        adaptive = cv2.adaptiveThreshold(gray3, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
-        approaches['adaptive'] = adaptive
-        
-        # 5. Enhanced contrast only
-        gray4 = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        enhanced = cv2.equalizeHist(gray4)
-        approaches['enhanced_contrast'] = enhanced
-        
-        # 6. Morphological operations
-        gray5 = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2,2))
-        morph = cv2.morphologyEx(gray5, cv2.MORPH_CLOSE, kernel)
-        approaches['morphological'] = morph
         
         # Try each approach and pick the best result
         best_result = None
@@ -349,8 +333,8 @@ if __name__ == "__main__":
       
       setTimeout(() => {
         python.kill('SIGTERM');
-        reject(new Error('Processing timeout (15s)'));
-      }, 15000);
+        reject(new Error('Processing timeout (30s)'));
+      }, 30000);
     });
   }
 }
