@@ -12,6 +12,7 @@ import { vietnameseTextCleaner } from "./vietnamese-text-cleaner";
 import { enhancedVietnameseOCR } from "./enhanced-vietnamese-ocr";
 import { pdfProcessor } from "./pdf-processor";
 import { directOCRProcessor } from "./direct-ocr-processor";
+import { openCVOCRProcessor } from "./opencv-ocr-processor";
 import helmet from "helmet";
 import { insertDocumentSchema, insertAuditLogSchema } from "@shared/schema";
 import { z } from "zod";
@@ -75,12 +76,12 @@ async function processFileWithFallback(filePath: string, document: any, document
     console.log('🤖 Starting DeepSeek API document processing...');
     
     try {
-      // First extract text using direct OCR for DeepSeek analysis
-      const directResult = await directOCRProcessor.processDocument(filePath);
+      // First extract text using OpenCV preprocessing + Tesseract OCR for DeepSeek analysis
+      const ocrResult = await openCVOCRProcessor.processDocument(filePath);
       
       // Then enhance with DeepSeek analysis
       const deepseekAnalysis = await deepSeekService.analyzeDocument(
-        directResult.extractedText, 
+        ocrResult.extractedText, 
         "Vietnamese government document analysis"
       );
       
