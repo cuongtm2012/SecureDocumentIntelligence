@@ -16,8 +16,7 @@ try:
     print("Initializing PaddleOCR...")
     ocr = PaddleOCR(
         lang='vi',
-        use_textline_orientation=False,  # Disable orientation detection
-        show_log=False
+        use_textline_orientation=False  # Disable orientation detection for simplicity
     )
     print("✓ PaddleOCR initialization successful")
     

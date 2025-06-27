@@ -162,10 +162,10 @@ export class LocalPaddleOCRProcessor {
     confidence: number;
     boundingBoxes?: any[];
   }> {
-    console.log(`🤖 Processing ${path.basename(imagePath)} with real PaddleOCR + OpenCV...`);
+    console.log(`🤖 Processing ${path.basename(imagePath)} with OpenCV preprocessing + Tesseract fallback...`);
     
     try {
-      // First try real PaddleOCR with OpenCV preprocessing
+      // First try real PaddleOCR with OpenCV preprocessing (if available)
       try {
         const realResult = await this.callRealPaddleOCR(imagePath);
         if (realResult && realResult.text && realResult.text.trim().length > 10) {
@@ -173,10 +173,17 @@ export class LocalPaddleOCRProcessor {
           return realResult;
         }
       } catch (paddleError) {
-        console.warn('Real PaddleOCR failed, falling back to enhanced simulation:', paddleError);
+        console.warn('Real PaddleOCR unavailable, using OpenCV + Tesseract approach');
       }
 
-      // Fallback to enhanced simulation
+      // Use OpenCV preprocessing + Tesseract as reliable fallback
+      const tesseractResult = await this.processWithTesseractOCR(imagePath);
+      if (tesseractResult && tesseractResult.text && tesseractResult.text.trim().length > 5) {
+        console.log(`✅ Tesseract OCR success: ${tesseractResult.confidence.toFixed(1)}% confidence`);
+        return tesseractResult;
+      }
+
+      // Final fallback to enhanced simulation
       const enhancedImagePath = await this.enhanceImage(imagePath);
       const simulatedResult = await this.simulatePaddleOCRProcessing(enhancedImagePath);
       
@@ -373,6 +380,124 @@ except Exception as e:
         python.kill('SIGTERM');
         reject(new Error(`PaddleOCR processing timeout (${timeout/1000}s)`));
       }, timeout);
+    });
+  }
+
+  private async processWithTesseractOCR(imagePath: string): Promise<{
+    text: string;
+    confidence: number;
+    boundingBoxes?: any[];
+  }> {
+    return new Promise((resolve, reject) => {
+      // Python script using OpenCV preprocessing + Tesseract (as your original approach)
+      const pythonScript = `
+import sys
+import cv2
+import json
+import os
+
+try:
+    import pytesseract
+    
+    # Get image path from command line
+    img_path = sys.argv[1]
+    
+    if not os.path.exists(img_path):
+        raise ValueError(f"Image file not found: {img_path}")
+    
+    # OpenCV preprocessing (your exact approach)
+    img = cv2.imread(img_path)
+    if img is None:
+        raise ValueError(f"Could not load image: {img_path}")
+    
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray = cv2.equalizeHist(gray)
+    blur = cv2.GaussianBlur(gray, (3,3), 0)
+    _, thresh = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    
+    # Save preprocessed image
+    preprocessed_path = img_path.replace('.png', '_tesseract_preprocessed.png')
+    cv2.imwrite(preprocessed_path, thresh)
+    
+    # Use Tesseract with Vietnamese
+    config = '--psm 6 -l vie'
+    text = pytesseract.image_to_string(preprocessed_path, config=config)
+    
+    # Get confidence data
+    data = pytesseract.image_to_data(preprocessed_path, config=config, output_type=pytesseract.Output.DICT)
+    confidences = [int(conf) for conf in data['conf'] if int(conf) > 0]
+    avg_confidence = sum(confidences) / len(confidences) if confidences else 50
+    
+    # Clean text
+    text = text.strip()
+    if len(text) < 3:
+        raise ValueError("Minimal text detected")
+    
+    result_data = {
+        "success": True,
+        "text": text,
+        "confidence": avg_confidence,
+        "method": "tesseract_opencv"
+    }
+    
+    print(json.dumps(result_data, ensure_ascii=False))
+    
+except Exception as e:
+    error_result = {
+        "success": False,
+        "error": str(e),
+        "text": "",
+        "confidence": 0
+    }
+    print(json.dumps(error_result))
+    sys.exit(1)
+`;
+
+      const python = spawn('python3', ['-c', pythonScript, imagePath], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: { ...process.env, PYTHONUNBUFFERED: '1' }
+      });
+      
+      let stdout = '';
+      let stderr = '';
+      
+      python.stdout.on('data', (data: Buffer) => {
+        stdout += data.toString();
+      });
+      
+      python.stderr.on('data', (data: Buffer) => {
+        stderr += data.toString();
+      });
+      
+      python.on('close', (code: number) => {
+        if (code === 0 && stdout.trim()) {
+          try {
+            const result = JSON.parse(stdout.trim());
+            if (result.success && result.text && result.text.trim().length > 0) {
+              resolve({
+                text: result.text,
+                confidence: result.confidence,
+                boundingBoxes: []
+              });
+            } else {
+              reject(new Error(result.error || 'No text extracted by Tesseract'));
+            }
+          } catch (parseError) {
+            reject(new Error(`Failed to parse Tesseract result: ${parseError}`));
+          }
+        } else {
+          reject(new Error(`Tesseract failed with code ${code}: ${stderr || 'Unknown error'}`));
+        }
+      });
+      
+      python.on('error', (error: any) => {
+        reject(new Error(`Failed to start Tesseract process: ${error.message}`));
+      });
+      
+      setTimeout(() => {
+        python.kill('SIGTERM');
+        reject(new Error('Tesseract processing timeout'));
+      }, 30000);
     });
   }
 
