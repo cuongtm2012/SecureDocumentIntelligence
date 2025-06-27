@@ -396,78 +396,84 @@ except Exception as e:
     boundingBoxes?: any[];
   }> {
     return new Promise((resolve, reject) => {
-      // Python script using OpenCV preprocessing + Tesseract (as your original approach)
+      // Simplified Python script with better error handling
       const pythonScript = `
 import sys
 import cv2
 import json
 import os
+import subprocess
 
-try:
-    import pytesseract
-    
-    # Get image path from command line
-    img_path = sys.argv[1]
-    
-    if not os.path.exists(img_path):
-        raise ValueError(f"Image file not found: {img_path}")
-    
-    # OpenCV preprocessing (your exact approach)
-    img = cv2.imread(img_path)
-    if img is None:
-        raise ValueError(f"Could not load image: {img_path}")
-    
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    gray = cv2.equalizeHist(gray)
-    blur = cv2.GaussianBlur(gray, (3,3), 0)
-    _, thresh = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    
-    # Save preprocessed image
-    preprocessed_path = img_path.replace('.png', '_tesseract_preprocessed.png')
-    cv2.imwrite(preprocessed_path, thresh)
-    
-    # Use Tesseract with Vietnamese - simplified approach
-    config = '--psm 3 -l vie'  # Use PSM 3 (fully automatic) for better stability
-    
-    # Set timeout for Tesseract
+def main():
     try:
-        text = pytesseract.image_to_string(preprocessed_path, config=config, timeout=15)
-    except pytesseract.TesseractError as e:
-        # Try with English if Vietnamese fails
-        config = '--psm 3 -l eng'
-        text = pytesseract.image_to_string(preprocessed_path, config=config, timeout=10)
-    
-    # Simple confidence estimation based on text quality
-    avg_confidence = 75 if len(text.strip()) > 20 else 50
-    
-    # Clean text
-    text = text.strip()
-    if len(text) < 3:
-        raise ValueError("Minimal text detected")
-    
-    result_data = {
-        "success": True,
-        "text": text,
-        "confidence": avg_confidence,
-        "method": "tesseract_opencv"
-    }
-    
-    print(json.dumps(result_data, ensure_ascii=False))
-    
-except Exception as e:
-    error_result = {
-        "success": False,
-        "error": str(e),
-        "text": "",
-        "confidence": 0
-    }
-    print(json.dumps(error_result))
-    sys.exit(1)
+        img_path = sys.argv[1]
+        
+        # Check file exists
+        if not os.path.exists(img_path):
+            raise ValueError(f"File not found: {img_path}")
+        
+        # OpenCV preprocessing
+        img = cv2.imread(img_path)
+        if img is None:
+            raise ValueError(f"Cannot read image: {img_path}")
+        
+        # Your exact preprocessing steps
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        gray = cv2.equalizeHist(gray)
+        blur = cv2.GaussianBlur(gray, (3,3), 0)
+        _, thresh = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        
+        # Save preprocessed image
+        preprocessed_path = img_path.replace('.png', '_tesseract.png')
+        cv2.imwrite(preprocessed_path, thresh)
+        
+        # Direct tesseract call (more reliable than pytesseract)
+        cmd = ['tesseract', preprocessed_path, 'stdout', '-l', 'vie', '--psm', '3']
+        
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            text = result.stdout.strip()
+            
+            if result.returncode != 0 or len(text) < 2:
+                # Try English fallback
+                cmd = ['tesseract', preprocessed_path, 'stdout', '-l', 'eng', '--psm', '3']
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+                text = result.stdout.strip()
+            
+            if result.returncode == 0 and len(text) >= 2:
+                confidence = 75 if len(text) > 20 else 60
+                print(json.dumps({
+                    "success": True,
+                    "text": text,
+                    "confidence": confidence,
+                    "method": "tesseract_direct"
+                }, ensure_ascii=False))
+            else:
+                raise ValueError(f"Tesseract failed: {result.stderr}")
+                
+        except subprocess.TimeoutExpired:
+            raise ValueError("Tesseract timeout")
+            
+    except Exception as e:
+        print(json.dumps({
+            "success": False,
+            "error": str(e),
+            "text": "",
+            "confidence": 0
+        }))
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
 `;
 
       const python = spawn('python3', ['-c', pythonScript, imagePath], {
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: { ...process.env, PYTHONUNBUFFERED: '1' }
+        env: { 
+          ...process.env, 
+          PYTHONUNBUFFERED: '1',
+          TESSDATA_PREFIX: '/nix/store/44vcjbcy1p2yhc974bcw250k2r5x5cpa-tesseract-5.3.4/share/tessdata'
+        }
       });
       
       let stdout = '';
@@ -492,24 +498,24 @@ except Exception as e:
                 boundingBoxes: []
               });
             } else {
-              reject(new Error(result.error || 'No text extracted by Tesseract'));
+              reject(new Error(result.error || 'No text extracted'));
             }
           } catch (parseError) {
-            reject(new Error(`Failed to parse Tesseract result: ${parseError}`));
+            reject(new Error(`Parse error: ${parseError.message}`));
           }
         } else {
-          reject(new Error(`Tesseract failed with code ${code}: ${stderr || 'Unknown error'}`));
+          reject(new Error(`Process failed: code ${code}, stderr: ${stderr}`));
         }
       });
       
       python.on('error', (error: any) => {
-        reject(new Error(`Failed to start Tesseract process: ${error.message}`));
+        reject(new Error(`Process start failed: ${error.message}`));
       });
       
       setTimeout(() => {
         python.kill('SIGTERM');
-        reject(new Error('Tesseract processing timeout'));
-      }, 20000);  // Reduced timeout to 20 seconds
+        reject(new Error('Processing timeout (15s)'));
+      }, 15000);
     });
   }
 
