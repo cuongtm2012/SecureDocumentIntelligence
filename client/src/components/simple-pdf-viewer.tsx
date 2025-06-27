@@ -4,6 +4,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
+import { useToast } from '@/hooks/use-toast';
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -12,7 +15,14 @@ import {
   Download,
   FileText,
   X,
-  Loader2
+  Loader2,
+  Copy,
+  Save,
+  Edit3,
+  Eye,
+  RotateCcw,
+  Type,
+  FileDown
 } from 'lucide-react';
 
 interface SimplePDFViewerProps {
@@ -34,6 +44,7 @@ export function SimplePDFViewer({
   onTextEdit,
   onExport
 }: SimplePDFViewerProps) {
+  const { toast } = useToast();
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [zoom, setZoom] = useState(100);
@@ -41,6 +52,9 @@ export function SimplePDFViewer({
   const [isLoading, setIsLoading] = useState(true);
   const [pdfImages, setPdfImages] = useState<string[]>([]);
   const [error, setError] = useState<string>('');
+  const [isEditing, setIsEditing] = useState(false);
+  const [wordCount, setWordCount] = useState(0);
+  const [lineCount, setLineCount] = useState(0);
 
   // Load PDF as images from the server
   useEffect(() => {
@@ -101,10 +115,48 @@ export function SimplePDFViewer({
     setZoom(prev => Math.max(50, prev - 25));
   };
 
+  // Text statistics calculator
+  useEffect(() => {
+    const words = editedText.trim().split(/\s+/).filter(word => word.length > 0);
+    const lines = editedText.split('\n').length;
+    setWordCount(words.length);
+    setLineCount(lines);
+  }, [editedText]);
+
   const handleTextSave = () => {
     if (onTextEdit && editedText !== extractedText) {
       onTextEdit(editedText);
+      setIsEditing(false);
+      toast({ title: "Changes saved successfully" });
     }
+  };
+
+  const handleCopyText = async () => {
+    try {
+      await navigator.clipboard.writeText(editedText);
+      toast({ title: "Text copied to clipboard" });
+    } catch (error) {
+      toast({ title: "Failed to copy text", variant: "destructive" });
+    }
+  };
+
+  const handleExportText = () => {
+    const blob = new Blob([editedText], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${fileName}_extracted_text.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast({ title: "Text exported successfully" });
+  };
+
+  const handleDiscardChanges = () => {
+    setEditedText(extractedText);
+    setIsEditing(false);
+    toast({ title: "Changes discarded" });
   };
 
   const renderPdfContent = () => {
