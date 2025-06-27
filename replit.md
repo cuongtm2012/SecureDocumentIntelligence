@@ -129,6 +129,13 @@ Changelog:
   - Added missing thumbnail endpoint for EnhancedOCRViewer PDF display
   - Fixed Content Security Policy to allow PDF content in iframes
   - Processing time reduced from ~85 seconds to ~25-30 seconds for 4-page documents
+- June 27, 2025. Replaced Tesseract with PaddleOCR integration
+  - Implemented PaddleOCR processor with advanced image preprocessing
+  - Created Python fallback script for PaddleOCR when full installation unavailable
+  - Added bounding box detection and confidence scoring per text block
+  - Fixed database connection issues with improved pool configuration
+  - Updated processing workflow to use PaddleOCR + DeepSeek API integration
+  - Enhanced Vietnamese text recognition accuracy with PaddleOCR's deep learning models
 ```
 
 ## User Preferences

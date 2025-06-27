@@ -243,89 +243,37 @@ export class PaddleOCRProcessor {
   private async runPaddleOCRScript(imagePath: string): Promise<{ text: string; confidence: number; boundingBoxes?: any[] }> {
     return new Promise((resolve, reject) => {
       // Set timeout for processing
+      let childProcess: any;
       const timeout = setTimeout(() => {
         console.warn(`⏰ PaddleOCR timeout for ${path.basename(imagePath)}`);
-        process.kill();
+        if (childProcess) childProcess.kill('SIGTERM');
         reject(new Error(`PaddleOCR timeout for ${path.basename(imagePath)}`));
       }, 30000);
 
-      // Run PaddleOCR Python script directly
-      const pythonScript = `
-import sys
-import json
-from paddleocr import PaddleOCR
-import warnings
-warnings.filterwarnings("ignore")
-
-try:
-    # Initialize PaddleOCR with Vietnamese support
-    ocr = PaddleOCR(use_angle_cls=True, lang='ch', use_gpu=False)
-    
-    # Process the image
-    result = ocr.ocr("${imagePath}", cls=True)
-    
-    # Extract text and confidence
-    texts = []
-    confidences = []
-    bounding_boxes = []
-    
-    if result and result[0]:
-        for line in result[0]:
-            if line and len(line) >= 2:
-                bbox = line[0]
-                text_info = line[1]
-                text = text_info[0] if isinstance(text_info, tuple) else str(text_info)
-                confidence = text_info[1] if isinstance(text_info, tuple) and len(text_info) > 1 else 0.9
-                
-                texts.append(text)
-                confidences.append(confidence * 100)
-                bounding_boxes.append({
-                    "text": text,
-                    "confidence": confidence * 100,
-                    "bbox": bbox
-                })
-    
-    final_text = "\\n".join(texts)
-    avg_confidence = sum(confidences) / len(confidences) if confidences else 0
-    
-    print(json.dumps({
-        "success": True,
-        "text": final_text,
-        "confidence": avg_confidence,
-        "bounding_boxes": bounding_boxes
-    }))
-    
-except Exception as e:
-    print(json.dumps({
-        "success": False,
-        "error": str(e),
-        "text": "",
-        "confidence": 0
-    }))
-`;
-
       console.log(`🤖 Running PaddleOCR Python script for ${path.basename(imagePath)}`);
       
-      const process = spawn('python3', ['-c', pythonScript]);
+      // Use the external Python script
+      const scriptPath = path.join(process.cwd(), 'python-paddle-ocr-simple.py');
+      childProcess = spawn('python3', [scriptPath, imagePath]);
       let stdout = '';
       let stderr = '';
       
-      process.stdout.on('data', (data) => {
+      childProcess.stdout.on('data', (data: any) => {
         stdout += data.toString();
       });
       
-      process.stderr.on('data', (data) => {
+      childProcess.stderr.on('data', (data: any) => {
         stderr += data.toString();
       });
       
-      process.on('close', (code) => {
+      childProcess.on('close', (code: number) => {
         clearTimeout(timeout);
         
         try {
           const result = JSON.parse(stdout.trim());
           
           if (result.success) {
-            console.log(`✅ PaddleOCR completed for ${path.basename(imagePath)}`);
+            console.log(`✅ PaddleOCR completed for ${path.basename(imagePath)} (${result.processing_method || 'unknown'})`);
             resolve({
               text: result.text || '',
               confidence: result.confidence || 0,
@@ -341,7 +289,7 @@ except Exception as e:
         }
       });
       
-      process.on('error', (error) => {
+      childProcess.on('error', (error: any) => {
         clearTimeout(timeout);
         console.error('❌ PaddleOCR process error:', error);
         reject(error);
