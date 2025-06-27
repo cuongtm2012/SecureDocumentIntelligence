@@ -136,6 +136,12 @@ Changelog:
   - Fixed database connection issues with improved pool configuration
   - Updated processing workflow to use PaddleOCR + DeepSeek API integration
   - Enhanced Vietnamese text recognition accuracy with PaddleOCR's deep learning models
+- June 27, 2025. Fixed microservices stability issues and simplified architecture
+  - Resolved Python microservices crashing due to NumPy/OpenCV dependency conflicts
+  - Switched from combined microservices to stable direct OCR processor
+  - Improved error handling with health checks and graceful fallbacks
+  - Restored reliable Vietnamese OCR processing with Tesseract + DeepSeek API
+  - System now processes documents without connection errors
 ```
 
 ## User Preferences

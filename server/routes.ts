@@ -11,7 +11,7 @@ import { deepSeekService } from "./deepseek-service";
 import { vietnameseTextCleaner } from "./vietnamese-text-cleaner";
 import { enhancedVietnameseOCR } from "./enhanced-vietnamese-ocr";
 import { pdfProcessor } from "./pdf-processor";
-import { directOCRProcessor } from "./direct-ocr-processor";
+import { directOCRProcessor } from "./direct-ocr-processor-fixed";
 import { openCVOCRProcessor } from "./opencv-ocr-processor";
 import { paddleOCRProcessor } from "./paddle-ocr-processor";
 import { combinedOCRProcessor } from "./combined-ocr-processor";
@@ -78,10 +78,10 @@ async function processFileWithFallback(filePath: string, document: any, document
     console.log('🤖 Starting DeepSeek API document processing...');
     
     try {
-      // First extract text using Combined OCR Services (OpenCV + PaddleOCR) for DeepSeek analysis
-      const ocrResult = await combinedOCRProcessor.processDocument(filePath);
+      // Use direct OCR processor which is stable and reliable
+      const ocrResult = await directOCRProcessor.processDocument(filePath);
       
-      // Then enhance with DeepSeek analysis
+      // Then enhance with DeepSeek analysis for Vietnamese text improvement
       const deepseekAnalysis = await deepSeekService.analyzeDocument(
         ocrResult.extractedText, 
         "Vietnamese government document analysis"
@@ -101,9 +101,9 @@ async function processFileWithFallback(filePath: string, document: any, document
           confidence_threshold: 60.0,
           processing_timestamp: new Date(),
           file_size_bytes: document.fileSize,
-          processing_mode: 'combined-opencv-paddle-deepseek',
+          processing_mode: 'direct-tesseract-deepseek',
           deepseek_analysis: deepseekAnalysis,
-          note: 'Processed with Combined OCR Services (OpenCV + PaddleOCR) + DeepSeek API'
+          note: 'Processed with Direct Tesseract OCR + DeepSeek API for optimal Vietnamese text extraction'
         }
       };
       
