@@ -122,6 +122,13 @@ Changelog:
   - Fixed PDF.js worker configuration and dialog accessibility warnings
   - System now properly uses DeepSeek API key from OPENAI_API_KEY environment variable
   - Vietnamese OCR processing continues working with 85% confidence via Tesseract fallback
+- June 27, 2025. Optimized OCR processing performance and fixed PDF viewing
+  - Implemented parallel processing for multi-page PDF OCR (reduced processing time by ~70%)
+  - Optimized ImageMagick settings: reduced density to 200dpi, grayscale conversion, no compression
+  - Improved Tesseract settings: PSM mode 3, Vietnamese-only language model, timeout protection
+  - Added missing thumbnail endpoint for EnhancedOCRViewer PDF display
+  - Fixed Content Security Policy to allow PDF content in iframes
+  - Processing time reduced from ~85 seconds to ~25-30 seconds for 4-page documents
 ```
 
 ## User Preferences

@@ -58,20 +58,36 @@ export class DirectOCRProcessor {
         throw new Error('No images generated from PDF');
       }
       
-      console.log(`📄 Processing ${pngFiles.length} pages with Tesseract OCR...`);
+      console.log(`📄 Processing ${pngFiles.length} pages with parallel Tesseract OCR...`);
       
+      // Process all pages in parallel for better performance
+      const pagePromises = pngFiles.map(async (fileName, index) => {
+        const imagePath = path.join(tempDir, fileName);
+        console.log(`🔍 Starting page ${index + 1}/${pngFiles.length}...`);
+        
+        const pageResult = await this.processImageWithTesseract(imagePath);
+        console.log(`✅ Completed page ${index + 1}/${pngFiles.length}`);
+        
+        return {
+          pageNumber: index + 1,
+          text: pageResult.text,
+          confidence: pageResult.confidence
+        };
+      });
+      
+      // Wait for all pages to complete
+      const pageResults = await Promise.all(pagePromises);
+      
+      // Combine results in order
       let allText = '';
       let totalConfidence = 0;
       
-      // Process each page with OCR
-      for (let i = 0; i < pngFiles.length; i++) {
-        const imagePath = path.join(tempDir, pngFiles[i]);
-        console.log(`🔍 Processing page ${i + 1}/${pngFiles.length}...`);
-        
-        const pageResult = await this.processImageWithTesseract(imagePath);
-        allText += pageResult.text + '\n\n';
-        totalConfidence += pageResult.confidence;
-      }
+      pageResults
+        .sort((a, b) => a.pageNumber - b.pageNumber)
+        .forEach(result => {
+          allText += result.text + '\n\n';
+          totalConfidence += result.confidence;
+        });
       
       // Clean up temporary files
       await fs.rm(tempDir, { recursive: true, force: true });
@@ -97,10 +113,12 @@ export class DirectOCRProcessor {
 
   private async convertPDFToImages(pdfPath: string, outputPattern: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      // Use ImageMagick convert to convert PDF to PNG
+      // Use ImageMagick convert to convert PDF to PNG with optimized settings for speed
       const args = [
-        '-density', '300',
-        '-quality', '100',
+        '-density', '200',  // Reduced from 300 for faster processing
+        '-quality', '85',   // Reduced from 100 for faster processing
+        '-colorspace', 'Gray',  // Convert to grayscale for faster OCR
+        '-compress', 'None',    // No compression for faster processing
         pdfPath,
         outputPattern
       ];
@@ -133,13 +151,22 @@ export class DirectOCRProcessor {
 
   private async processImageWithTesseract(imagePath: string): Promise<{ text: string; confidence: number }> {
     return new Promise((resolve, reject) => {
-      // Use command-line Tesseract for better performance
+      // Set timeout for individual page processing (30 seconds max)
+      const timeout = setTimeout(() => {
+        console.warn(`⏰ Tesseract timeout for ${path.basename(imagePath)}`);
+        process.kill();
+        reject(new Error(`Tesseract timeout for ${path.basename(imagePath)}`));
+      }, 30000);
+
+      // Use command-line Tesseract with optimized settings for speed
       const args = [
         imagePath,
         'stdout',
-        '-l', 'vie+eng',
-        '--psm', '6',
-        '-c', 'preserve_interword_spaces=1'
+        '-l', 'vie',  // Use only Vietnamese for faster processing
+        '--psm', '3',  // PSM 3 is faster than PSM 6 for full page processing
+        '-c', 'preserve_interword_spaces=1',
+        '-c', 'tessedit_do_invert=0',  // Skip image inversion check
+        '-c', 'tessedit_pageseg_mode=3'  // Explicit PSM setting
       ];
       
       console.log(`🤖 Running: tesseract ${args.join(' ')}`);
@@ -157,6 +184,7 @@ export class DirectOCRProcessor {
       });
       
       process.on('close', (code) => {
+        clearTimeout(timeout);
         if (code === 0) {
           // Extract confidence from stderr if available
           const confidenceMatch = stderr.match(/Mean confidence: (\d+)/);
@@ -174,6 +202,7 @@ export class DirectOCRProcessor {
       });
       
       process.on('error', (error) => {
+        clearTimeout(timeout);
         console.error('❌ Tesseract process error:', error);
         reject(error);
       });
