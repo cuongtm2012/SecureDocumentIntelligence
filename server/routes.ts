@@ -78,8 +78,8 @@ async function processFileWithFallback(filePath: string, document: any, document
     console.log('🤖 Starting DeepSeek API document processing...');
     
     try {
-      // First extract text using PaddleOCR for DeepSeek analysis
-      const ocrResult = await paddleOCRProcessor.processDocument(filePath);
+      // First extract text using Combined OCR Services (OpenCV + PaddleOCR) for DeepSeek analysis
+      const ocrResult = await combinedOCRProcessor.processDocument(filePath);
       
       // Then enhance with DeepSeek analysis
       const deepseekAnalysis = await deepSeekService.analyzeDocument(
@@ -101,9 +101,9 @@ async function processFileWithFallback(filePath: string, document: any, document
           confidence_threshold: 60.0,
           processing_timestamp: new Date(),
           file_size_bytes: document.fileSize,
-          processing_mode: 'paddleocr-deepseek',
+          processing_mode: 'combined-opencv-paddle-deepseek',
           deepseek_analysis: deepseekAnalysis,
-          note: 'Processed with PaddleOCR + DeepSeek API'
+          note: 'Processed with Combined OCR Services (OpenCV + PaddleOCR) + DeepSeek API'
         }
       };
       

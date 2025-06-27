@@ -123,7 +123,7 @@ export class CombinedOCRProcessor {
         processingMethod: 'combined-opencv-paddle',
         processingTime,
         boundingBoxes: allBoundingBoxes,
-        enhancements: [...new Set(allEnhancements)] // Remove duplicates
+        enhancements: Array.from(new Set(allEnhancements)) // Remove duplicates
       };
     } catch (error: any) {
       console.error('Combined OCR PDF processing error:', error);
