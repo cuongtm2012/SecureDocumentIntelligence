@@ -67,9 +67,9 @@ if (!fs.existsSync(uploadsDir)) {
 
 // Helper function to process file with DeepSeek API as primary workflow
 async function processFileWithFallback(filePath: string, document: any, documentId: number, userId: number, req?: any, res?: any) {
-  console.log(`🚀 Processing document ${document.originalName} with DeepSeek API workflow...`);
+  console.log(`🚀 Processing document ${document.originalName} with OpenCV + DeepSeek API workflow...`);
   
-  let ocrResult;
+  let finalOcrResult;
 
   // Primary workflow: DeepSeek API processing
   if (process.env.OPENAI_API_KEY) {
@@ -85,23 +85,23 @@ async function processFileWithFallback(filePath: string, document: any, document
         "Vietnamese government document analysis"
       );
       
-      ocrResult = {
+      finalOcrResult = {
         success: true,
         file_id: document.originalName,
-        text: directResult.extractedText,
-        confidence: directResult.confidence,
-        page_count: directResult.pageCount,
-        processing_time: directResult.processingTime / 1000,
+        text: ocrResult.extractedText,
+        confidence: ocrResult.confidence,
+        page_count: ocrResult.pageCount,
+        processing_time: ocrResult.processingTime / 1000,
         metadata: {
-          character_count: directResult.extractedText.length,
-          word_count: directResult.extractedText.split(/\s+/).filter(word => word.length > 0).length,
+          character_count: ocrResult.extractedText.length,
+          word_count: ocrResult.extractedText.split(/\s+/).filter((word: string) => word.length > 0).length,
           language: 'vie',
           confidence_threshold: 60.0,
           processing_timestamp: new Date(),
           file_size_bytes: document.fileSize,
-          processing_mode: 'deepseek-api',
+          processing_mode: 'opencv-tesseract-deepseek',
           deepseek_analysis: deepseekAnalysis,
-          note: 'Processed with DeepSeek API workflow'
+          note: 'Processed with OpenCV preprocessing + Tesseract + DeepSeek API'
         }
       };
       
@@ -115,7 +115,7 @@ async function processFileWithFallback(filePath: string, document: any, document
       try {
         const directResult = await directOCRProcessor.processDocument(filePath);
         
-        ocrResult = {
+        finalOcrResult = {
           success: true,
           file_id: document.originalName,
           text: directResult.extractedText,
@@ -143,7 +143,7 @@ async function processFileWithFallback(filePath: string, document: any, document
     try {
       const directResult = await directOCRProcessor.processDocument(filePath);
       
-      ocrResult = {
+      finalOcrResult = {
         success: true,
         file_id: document.originalName,
         text: directResult.extractedText,
@@ -152,7 +152,7 @@ async function processFileWithFallback(filePath: string, document: any, document
         processing_time: directResult.processingTime / 1000,
         metadata: {
           character_count: directResult.extractedText.length,
-          word_count: directResult.extractedText.split(/\s+/).filter(word => word.length > 0).length,
+          word_count: directResult.extractedText.split(/\s+/).filter((word: string) => word.length > 0).length,
           language: 'vie',
           confidence_threshold: 60.0,
           processing_timestamp: new Date(),
@@ -167,21 +167,21 @@ async function processFileWithFallback(filePath: string, document: any, document
   }
 
   // Extract data from OCR result
-  const extractedText = ocrResult.text || '';
-  const confidence = Math.min((ocrResult.confidence || 0) / 100, 1);
-  const deepseekAnalysis = ocrResult.metadata?.deepseek_analysis || {
+  const extractedText = finalOcrResult.text || '';
+  const confidence = Math.min((finalOcrResult.confidence || 0) / 100, 1);
+  const deepseekAnalysis = finalOcrResult.metadata?.deepseek_analysis || {
     applied: false,
     reason: 'Not processed with DeepSeek workflow'
   };
 
   // Prepare structured data
   const structuredData = {
-    pageCount: ocrResult.page_count || 1,
+    pageCount: finalOcrResult.page_count || 1,
     characterCount: extractedText.length,
-    wordCount: extractedText.split(/\s+/).filter(word => word.length > 0).length,
-    language: ocrResult.metadata?.language || 'Vietnamese',
-    processingMode: ocrResult.metadata?.processing_mode || 'direct-fallback',
-    processingTime: ocrResult.processing_time || 0,
+    wordCount: extractedText.split(/\s+/).filter((word: string) => word.length > 0).length,
+    language: finalOcrResult.metadata?.language || 'Vietnamese',
+    processingMode: finalOcrResult.metadata?.processing_mode || 'direct-fallback',
+    processingTime: finalOcrResult.processing_time || 0,
     deepseekAnalysis: deepseekAnalysis,
     documentType: 'Unknown Document'
   };
