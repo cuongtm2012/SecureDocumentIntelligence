@@ -11,10 +11,7 @@ import { deepSeekService } from "./deepseek-service";
 import { vietnameseTextCleaner } from "./vietnamese-text-cleaner";
 import { enhancedVietnameseOCR } from "./enhanced-vietnamese-ocr";
 import { pdfProcessor } from "./pdf-processor";
-import { localPaddleOCRProcessor } from "./local-paddle-ocr";
-import { openCVOCRProcessor } from "./opencv-ocr-processor";
-import { paddleOCRProcessor } from "./paddle-ocr-processor";
-import { combinedOCRProcessor } from "./combined-ocr-processor";
+import { tesseractOCRProcessor } from "./tesseract-ocr-processor";
 import helmet from "helmet";
 import { insertDocumentSchema, insertAuditLogSchema } from "@shared/schema";
 import { z } from "zod";
@@ -78,8 +75,8 @@ async function processFileWithFallback(filePath: string, document: any, document
     console.log('🤖 Starting DeepSeek API document processing...');
     
     try {
-      // Use local PaddleOCR processor for Vietnamese text extraction
-      const ocrResult = await localPaddleOCRProcessor.processDocument(filePath);
+      // Use Tesseract OCR processor for Vietnamese text extraction
+      const ocrResult = await tesseractOCRProcessor.processDocument(filePath);
       
       // Then enhance with DeepSeek analysis for Vietnamese text improvement
       const deepseekAnalysis = await deepSeekService.analyzeDocument(
@@ -115,7 +112,7 @@ async function processFileWithFallback(filePath: string, document: any, document
       
       // Direct OCR fallback
       try {
-        const directResult = await localPaddleOCRProcessor.processDocument(filePath);
+        const directResult = await tesseractOCRProcessor.processDocument(filePath);
         
         finalOcrResult = {
           success: true,
@@ -143,7 +140,7 @@ async function processFileWithFallback(filePath: string, document: any, document
     console.log('⚠️ No DeepSeek API key available, using direct OCR fallback...');
     
     try {
-      const directResult = await localPaddleOCRProcessor.processDocument(filePath);
+      const directResult = await tesseractOCRProcessor.processDocument(filePath);
       
       finalOcrResult = {
         success: true,
