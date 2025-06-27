@@ -5,13 +5,13 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { promisify } from "util";
-import { createWorker } from "tesseract.js";
+
 import sharp from "sharp";
 import { deepSeekService } from "./deepseek-service";
 import { vietnameseTextCleaner } from "./vietnamese-text-cleaner";
 import { enhancedVietnameseOCR } from "./enhanced-vietnamese-ocr";
 import { pdfProcessor } from "./pdf-processor";
-import { directOCRProcessor } from "./direct-ocr-processor-fixed";
+import { localPaddleOCRProcessor } from "./local-paddle-ocr";
 import { openCVOCRProcessor } from "./opencv-ocr-processor";
 import { paddleOCRProcessor } from "./paddle-ocr-processor";
 import { combinedOCRProcessor } from "./combined-ocr-processor";
@@ -78,8 +78,8 @@ async function processFileWithFallback(filePath: string, document: any, document
     console.log('🤖 Starting DeepSeek API document processing...');
     
     try {
-      // Use direct OCR processor which is stable and reliable
-      const ocrResult = await directOCRProcessor.processDocument(filePath);
+      // Use local PaddleOCR processor for Vietnamese text extraction
+      const ocrResult = await localPaddleOCRProcessor.processDocument(filePath);
       
       // Then enhance with DeepSeek analysis for Vietnamese text improvement
       const deepseekAnalysis = await deepSeekService.analyzeDocument(
@@ -101,9 +101,9 @@ async function processFileWithFallback(filePath: string, document: any, document
           confidence_threshold: 60.0,
           processing_timestamp: new Date(),
           file_size_bytes: document.fileSize,
-          processing_mode: 'direct-tesseract-deepseek',
+          processing_mode: 'paddleocr-deepseek',
           deepseek_analysis: deepseekAnalysis,
-          note: 'Processed with Direct Tesseract OCR + DeepSeek API for optimal Vietnamese text extraction'
+          note: 'Processed with PaddleOCR + DeepSeek API for optimal Vietnamese text extraction'
         }
       };
       
@@ -115,7 +115,7 @@ async function processFileWithFallback(filePath: string, document: any, document
       
       // Direct OCR fallback
       try {
-        const directResult = await directOCRProcessor.processDocument(filePath);
+        const directResult = await localPaddleOCRProcessor.processDocument(filePath);
         
         finalOcrResult = {
           success: true,
@@ -126,7 +126,7 @@ async function processFileWithFallback(filePath: string, document: any, document
           processing_time: directResult.processingTime / 1000,
           metadata: {
             character_count: directResult.extractedText.length,
-            word_count: directResult.extractedText.split(/\s+/).filter(word => word.length > 0).length,
+            word_count: directResult.extractedText.split(/\s+/).filter((word: string) => word.length > 0).length,
             language: 'vie',
             confidence_threshold: 60.0,
             processing_timestamp: new Date(),
@@ -143,7 +143,7 @@ async function processFileWithFallback(filePath: string, document: any, document
     console.log('⚠️ No DeepSeek API key available, using direct OCR fallback...');
     
     try {
-      const directResult = await directOCRProcessor.processDocument(filePath);
+      const directResult = await localPaddleOCRProcessor.processDocument(filePath);
       
       finalOcrResult = {
         success: true,
