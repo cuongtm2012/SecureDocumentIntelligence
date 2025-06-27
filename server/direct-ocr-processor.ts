@@ -113,12 +113,14 @@ export class DirectOCRProcessor {
 
   private async convertPDFToImages(pdfPath: string, outputPattern: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      // Use ImageMagick convert to convert PDF to PNG with optimized settings for speed
+      // Use ImageMagick convert to convert PDF to PNG with ultra-fast settings
       const args = [
-        '-density', '200',  // Reduced from 300 for faster processing
-        '-quality', '85',   // Reduced from 100 for faster processing
+        '-density', '150',  // Much lower density for speed (still good for OCR)
+        '-quality', '75',   // Lower quality for faster processing
         '-colorspace', 'Gray',  // Convert to grayscale for faster OCR
         '-compress', 'None',    // No compression for faster processing
+        '-depth', '8',      // 8-bit depth for faster processing
+        '-strip',           // Remove all metadata for faster processing
         pdfPath,
         outputPattern
       ];
@@ -151,22 +153,25 @@ export class DirectOCRProcessor {
 
   private async processImageWithTesseract(imagePath: string): Promise<{ text: string; confidence: number }> {
     return new Promise((resolve, reject) => {
-      // Set timeout for individual page processing (30 seconds max)
+      // Set timeout for individual page processing (15 seconds max for speed)
       const timeout = setTimeout(() => {
         console.warn(`⏰ Tesseract timeout for ${path.basename(imagePath)}`);
         process.kill();
         reject(new Error(`Tesseract timeout for ${path.basename(imagePath)}`));
-      }, 30000);
+      }, 15000);
 
-      // Use command-line Tesseract with optimized settings for speed
+      // Use command-line Tesseract with ultra-fast settings
       const args = [
         imagePath,
         'stdout',
         '-l', 'vie',  // Use only Vietnamese for faster processing
-        '--psm', '3',  // PSM 3 is faster than PSM 6 for full page processing
+        '--psm', '6',  // PSM 6 for single uniform block - faster than PSM 3
         '-c', 'preserve_interword_spaces=1',
         '-c', 'tessedit_do_invert=0',  // Skip image inversion check
-        '-c', 'tessedit_pageseg_mode=3'  // Explicit PSM setting
+        '-c', 'tessedit_pageseg_mode=6',  // Explicit PSM setting
+        '-c', 'load_system_dawg=0',      // Skip system dictionary for speed
+        '-c', 'load_freq_dawg=0',        // Skip frequency dictionary for speed
+        '-c', 'tessedit_enable_dict_correction=0'  // Skip dictionary correction for speed
       ];
       
       console.log(`🤖 Running: tesseract ${args.join(' ')}`);
