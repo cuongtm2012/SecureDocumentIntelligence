@@ -142,6 +142,12 @@ Changelog:
   - Improved error handling with health checks and graceful fallbacks
   - Restored reliable Vietnamese OCR processing with Tesseract + DeepSeek API
   - System now processes documents without connection errors
+- June 27, 2025. Completely replaced Tesseract with PaddleOCR implementation
+  - Removed all Tesseract.js dependencies and references from codebase
+  - Implemented local PaddleOCR processor with Vietnamese text optimization
+  - Added image enhancement pipeline using Sharp for better OCR accuracy
+  - Fixed database connection stability issues with improved pool configuration
+  - System now uses PaddleOCR + DeepSeek API for optimal Vietnamese document processing
 ```
 
 ## User Preferences
