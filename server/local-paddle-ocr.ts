@@ -230,28 +230,42 @@ try:
     print(json.dumps({"status": "initializing_paddleocr"}))
     sys.stdout.flush()
     
-    # PaddleOCR for Vietnamese with optimized settings
+    # PaddleOCR for Vietnamese with correct parameters
     from paddleocr import PaddleOCR
     ocr = PaddleOCR(
         lang='vi', 
-        use_angle_cls=True, 
-        use_gpu=False, 
-        show_log=False,
-        enable_mkldnn=True,
-        cpu_threads=2
+        use_textline_orientation=True,
+        text_det_thresh=0.3,      # Detection threshold
+        text_det_box_thresh=0.5   # Box threshold
     )
     
     print(json.dumps({"status": "processing_image"}))
     sys.stdout.flush()
     
-    # Process with PaddleOCR
-    result = ocr.ocr(preprocessed_path, cls=True)
+    # Process with PaddleOCR - try preprocessed first
+    try:
+        result = ocr.ocr(preprocessed_path, cls=True)
+        print(json.dumps({"status": "processed_preprocessed"}))
+        sys.stdout.flush()
+    except Exception as preprocess_error:
+        print(json.dumps({"status": "preprocessed_failed", "error": str(preprocess_error)}))
+        sys.stdout.flush()
+        result = None
     
+    # If preprocessed failed, try original image
     if not result or not result[0]:
-        # Try original image if preprocessed fails
-        result = ocr.ocr(img_path, cls=True)
-        if not result or not result[0]:
-            raise ValueError("No text detected by PaddleOCR")
+        try:
+            print(json.dumps({"status": "trying_original"}))
+            sys.stdout.flush()
+            result = ocr.ocr(img_path, cls=True)
+            print(json.dumps({"status": "processed_original"}))
+            sys.stdout.flush()
+        except Exception as original_error:
+            raise ValueError(f"PaddleOCR failed on both images: preprocessed failed, original: {str(original_error)}")
+    
+    # Final check for results
+    if not result or not result[0]:
+        raise ValueError("No text detected by PaddleOCR on either image")
     
     # Extract text lines
     lines = []
