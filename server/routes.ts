@@ -392,6 +392,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get document thumbnail endpoint (for EnhancedOCRViewer)
+  app.get("/api/documents/:id/thumbnail", async (req, res) => {
+    try {
+      const documentId = parseInt(req.params.id);
+      const document = await storage.getDocument(documentId);
+      
+      if (!document) {
+        return res.status(404).json({ message: "Document not found" });
+      }
+
+      // For PDF files, redirect to the raw PDF endpoint  
+      // For images, we could serve the image directly
+      const rawUrl = `/api/documents/${documentId}/raw`;
+      
+      // Redirect to the raw document
+      res.redirect(rawUrl);
+    } catch (error) {
+      console.error('Get thumbnail error:', error);
+      res.status(500).json({ message: "Failed to get document thumbnail" });
+    }
+  });
+
   // Get user info
   app.get("/api/user", async (req, res) => {
     try {
