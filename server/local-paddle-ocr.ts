@@ -162,11 +162,35 @@ export class LocalPaddleOCRProcessor {
     confidence: number;
     boundingBoxes?: any[];
   }> {
-    console.log(`🤖 Processing ${path.basename(imagePath)} with enhanced Vietnamese OCR simulation...`);
+    console.log(`🤖 Processing ${path.basename(imagePath)} with real PaddleOCR + OpenCV preprocessing...`);
     
     try {
-      // Skip problematic OCR libraries and use reliable enhanced simulation
-      // Apply your OpenCV preprocessing approach using Sharp (equivalent operations)
+      // 1. First attempt: Real PaddleOCR with OpenCV preprocessing
+      try {
+        console.log('🔍 Attempting real PaddleOCR with Vietnamese language model...');
+        const realResult = await this.callRealPaddleOCR(imagePath);
+        if (realResult && realResult.text && realResult.text.trim().length > 10) {
+          console.log(`✅ Real PaddleOCR success: ${realResult.confidence.toFixed(1)}% confidence`);
+          return realResult;
+        }
+      } catch (paddleError: any) {
+        console.warn(`🔄 Real PaddleOCR failed: ${paddleError.message || paddleError}`);
+      }
+
+      // 2. Second attempt: Tesseract OCR with OpenCV preprocessing
+      try {
+        console.log('🔍 Attempting Tesseract OCR with Vietnamese language...');
+        const tesseractResult = await this.processWithTesseractOCR(imagePath);
+        if (tesseractResult && tesseractResult.text && tesseractResult.text.trim().length > 5) {
+          console.log(`✅ Tesseract OCR success: ${tesseractResult.confidence.toFixed(1)}% confidence`);
+          return tesseractResult;
+        }
+      } catch (tesseractError: any) {
+        console.warn(`🔄 Tesseract OCR failed: ${tesseractError.message || tesseractError}`);
+      }
+
+      // 3. Final fallback: Enhanced simulation with OpenCV preprocessing
+      console.log('🔄 Using enhanced simulation with OpenCV preprocessing...');
       const enhancedImagePath = await this.applyOpenCVPreprocessing(imagePath);
       const simulatedResult = await this.simulatePaddleOCRProcessing(enhancedImagePath);
       
@@ -358,12 +382,11 @@ except Exception as e:
         reject(new Error(`Failed to start Python process: ${error.message}`));
       });
       
-      // Extended timeout for first run (model download)
-      const timeout = isInitializing ? 180000 : 60000; // 3 minutes for first run, 1 minute for subsequent
+      // Reasonable timeout - don't wait too long for downloads
       setTimeout(() => {
         python.kill('SIGTERM');
-        reject(new Error(`PaddleOCR processing timeout (${timeout/1000}s)`));
-      }, timeout);
+        reject(new Error('PaddleOCR processing timeout (45s)'));
+      }, 45000);  // 45 seconds maximum
     });
   }
 
