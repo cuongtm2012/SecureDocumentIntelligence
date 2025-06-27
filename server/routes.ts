@@ -14,6 +14,7 @@ import { pdfProcessor } from "./pdf-processor";
 import { directOCRProcessor } from "./direct-ocr-processor";
 import { openCVOCRProcessor } from "./opencv-ocr-processor";
 import { paddleOCRProcessor } from "./paddle-ocr-processor";
+import { combinedOCRProcessor } from "./combined-ocr-processor";
 import helmet from "helmet";
 import { insertDocumentSchema, insertAuditLogSchema } from "@shared/schema";
 import { z } from "zod";
