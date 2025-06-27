@@ -286,39 +286,118 @@ export function SimplePDFViewer({
         </div>
       </div>
 
-      {/* Text Editor Panel */}
-      <div className="w-96 border-l bg-white flex flex-col">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Extracted Text</CardTitle>
-        </CardHeader>
-        <CardContent className="flex-1 flex flex-col">
-          <ScrollArea className="flex-1 mb-4">
-            <textarea
-              value={editedText}
-              onChange={(e) => setEditedText(e.target.value)}
-              className="w-full h-full min-h-[400px] p-3 border rounded resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              placeholder="Extracted text will appear here..."
-            />
-          </ScrollArea>
-          
-          <div className="flex gap-2">
-            <Button
-              onClick={handleTextSave}
-              disabled={editedText === extractedText}
-              className="flex-1"
-            >
-              Save Changes
-            </Button>
-            {onExport && (
-              <Button
-                variant="outline"
-                onClick={() => onExport('txt')}
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Export
-              </Button>
-            )}
+      {/* Enhanced Text Editor Panel */}
+      <div className="w-96 border-l bg-white dark:bg-gray-900 flex flex-col">
+        <CardHeader className="pb-3 border-b">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center space-x-2 text-base">
+              <Edit3 className="h-4 w-4" />
+              <span>Extracted Text</span>
+            </CardTitle>
+            <Badge variant="outline" className="text-xs">
+              {confidence}% confidence
+            </Badge>
           </div>
+          
+          {/* Text Statistics */}
+          <div className="flex items-center space-x-4 text-xs text-gray-500 dark:text-gray-400 mt-2">
+            <span>{wordCount} words</span>
+            <span>{lineCount} lines</span>
+            <span>{editedText.length} chars</span>
+          </div>
+        </CardHeader>
+        
+        <CardContent className="flex-1 flex flex-col p-0">
+          <Tabs defaultValue="editor" className="h-full flex flex-col">
+            <TabsList className="mx-4 mt-4">
+              <TabsTrigger value="editor" className="text-xs">
+                <Type className="h-3 w-3 mr-1" />
+                Editor
+              </TabsTrigger>
+              <TabsTrigger value="preview" className="text-xs">
+                <Eye className="h-3 w-3 mr-1" />
+                Preview
+              </TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="editor" className="flex-1 m-4 mt-2">
+              <div className="h-full flex flex-col">
+                <Textarea
+                  value={editedText}
+                  onChange={(e) => {
+                    setEditedText(e.target.value);
+                    setIsEditing(true);
+                  }}
+                  placeholder="Extracted text will appear here..."
+                  className="flex-1 resize-none font-mono text-sm min-h-[350px] focus:ring-2 focus:ring-blue-500"
+                />
+                
+                {/* Editor Controls */}
+                <div className="flex items-center justify-between mt-3 pt-3 border-t">
+                  <div className="flex items-center space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleCopyText}
+                      className="text-xs"
+                    >
+                      <Copy className="h-3 w-3 mr-1" />
+                      Copy
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleExportText}
+                      className="text-xs"
+                    >
+                      <FileDown className="h-3 w-3 mr-1" />
+                      Export
+                    </Button>
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    {isEditing && editedText !== extractedText && (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleDiscardChanges}
+                          className="text-xs"
+                        >
+                          <RotateCcw className="h-3 w-3 mr-1" />
+                          Discard
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={handleTextSave}
+                          className="text-xs bg-blue-600 hover:bg-blue-700"
+                        >
+                          <Save className="h-3 w-3 mr-1" />
+                          Save
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
+            
+            <TabsContent value="preview" className="flex-1 m-4 mt-2">
+              <ScrollArea className="h-full border rounded-md">
+                <div className="p-4 prose prose-sm dark:prose-invert max-w-none">
+                  {editedText ? (
+                    <pre className="whitespace-pre-wrap text-sm font-mono leading-relaxed">
+                      {editedText}
+                    </pre>
+                  ) : (
+                    <div className="text-center text-gray-500 italic">
+                      No text extracted yet
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </div>
     </div>
