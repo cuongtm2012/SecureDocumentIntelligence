@@ -392,7 +392,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get PDF pages as images (fallback endpoint)
+  // Get PDF pages as images
   app.get("/api/documents/:id/pages", async (req, res) => {
     try {
       const documentId = parseInt(req.params.id);
@@ -408,15 +408,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "File not found" });
       }
 
-      // For now, return the raw PDF URL as fallback
-      // In a full implementation, this would convert PDF pages to images
-      const pdfUrl = `/api/documents/${documentId}/raw?t=${Date.now()}`;
+      // Check if it's a PDF file
+      const ext = path.extname(document.filename).toLowerCase();
+      if (ext !== '.pdf') {
+        // For non-PDF files, return the raw file as a single "page"
+        const rawUrl = `/api/documents/${documentId}/raw?t=${Date.now()}`;
+        return res.json({
+          success: true,
+          images: [rawUrl],
+          pageCount: 1,
+          message: "Single image file"
+        });
+      }
+
+      // For PDF files, generate page images using ImageMagick
+      const tempDir = `/tmp/pdf_pages_${documentId}_${Date.now()}`;
+      await fs.promises.mkdir(tempDir, { recursive: true });
       
-      res.json({
-        success: false, // Indicates fallback mode
-        images: [pdfUrl],
-        message: "Falling back to direct PDF display"
-      });
+      try {
+        // Convert PDF pages to images
+        const outputPattern = path.join(tempDir, 'page-%d.png');
+        await localPaddleOCRProcessor.convertPDFToImages(filePath, outputPattern);
+        
+        // Get generated page images
+        const pageFiles = await fs.promises.readdir(tempDir);
+        const pngFiles = pageFiles.filter(f => f.endsWith('.png')).sort();
+        
+        if (pngFiles.length === 0) {
+          throw new Error('No pages generated');
+        }
+
+        // Copy pages to public directory for serving
+        const publicPagesDir = path.join(process.cwd(), 'client', 'public', 'pages', documentId.toString());
+        await fs.promises.mkdir(publicPagesDir, { recursive: true });
+        
+        const imageUrls = [];
+        for (let i = 0; i < pngFiles.length; i++) {
+          const sourcePath = path.join(tempDir, pngFiles[i]);
+          const destPath = path.join(publicPagesDir, `page-${i + 1}.png`);
+          await fs.promises.copyFile(sourcePath, destPath);
+          imageUrls.push(`/pages/${documentId}/page-${i + 1}.png`);
+        }
+        
+        // Clean up temporary directory
+        await fs.promises.rm(tempDir, { recursive: true, force: true });
+        
+        res.json({
+          success: true,
+          images: imageUrls,
+          pageCount: pngFiles.length,
+          message: "PDF pages generated successfully"
+        });
+
+      } catch (conversionError) {
+        console.warn('PDF page generation failed, falling back to direct PDF:', conversionError);
+        
+        // Clean up on error
+        await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+        
+        // Fallback to direct PDF display
+        const pdfUrl = `/api/documents/${documentId}/raw?t=${Date.now()}`;
+        res.json({
+          success: false,
+          images: [pdfUrl],
+          pageCount: 1,
+          message: "Falling back to direct PDF display"
+        });
+      }
+
     } catch (error) {
       console.error('Get PDF pages error:', error);
       res.status(500).json({ message: "Failed to fetch PDF pages" });

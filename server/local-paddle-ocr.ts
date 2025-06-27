@@ -120,7 +120,7 @@ export class LocalPaddleOCRProcessor {
     }
   }
 
-  private async convertPDFToImages(pdfPath: string, outputPattern: string): Promise<void> {
+  async convertPDFToImages(pdfPath: string, outputPattern: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const args = [
         '-density', '200',
