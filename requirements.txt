@@ -58,3 +58,10 @@ paddleocr
 paddlepaddle
 pillow
 pytesseract
+fastapi
+numpy
+opencv-python
+pydantic
+python-multipart
+requests
+uvicorn[standard]
