@@ -13,6 +13,7 @@ import { enhancedVietnameseOCR } from "./enhanced-vietnamese-ocr";
 import { pdfProcessor } from "./pdf-processor";
 import { directOCRProcessor } from "./direct-ocr-processor";
 import { openCVOCRProcessor } from "./opencv-ocr-processor";
+import { paddleOCRProcessor } from "./paddle-ocr-processor";
 import helmet from "helmet";
 import { insertDocumentSchema, insertAuditLogSchema } from "@shared/schema";
 import { z } from "zod";
@@ -76,8 +77,8 @@ async function processFileWithFallback(filePath: string, document: any, document
     console.log('🤖 Starting DeepSeek API document processing...');
     
     try {
-      // First extract text using OpenCV preprocessing + Tesseract OCR for DeepSeek analysis
-      const ocrResult = await openCVOCRProcessor.processDocument(filePath);
+      // First extract text using PaddleOCR for DeepSeek analysis
+      const ocrResult = await paddleOCRProcessor.processDocument(filePath);
       
       // Then enhance with DeepSeek analysis
       const deepseekAnalysis = await deepSeekService.analyzeDocument(
@@ -99,9 +100,9 @@ async function processFileWithFallback(filePath: string, document: any, document
           confidence_threshold: 60.0,
           processing_timestamp: new Date(),
           file_size_bytes: document.fileSize,
-          processing_mode: 'opencv-tesseract-deepseek',
+          processing_mode: 'paddleocr-deepseek',
           deepseek_analysis: deepseekAnalysis,
-          note: 'Processed with OpenCV preprocessing + Tesseract + DeepSeek API'
+          note: 'Processed with PaddleOCR + DeepSeek API'
         }
       };
       
