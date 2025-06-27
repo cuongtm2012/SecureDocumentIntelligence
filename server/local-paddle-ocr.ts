@@ -396,7 +396,7 @@ except Exception as e:
     boundingBoxes?: any[];
   }> {
     return new Promise((resolve, reject) => {
-      // Simplified Python script with better error handling
+      // Multi-approach Tesseract OCR with fallback strategies
       const pythonScript = `
 import sys
 import cv2
@@ -404,55 +404,95 @@ import json
 import os
 import subprocess
 
+def test_ocr_approach(img_path, approach_name, processed_img, languages=['vie', 'eng']):
+    """Test OCR with a specific preprocessing approach"""
+    temp_path = img_path.replace('.png', f'_{approach_name}.png')
+    cv2.imwrite(temp_path, processed_img)
+    
+    best_result = None
+    best_length = 0
+    
+    for lang in languages:
+        for psm in [3, 6, 7, 8]:  # Try different PSM modes
+            cmd = ['tesseract', temp_path, 'stdout', '-l', lang, '--psm', str(psm)]
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=8)
+                text = result.stdout.strip()
+                
+                if result.returncode == 0 and len(text) > best_length:
+                    confidence = min(90, 50 + len(text))  # Better confidence estimation
+                    best_result = {
+                        "success": True,
+                        "text": text,
+                        "confidence": confidence,
+                        "method": f"tesseract_{approach_name}_{lang}_psm{psm}"
+                    }
+                    best_length = len(text)
+                    
+                    # If we got good results, return early
+                    if len(text) > 50:
+                        return best_result
+                        
+            except subprocess.TimeoutExpired:
+                continue
+            except Exception:
+                continue
+    
+    return best_result
+
 def main():
     try:
         img_path = sys.argv[1]
         
-        # Check file exists
         if not os.path.exists(img_path):
             raise ValueError(f"File not found: {img_path}")
         
-        # OpenCV preprocessing
         img = cv2.imread(img_path)
         if img is None:
             raise ValueError(f"Cannot read image: {img_path}")
         
-        # Your exact preprocessing steps
+        # Multiple preprocessing approaches
+        approaches = {}
+        
+        # 1. Original image (no preprocessing)
+        approaches['original'] = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        
+        # 2. Your specified approach
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         gray = cv2.equalizeHist(gray)
         blur = cv2.GaussianBlur(gray, (3,3), 0)
         _, thresh = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        approaches['your_preprocessing'] = thresh
         
-        # Save preprocessed image
-        preprocessed_path = img_path.replace('.png', '_tesseract.png')
-        cv2.imwrite(preprocessed_path, thresh)
+        # 3. Simple threshold only
+        gray2 = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        _, simple_thresh = cv2.threshold(gray2, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        approaches['simple_threshold'] = simple_thresh
         
-        # Direct tesseract call (more reliable than pytesseract)
-        cmd = ['tesseract', preprocessed_path, 'stdout', '-l', 'vie', '--psm', '3']
+        # 4. Adaptive threshold
+        gray3 = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        adaptive = cv2.adaptiveThreshold(gray3, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
+        approaches['adaptive'] = adaptive
         
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-            text = result.stdout.strip()
-            
-            if result.returncode != 0 or len(text) < 2:
-                # Try English fallback
-                cmd = ['tesseract', preprocessed_path, 'stdout', '-l', 'eng', '--psm', '3']
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-                text = result.stdout.strip()
-            
-            if result.returncode == 0 and len(text) >= 2:
-                confidence = 75 if len(text) > 20 else 60
-                print(json.dumps({
-                    "success": True,
-                    "text": text,
-                    "confidence": confidence,
-                    "method": "tesseract_direct"
-                }, ensure_ascii=False))
-            else:
-                raise ValueError(f"Tesseract failed: {result.stderr}")
-                
-        except subprocess.TimeoutExpired:
-            raise ValueError("Tesseract timeout")
+        # 5. Enhanced contrast only
+        gray4 = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        enhanced = cv2.equalizeHist(gray4)
+        approaches['enhanced_contrast'] = enhanced
+        
+        # Try each approach and pick the best result
+        best_result = None
+        best_score = 0
+        
+        for name, processed_img in approaches.items():
+            result = test_ocr_approach(img_path, name, processed_img)
+            if result and result.get('success') and len(result.get('text', '')) > best_score:
+                best_result = result
+                best_score = len(result.get('text', ''))
+        
+        if best_result and best_score >= 2:
+            print(json.dumps(best_result, ensure_ascii=False))
+        else:
+            raise ValueError("No usable text extracted with any approach")
             
     except Exception as e:
         print(json.dumps({
@@ -498,13 +538,13 @@ if __name__ == "__main__":
                 boundingBoxes: []
               });
             } else {
-              reject(new Error(result.error || 'No text extracted'));
+              reject(new Error(result.error || 'No text extracted with any approach'));
             }
           } catch (parseError) {
-            reject(new Error(`Parse error: ${parseError.message}`));
+            reject(new Error(`Parse error: ${parseError instanceof Error ? parseError.message : String(parseError)}`));
           }
         } else {
-          reject(new Error(`Process failed: code ${code}, stderr: ${stderr}`));
+          reject(new Error(`Process failed: code ${code}, stderr: ${stderr || 'No error details'}`));
         }
       });
       
@@ -514,8 +554,8 @@ if __name__ == "__main__":
       
       setTimeout(() => {
         python.kill('SIGTERM');
-        reject(new Error('Processing timeout (15s)'));
-      }, 15000);
+        reject(new Error('Processing timeout (25s)'));
+      }, 25000);  // Longer timeout for multiple approaches
     });
   }
 
