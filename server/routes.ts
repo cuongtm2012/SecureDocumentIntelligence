@@ -12,7 +12,7 @@ import { deepSeekService } from "./deepseek-service";
 import { vietnameseTextCleaner } from "./vietnamese-text-cleaner";
 import { enhancedVietnameseOCR } from "./enhanced-vietnamese-ocr";
 import { pdfProcessor } from "./pdf-processor";
-import { tesseractOCRProcessor } from "./tesseract-ocr-processor";
+import { simpleTesseractProcessor } from "./simple-tesseract-processor";
 import helmet from "helmet";
 import { insertDocumentSchema, insertAuditLogSchema } from "@shared/schema";
 import { z } from "zod";
@@ -120,8 +120,8 @@ async function processFileWithFallback(filePath: string, document: any, document
     console.log('🤖 Starting DeepSeek API document processing...');
     
     try {
-      // Use Tesseract OCR processor for Vietnamese text extraction
-      const ocrResult = await tesseractOCRProcessor.processDocument(filePath);
+      // Use Simple Tesseract OCR processor for Vietnamese text extraction
+      const ocrResult = await simpleTesseractProcessor.processDocument(filePath);
       
       // Then enhance with DeepSeek analysis for Vietnamese text improvement
       const deepseekAnalysis = await deepSeekService.analyzeDocument(
@@ -157,7 +157,7 @@ async function processFileWithFallback(filePath: string, document: any, document
       
       // Direct OCR fallback
       try {
-        const directResult = await tesseractOCRProcessor.processDocument(filePath);
+        const directResult = await simpleTesseractProcessor.processDocument(filePath);
         
         finalOcrResult = {
           success: true,
@@ -185,7 +185,7 @@ async function processFileWithFallback(filePath: string, document: any, document
     console.log('⚠️ No DeepSeek API key available, using direct OCR fallback...');
     
     try {
-      const directResult = await tesseractOCRProcessor.processDocument(filePath);
+      const directResult = await simpleTesseractProcessor.processDocument(filePath);
       
       finalOcrResult = {
         success: true,
