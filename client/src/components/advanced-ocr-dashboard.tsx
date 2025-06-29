@@ -616,22 +616,24 @@ export function AdvancedOCRDashboard() {
                   .slice((currentPage - 1) * pageSize, currentPage * pageSize)
                   .map((doc: any) => (
                   <Card key={doc.id} className="border border-gray-200 hover:border-blue-300 transition-colors">
-                    <CardContent className="p-6">
-                      <div className="flex items-start justify-between">
+                    <CardContent className="p-4 sm:p-6">
+                      <div className="flex flex-col space-y-4 sm:flex-row sm:items-start sm:justify-between sm:space-y-0">
                         <div className="flex-1">
-                          <div className="flex items-center space-x-2 mb-2">
-                            <FileText className="h-5 w-5 text-blue-600" />
-                            <h3 className="font-semibold text-gray-900">{doc.filename}</h3>
+                          <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-2 mb-2">
+                            <div className="flex items-center space-x-2">
+                              <FileText className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600" />
+                              <h3 className="font-semibold text-gray-900 text-sm sm:text-base truncate">{doc.filename}</h3>
+                            </div>
                             <Badge 
                               variant={doc.status === 'completed' ? 'default' : 
                                      doc.status === 'processing' ? 'secondary' : 'destructive'}
-                              className="text-xs"
+                              className="text-xs w-fit"
                             >
                               {doc.status}
                             </Badge>
                           </div>
                           
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600 mb-4">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4 text-sm text-gray-600 mb-4">
                             <div>
                               <span className="font-medium">Uploaded:</span>
                               <div>{new Date(doc.uploadedAt).toLocaleDateString()}</div>
@@ -665,10 +667,11 @@ export function AdvancedOCRDashboard() {
                           )}
                         </div>
 
-                        <div className="flex flex-col space-y-2 ml-4">
+                        <div className="flex flex-col sm:flex-row sm:space-x-2 sm:space-y-0 space-y-2 sm:ml-4 mt-4 sm:mt-0">
                           <Button
                             variant="outline"
                             size="sm"
+                            className="text-xs sm:text-sm w-full sm:w-auto"
                             onClick={() => {
                               setSelectedResult({
                                 id: doc.id.toString(),

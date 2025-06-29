@@ -165,19 +165,19 @@ export class VietnameseReceiptOCRProcessor {
         .toFile(grayscalePath);
       preprocessingSteps.push('Grayscale conversion');
 
-      // Step 2: Apply adaptive thresholding using ImageMagick
+      // Step 2: Apply binary threshold using ImageMagick (compatible command)
       const thresholdPath = path.join(this.tempDir, `threshold_${Date.now()}.png`);
-      await execAsync(`magick "${grayscalePath}" -adaptive-threshold 15x15+5% "${thresholdPath}"`);
-      preprocessingSteps.push('Adaptive thresholding (Gaussian)');
+      await execAsync(`magick "${grayscalePath}" -threshold 50% "${thresholdPath}"`);
+      preprocessingSteps.push('Binary thresholding');
 
-      // Step 3: Deskew the image to correct rotation
-      const deskewPath = path.join(this.tempDir, `deskew_${Date.now()}.png`);
-      await execAsync(`magick "${thresholdPath}" -deskew 40% "${deskewPath}"`);
-      preprocessingSteps.push('Deskewing correction');
+      // Step 3: Apply noise reduction and enhancement
+      const cleanPath = path.join(this.tempDir, `clean_${Date.now()}.png`);
+      await execAsync(`magick "${thresholdPath}" -despeckle -noise 3 "${cleanPath}"`);
+      preprocessingSteps.push('Noise reduction');
 
       // Step 4: Apply sharpening filter for receipt text
       const sharpenPath = path.join(this.tempDir, `sharpen_${Date.now()}.png`);
-      await execAsync(`magick "${deskewPath}" -unsharp 0x1+1.0+0.05 "${sharpenPath}"`);
+      await execAsync(`magick "${cleanPath}" -sharpen 0x1 "${sharpenPath}"`);
       preprocessingSteps.push('Sharpening filter');
 
       // Step 5: Enhance contrast for better OCR
@@ -205,7 +205,7 @@ export class VietnameseReceiptOCRProcessor {
       console.log(`✅ Best OCR result: ${bestResult.confidence}% confidence (PSM ${bestResult.psm})`);
 
       // Clean up temporary files
-      [grayscalePath, thresholdPath, deskewPath, sharpenPath, enhancedPath].forEach(file => {
+      [grayscalePath, thresholdPath, cleanPath, sharpenPath, enhancedPath].forEach(file => {
         if (fs.existsSync(file)) {
           fs.unlinkSync(file);
         }
