@@ -570,19 +570,19 @@ export function AdvancedOCRDashboard() {
 
           {/* Results Tab */}
           <TabsContent value="results" className="space-y-6">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col space-y-4 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
             <div>
-              <h2 className="text-2xl font-bold text-gray-900">Processing Results</h2>
-              <p className="text-gray-600">
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Processing Results</h2>
+              <p className="text-sm sm:text-base text-gray-600">
                 View and manage processed documents ({documents?.length || 0} total)
               </p>
             </div>
-            <div className="flex items-center space-x-4">
+            <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
               <Select value={pageSize.toString()} onValueChange={(value) => {
                 setPageSize(Number(value));
                 setCurrentPage(1);
               }}>
-                <SelectTrigger className="w-32">
+                <SelectTrigger className="w-full sm:w-32">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -592,7 +592,7 @@ export function AdvancedOCRDashboard() {
                   <SelectItem value="50">50 per page</SelectItem>
                 </SelectContent>
               </Select>
-              <Badge variant="outline" className="text-sm">
+              <Badge variant="outline" className="text-xs sm:text-sm text-center">
                 Page {currentPage} of {Math.ceil((documents?.length || 0) / pageSize)}
               </Badge>
             </div>
@@ -691,7 +691,6 @@ export function AdvancedOCRDashboard() {
                               });
                               setShowViewer(true);
                             }}
-                            className="whitespace-nowrap"
                           >
                             <FileText className="h-4 w-4 mr-2" />
                             View Details

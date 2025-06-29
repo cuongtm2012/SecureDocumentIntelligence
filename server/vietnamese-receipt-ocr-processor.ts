@@ -229,7 +229,7 @@ export class VietnameseReceiptOCRProcessor {
     psm: number;
   }> {
     try {
-      const command = `tesseract "${imagePath}" stdout -l ${language} --oem 1 --psm ${psm} -c tessedit_char_whitelist=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚĂĐĨŨƠàáâãèéêìíòóôõùúăđĩũơƯĂẠẢẤẦẨẪẬẮẰẲẴẶẸẺẼỀẾỂỄỆỈỊỌỎỐỒỔỖỘỚỞỠỢỤỦỨỪỮỰỲỴÝỶỸưăạảấầẩẫậắằẳẵặẹẻẽềếểễệỉịọỏốồổỗộớởỡợụủứừữựỳỵýỷỹ.,;:!?()[]{}\"'-+=/\\_%@#$&*~\`^|<> `;
+      const command = `tesseract "${imagePath}" stdout -l ${language} --oem 1 --psm ${psm}`;
       
       const { stdout } = await execAsync(command);
       

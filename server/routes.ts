@@ -14,6 +14,7 @@ import { enhancedVietnameseOCR } from "./enhanced-vietnamese-ocr";
 import { pdfProcessor } from "./pdf-processor";
 import { simpleTesseractProcessor } from "./simple-tesseract-processor";
 import { vietnameseReceiptOCRProcessor } from "./vietnamese-receipt-ocr-processor";
+import { enhancedTesseractProcessor } from "./enhanced-tesseract-processor";
 import { trainingPipeline } from "./training-pipeline";
 import helmet from "helmet";
 import { insertDocumentSchema, insertAuditLogSchema } from "@shared/schema";
