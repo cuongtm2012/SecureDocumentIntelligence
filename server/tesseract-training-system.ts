@@ -137,7 +137,7 @@ export class TesseractTrainingSystem {
         await execAsync(command);
         console.log(`✅ Created LSTM training data: ${basename}`);
       } catch (error) {
-        console.warn(`Warning: Could not create synthetic data for ${basename}:`, error.message);
+        console.warn(`Warning: Could not create synthetic data for ${basename}:`, error instanceof Error ? error.message : 'Unknown error');
       }
     }
   }
@@ -183,7 +183,7 @@ export class TesseractTrainingSystem {
       
     } catch (error) {
       console.error('❌ Fine-tuning failed:', error);
-      throw new Error(`Tesseract fine-tuning failed: ${error.message}`);
+      throw new Error(`Tesseract fine-tuning failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 

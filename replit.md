@@ -163,6 +163,14 @@ Changelog:
   - Added automatic receipt detection based on filename patterns
   - Created dedicated /api/documents/:id/process-receipt endpoint for explicit receipt processing
   - Enhanced dashboard with Receipt OCR button for specialized Vietnamese receipt processing
+- June 29, 2025. Implemented comprehensive Tesseract training system for Vietnamese OCR fine-tuning
+  - Created complete TesseractTrainingSystem with LSTM fine-tuning capabilities
+  - Implemented TrainingPipeline for user-friendly training session management
+  - Added TesseractTrainingInterface with document selection and validation UI
+  - Built comprehensive API endpoints for training management and model installation
+  - Added Training tab to dashboard for seamless user experience
+  - Created detailed training guide with best practices and troubleshooting
+  - System allows custom Vietnamese model training using user's own document data
 ```
 
 ## User Preferences

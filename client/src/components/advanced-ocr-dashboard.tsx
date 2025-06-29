@@ -433,7 +433,7 @@ export function AdvancedOCRDashboard() {
 
         {/* Main Tabbed Interface */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="upload" className="flex items-center gap-2">
               <Upload className="h-4 w-4" />
               Upload
@@ -449,6 +449,10 @@ export function AdvancedOCRDashboard() {
             <TabsTrigger value="export" className="flex items-center gap-2">
               <Download className="h-4 w-4" />
               Export
+            </TabsTrigger>
+            <TabsTrigger value="training" className="flex items-center gap-2">
+              <Settings className="h-4 w-4" />
+              Training
             </TabsTrigger>
             <TabsTrigger value="analytics" className="flex items-center gap-2">
               <BarChart3 className="h-4 w-4" />
@@ -833,6 +837,11 @@ export function AdvancedOCRDashboard() {
             selectedResults={selectedDocuments}
             onSelectionChange={setSelectedDocuments}
           />
+        </TabsContent>
+
+        {/* Training Tab */}
+        <TabsContent value="training" className="space-y-6">
+          <TesseractTrainingInterface />
         </TabsContent>
 
         {/* Analytics Tab */}
