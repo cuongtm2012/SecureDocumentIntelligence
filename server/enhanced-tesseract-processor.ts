@@ -209,7 +209,10 @@ export class EnhancedTesseractProcessor {
         // Parse confidence from hocr output
         const confidenceMatches = hocrOutput.match(/x_wconf\s+(\d+)/g);
         if (confidenceMatches && confidenceMatches.length > 0) {
-          const confidences = confidenceMatches.map(match => parseInt(match.match(/\d+/)[0]));
+          const confidences = confidenceMatches.map(match => {
+          const numMatch = match.match(/\d+/);
+          return numMatch ? parseInt(numMatch[0]) : 50;
+        });
           confidence = confidences.reduce((sum, conf) => sum + conf, 0) / confidences.length;
         }
       } catch (hocrError) {

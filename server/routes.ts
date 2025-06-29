@@ -440,8 +440,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`🧾 Processing document as Vietnamese receipt: ${document.originalName}`);
       
-      // Use Vietnamese Receipt OCR processor directly
-      const receiptResult = await vietnameseReceiptOCRProcessor.processDocument(filePath);
+      // Use enhanced Tesseract processor for stable processing
+      const receiptResult = await enhancedTesseractProcessor.processDocument(filePath);
       
       // Process with DeepSeek enhancement if API key available
       let enhancedText = receiptResult.extractedText;

@@ -763,12 +763,12 @@ export function AdvancedOCRDashboard() {
 
               {/* Pagination Controls */}
               {documents.length > pageSize && (
-                <div className="flex items-center justify-between border-t pt-6">
-                  <div className="text-sm text-gray-600">
+                <div className="flex flex-col space-y-4 sm:flex-row sm:items-center sm:justify-between sm:space-y-0 border-t pt-6">
+                  <div className="text-xs sm:text-sm text-gray-600 text-center sm:text-left">
                     Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, documents.length)} of {documents.length} results
                   </div>
                   
-                  <div className="flex items-center space-x-2">
+                  <div className="flex items-center justify-center space-x-1 sm:space-x-2">
                     <Button
                       variant="outline"
                       size="sm"
@@ -789,7 +789,7 @@ export function AdvancedOCRDashboard() {
                       <ChevronLeft className="h-4 w-4" />
                     </Button>
                     
-                    <span className="text-sm font-medium px-3 py-1 bg-gray-100 rounded">
+                    <span className="text-xs sm:text-sm font-medium px-2 sm:px-3 py-1 bg-gray-100 rounded">
                       {currentPage}
                     </span>
                     
