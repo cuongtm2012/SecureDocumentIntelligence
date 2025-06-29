@@ -243,7 +243,7 @@ async function processFileWithFallback(filePath: string, document: any, document
     reason: 'Not processed with DeepSeek workflow'
   };
 
-  // Prepare structured data
+  // Prepare structured data with receipt-specific information
   const structuredData = {
     pageCount: finalOcrResult.page_count || 1,
     characterCount: extractedText.length,
@@ -252,7 +252,20 @@ async function processFileWithFallback(filePath: string, document: any, document
     processingMode: finalOcrResult.metadata?.processing_mode || 'direct-fallback',
     processingTime: finalOcrResult.processing_time || 0,
     deepseekAnalysis: deepseekAnalysis,
-    documentType: 'Unknown Document'
+    documentType: isReceiptDocument ? 'Vietnamese Receipt' : 'Unknown Document',
+    isReceiptDocument,
+    // Add receipt-specific structured data if available (from Vietnamese receipt processor)
+    ...((finalOcrResult as any).structuredData && {
+      receiptData: (finalOcrResult as any).structuredData,
+      storeName: (finalOcrResult as any).structuredData.storeName,
+      receiptTotal: (finalOcrResult as any).structuredData.total,
+      receiptDate: (finalOcrResult as any).structuredData.date,
+      itemCount: (finalOcrResult as any).structuredData.items?.length || 0
+    }),
+    // Add preprocessing information if available (from Vietnamese receipt processor)
+    ...((finalOcrResult as any).preprocessingSteps && {
+      preprocessingSteps: (finalOcrResult as any).preprocessingSteps
+    })
   };
 
   // Update document with processing results
@@ -400,6 +413,113 @@ export async function registerRoutes(app: Express): Promise<Server> {
         error: "Enhanced processing failed",
         details: error instanceof Error ? error.message : 'Unknown error',
         step: "unknown"
+      });
+    }
+  });
+
+  // Vietnamese Receipt OCR Processing endpoint
+  app.post("/api/documents/:id/process-receipt", async (req, res) => {
+    try {
+      const documentId = parseInt(req.params.id);
+      const userId = 1; // Default user ID
+
+      const document = await storage.getDocument(documentId);
+      if (!document) {
+        return res.status(404).json({ message: "Document not found" });
+      }
+
+      // Update status to processing
+      await storage.updateDocument(documentId, {
+        processingStatus: 'processing',
+        processingStartedAt: new Date(),
+      });
+
+      const filePath = path.join(uploadsDir, document.filename);
+
+      console.log(`🧾 Processing document as Vietnamese receipt: ${document.originalName}`);
+      
+      // Use Vietnamese Receipt OCR processor directly
+      const receiptResult = await vietnameseReceiptOCRProcessor.processDocument(filePath);
+      
+      // Process with DeepSeek enhancement if API key available
+      let enhancedText = receiptResult.extractedText;
+      let deepseekAnalysis = { applied: false, reason: 'No API key available' };
+      
+      if (process.env.OPENAI_API_KEY) {
+        try {
+          deepseekAnalysis = await deepSeekService.analyzeDocument(
+            receiptResult.extractedText, 
+            "Vietnamese receipt analysis and data extraction"
+          );
+          if ((deepseekAnalysis as any).improvedText) {
+            enhancedText = (deepseekAnalysis as any).improvedText;
+          }
+          deepseekAnalysis.applied = true;
+        } catch (error) {
+          console.warn('DeepSeek enhancement failed:', error);
+          deepseekAnalysis = { applied: false, reason: 'DeepSeek processing failed' };
+        }
+      }
+
+      // Prepare comprehensive structured data for receipts
+      const structuredData = {
+        pageCount: receiptResult.pageCount,
+        characterCount: enhancedText.length,
+        wordCount: enhancedText.split(/\s+/).filter((word: string) => word.length > 0).length,
+        language: 'Vietnamese',
+        processingMode: 'vietnamese-receipt-ocr',
+        processingTime: receiptResult.processingTime,
+        deepseekAnalysis,
+        documentType: 'Vietnamese Receipt',
+        isReceiptDocument: true,
+        preprocessingSteps: receiptResult.preprocessingSteps,
+        // Receipt-specific data
+        receiptData: receiptResult.structuredData || {},
+        storeName: receiptResult.structuredData?.storeName,
+        receiptTotal: receiptResult.structuredData?.total,
+        receiptDate: receiptResult.structuredData?.date,
+        receiptPhone: receiptResult.structuredData?.phone,
+        itemCount: receiptResult.structuredData?.items?.length || 0,
+        receiptItems: receiptResult.structuredData?.items || []
+      };
+
+      // Update document with processing results
+      const confidence = receiptResult.confidence;
+      await storage.updateDocument(documentId, {
+        processingStatus: 'completed',
+        processingCompletedAt: new Date(),
+        confidence,
+        extractedText: enhancedText,
+        structuredData: JSON.stringify(structuredData),
+      });
+
+      // Log successful processing
+      await storage.createAuditLog({
+        userId,
+        action: `Vietnamese receipt processed: ${document.originalName} (${structuredData.itemCount} items, ${Math.round(confidence * 100)}% confidence)`,
+        documentId: document.id,
+        ipAddress: req?.ip || '127.0.0.1',
+        userAgent: req?.get('User-Agent') || 'Receipt Processor',
+      });
+
+      const updatedDocument = await storage.getDocument(documentId);
+      res.json(updatedDocument);
+
+    } catch (error) {
+      console.error('Vietnamese receipt processing error:', error);
+      
+      // Update document status to failed
+      const documentId = parseInt(req.params.id);
+      await storage.updateDocument(documentId, {
+        processingStatus: 'failed',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      });
+
+      res.status(500).json({
+        success: false,
+        error: "Vietnamese receipt processing failed",
+        details: error instanceof Error ? error.message : 'Unknown error',
+        step: "receipt-ocr"
       });
     }
   });

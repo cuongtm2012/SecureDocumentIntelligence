@@ -155,6 +155,14 @@ Changelog:
   - Added new python-tesseract-service microservice to replace python-paddle-service
   - System now tests multiple PSM modes (3, 6, 7, 8) and selects best results automatically
   - Eliminated all PaddleOCR timeouts and library conflicts - pure Tesseract solution
+- June 27, 2025. Implemented optimized Vietnamese receipt OCR processing
+  - Created VietnameseReceiptOCRProcessor with advanced OpenCV preprocessing pipeline
+  - Implemented grayscale conversion, adaptive thresholding, deskewing, and sharpening filters
+  - Added receipt-specific OCR configurations: LSTM engine (OEM 1), PSM modes 4, 6, 8
+  - Integrated structured data extraction for store names, items, prices, totals, and dates
+  - Added automatic receipt detection based on filename patterns
+  - Created dedicated /api/documents/:id/process-receipt endpoint for explicit receipt processing
+  - Enhanced dashboard with Receipt OCR button for specialized Vietnamese receipt processing
 ```
 
 ## User Preferences

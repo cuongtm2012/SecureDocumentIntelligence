@@ -717,6 +717,36 @@ export function AdvancedOCRDashboard() {
                               PDF Viewer
                             </Button>
                           )}
+                          
+                          {/* Vietnamese Receipt OCR Button */}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={async () => {
+                              try {
+                                const response = await fetch(`/api/documents/${doc.id}/process-receipt`, {
+                                  method: 'POST',
+                                  headers: {
+                                    'Content-Type': 'application/json',
+                                  },
+                                });
+                                
+                                if (response.ok) {
+                                  // Refresh documents list to show updated processing results
+                                  queryClient.invalidateQueries({ queryKey: ['/api/documents'] });
+                                } else {
+                                  console.error('Receipt processing failed');
+                                }
+                              } catch (error) {
+                                console.error('Receipt processing error:', error);
+                              }
+                            }}
+                            className="whitespace-nowrap"
+                            disabled={doc.status === 'processing'}
+                          >
+                            <span className="text-lg mr-1">🧾</span>
+                            Receipt OCR
+                          </Button>
                         </div>
                       </div>
                     </CardContent>
