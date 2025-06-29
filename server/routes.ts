@@ -14,6 +14,7 @@ import { enhancedVietnameseOCR } from "./enhanced-vietnamese-ocr";
 import { pdfProcessor } from "./pdf-processor";
 import { simpleTesseractProcessor } from "./simple-tesseract-processor";
 import { vietnameseReceiptOCRProcessor } from "./vietnamese-receipt-ocr-processor";
+import { trainingPipeline } from "./training-pipeline";
 import helmet from "helmet";
 import { insertDocumentSchema, insertAuditLogSchema } from "@shared/schema";
 import { z } from "zod";
@@ -520,6 +521,165 @@ export async function registerRoutes(app: Express): Promise<Server> {
         error: "Vietnamese receipt processing failed",
         details: error instanceof Error ? error.message : 'Unknown error',
         step: "receipt-ocr"
+      });
+    }
+  });
+
+  // Tesseract Training API Endpoints
+  
+  // Start training session
+  app.post("/api/training/start", async (req, res) => {
+    try {
+      const { sessionName, documentIds } = req.body;
+      
+      if (!sessionName || !documentIds || !Array.isArray(documentIds)) {
+        return res.status(400).json({
+          success: false,
+          error: "Missing required fields: sessionName and documentIds"
+        });
+      }
+
+      // Validate documents before training
+      const validation = await trainingPipeline.validateDocumentsForTraining(documentIds);
+      
+      if (validation.suitable.length < 5) {
+        return res.status(400).json({
+          success: false,
+          error: "Insufficient suitable documents for training",
+          validation
+        });
+      }
+
+      const sessionId = await trainingPipeline.startTrainingSession(sessionName, validation.suitable);
+      
+      res.json({
+        success: true,
+        sessionId,
+        validation,
+        message: `Training session started with ${validation.suitable.length} documents`
+      });
+      
+    } catch (error) {
+      console.error('Training start error:', error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to start training session",
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // Get training session status
+  app.get("/api/training/sessions/:sessionId", async (req, res) => {
+    try {
+      const { sessionId } = req.params;
+      const session = trainingPipeline.getSessionStatus(sessionId);
+      
+      if (!session) {
+        return res.status(404).json({
+          success: false,
+          error: "Training session not found"
+        });
+      }
+      
+      res.json({
+        success: true,
+        session
+      });
+      
+    } catch (error) {
+      console.error('Get training session error:', error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to get training session status"
+      });
+    }
+  });
+
+  // List all training sessions
+  app.get("/api/training/sessions", async (req, res) => {
+    try {
+      const sessions = trainingPipeline.getAllSessions();
+      
+      res.json({
+        success: true,
+        sessions: sessions.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      });
+      
+    } catch (error) {
+      console.error('List training sessions error:', error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to list training sessions"
+      });
+    }
+  });
+
+  // Install trained model
+  app.post("/api/training/install/:sessionId", async (req, res) => {
+    try {
+      const { sessionId } = req.params;
+      
+      await trainingPipeline.installModel(sessionId);
+      
+      res.json({
+        success: true,
+        message: "Improved Vietnamese model installed successfully"
+      });
+      
+    } catch (error) {
+      console.error('Model installation error:', error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to install model",
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // Validate documents for training
+  app.post("/api/training/validate", async (req, res) => {
+    try {
+      const { documentIds } = req.body;
+      
+      if (!documentIds || !Array.isArray(documentIds)) {
+        return res.status(400).json({
+          success: false,
+          error: "documentIds array is required"
+        });
+      }
+
+      const validation = await trainingPipeline.validateDocumentsForTraining(documentIds);
+      
+      res.json({
+        success: true,
+        validation
+      });
+      
+    } catch (error) {
+      console.error('Document validation error:', error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to validate documents"
+      });
+    }
+  });
+
+  // Get training workflow guide
+  app.get("/api/training/guide", async (req, res) => {
+    try {
+      const guide = await trainingPipeline.createSimpleTrainingWorkflow();
+      
+      res.json({
+        success: true,
+        guide
+      });
+      
+    } catch (error) {
+      console.error('Get training guide error:', error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to get training guide"
       });
     }
   });

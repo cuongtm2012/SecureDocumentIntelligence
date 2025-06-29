@@ -17,6 +17,7 @@ import { DocumentExportManager } from './document-export-manager';
 import { MultiLanguageOCR } from './multi-language-ocr';
 import { BatchOCRProcessor } from './batch-ocr-processor';
 import { SimplePDFViewer } from './simple-pdf-viewer';
+import { TesseractTrainingInterface } from './tesseract-training-interface';
 
 import { 
   Upload, 
