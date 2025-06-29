@@ -240,7 +240,7 @@ export class TrainingPipeline {
         suitable.push(docId);
         
       } catch (error) {
-        unsuitable.push({ id: docId, reason: `Validation error: ${error.message}` });
+        unsuitable.push({ id: docId, reason: `Validation error: ${error instanceof Error ? error.message : 'Unknown error'}` });
       }
     }
 

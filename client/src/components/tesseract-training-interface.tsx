@@ -56,19 +56,19 @@ export function TesseractTrainingInterface() {
   const [showGuide, setShowGuide] = useState(false);
 
   // Fetch all documents
-  const { data: documents = [] } = useQuery({
+  const { data: documents = [] } = useQuery<any[]>({
     queryKey: ['/api/documents'],
     refetchInterval: 5000
   });
 
   // Fetch training sessions
-  const { data: sessionsData, refetch: refetchSessions } = useQuery({
+  const { data: sessionsData, refetch: refetchSessions } = useQuery<{ sessions: TrainingSession[] }>({
     queryKey: ['/api/training/sessions'],
     refetchInterval: 10000
   });
 
   // Fetch training guide
-  const { data: guideData } = useQuery({
+  const { data: guideData } = useQuery<{ guide: { steps: string[]; requirements: string[]; estimatedTime: string } }>({
     queryKey: ['/api/training/guide']
   });
 
