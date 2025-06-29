@@ -13,6 +13,7 @@ import { vietnameseTextCleaner } from "./vietnamese-text-cleaner";
 import { enhancedVietnameseOCR } from "./enhanced-vietnamese-ocr";
 import { pdfProcessor } from "./pdf-processor";
 import { simpleTesseractProcessor } from "./simple-tesseract-processor";
+import { vietnameseReceiptOCRProcessor } from "./vietnamese-receipt-ocr-processor";
 import helmet from "helmet";
 import { insertDocumentSchema, insertAuditLogSchema } from "@shared/schema";
 import { z } from "zod";
@@ -113,6 +114,11 @@ if (!fs.existsSync(uploadsDir)) {
 async function processFileWithFallback(filePath: string, document: any, documentId: number, userId: number, req?: any, res?: any) {
   console.log(`🚀 Processing document ${document.originalName} with OpenCV + DeepSeek API workflow...`);
   
+  // Check if this might be a receipt based on filename or document type
+  const isReceiptDocument = document.originalName.toLowerCase().includes('receipt') || 
+                           document.originalName.toLowerCase().includes('hóa đơn') ||
+                           document.originalName.toLowerCase().includes('biên lai');
+  
   let finalOcrResult;
 
   // Primary workflow: DeepSeek API processing
@@ -120,8 +126,15 @@ async function processFileWithFallback(filePath: string, document: any, document
     console.log('🤖 Starting DeepSeek API document processing...');
     
     try {
-      // Use Simple Tesseract OCR processor for Vietnamese text extraction
-      const ocrResult = await simpleTesseractProcessor.processDocument(filePath);
+      // Choose OCR processor based on document type
+      let ocrResult;
+      if (isReceiptDocument) {
+        console.log('🧾 Using optimized Vietnamese receipt OCR processor...');
+        ocrResult = await vietnameseReceiptOCRProcessor.processDocument(filePath);
+      } else {
+        console.log('📄 Using standard Vietnamese OCR processor...');
+        ocrResult = await simpleTesseractProcessor.processDocument(filePath);
+      }
       
       // Then enhance with DeepSeek analysis for Vietnamese text improvement
       const deepseekAnalysis = await deepSeekService.analyzeDocument(
@@ -157,7 +170,13 @@ async function processFileWithFallback(filePath: string, document: any, document
       
       // Direct OCR fallback
       try {
-        const directResult = await simpleTesseractProcessor.processDocument(filePath);
+        let directResult;
+        if (isReceiptDocument) {
+          console.log('🧾 Fallback: Using Vietnamese receipt OCR processor...');
+          directResult = await vietnameseReceiptOCRProcessor.processDocument(filePath);
+        } else {
+          directResult = await simpleTesseractProcessor.processDocument(filePath);
+        }
         
         finalOcrResult = {
           success: true,
@@ -185,7 +204,13 @@ async function processFileWithFallback(filePath: string, document: any, document
     console.log('⚠️ No DeepSeek API key available, using direct OCR fallback...');
     
     try {
-      const directResult = await simpleTesseractProcessor.processDocument(filePath);
+      let directResult;
+      if (isReceiptDocument) {
+        console.log('🧾 No API: Using Vietnamese receipt OCR processor...');
+        directResult = await vietnameseReceiptOCRProcessor.processDocument(filePath);
+      } else {
+        directResult = await simpleTesseractProcessor.processDocument(filePath);
+      }
       
       finalOcrResult = {
         success: true,
