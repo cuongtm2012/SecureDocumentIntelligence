@@ -96,20 +96,19 @@ export class EnhancedTesseractProcessor {
         }
       }
 
-      // Combine results and clean Vietnamese text
+      // Combine results
       const combinedText = pageResults.map(r => r.text).join('\n\n');
-      const cleanedText = this.cleanVietnameseText(combinedText);
       const avgConfidence = pageResults.reduce((sum, r) => sum + r.confidence, 0) / pageResults.length;
       const processingTime = Date.now() - startTime;
 
       return {
-        extractedText: cleanedText,
+        extractedText: combinedText,
         confidence: avgConfidence / 100, // Convert to decimal
         pageCount: imageFiles.length,
         processingMethod: 'Enhanced Tesseract (PDF)',
         processingTime,
         preprocessingSteps,
-        structuredData: this.extractStructuredData(cleanedText)
+        structuredData: this.extractStructuredData(combinedText)
       };
 
     } catch (error) {
@@ -179,12 +178,8 @@ export class EnhancedTesseractProcessor {
         fs.unlinkSync(enhancedPath);
       }
 
-      // Clean the Vietnamese text before returning
-      const cleanedText = this.cleanVietnameseText(bestResult.text);
-      console.log(`🧹 Cleaned Vietnamese text: ${cleanedText.length} characters`);
-      
       return {
-        text: cleanedText,
+        text: bestResult.text,
         confidence: bestResult.confidence,
         preprocessingSteps
       };
@@ -242,21 +237,6 @@ export class EnhancedTesseractProcessor {
         psm
       };
     }
-  }
-
-  private cleanVietnameseText(text: string): string {
-    // Vietnamese characters including diacritics
-    const vietnameseChars = 'aăâáàảãạấầẩẫậắằẳẵặbcdđeêéèẻẽẹếềểễệfghiíìỉĩịjklmnoôơóòỏõọốồổỗộớờởỡợpqrstuưúùủũụứừửữựvwxyýỳỷỹỵz';
-    const upperVietnameseChars = vietnameseChars.toUpperCase();
-    
-    // Valid characters: Vietnamese letters, numbers, basic punctuation, and space
-    const validCharsRegex = new RegExp(`[${vietnameseChars}${upperVietnameseChars}0-9.,:;/\\-()\\s]`, 'g');
-    
-    // Extract only valid characters
-    const cleanedText = text.match(validCharsRegex)?.join('') || '';
-    
-    // Clean up multiple spaces and normalize whitespace
-    return cleanedText.replace(/\s+/g, ' ').trim();
   }
 
   private extractStructuredData(text: string): any {

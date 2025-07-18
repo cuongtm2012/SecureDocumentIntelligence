@@ -179,8 +179,6 @@ Changelog:
   - Fixed receipt processing route to use stable enhanced processor instead of problematic Vietnamese processor
   - Optimized PSM values for ID cards and documents: PSM 6 (uniform block), PSM 4 (single column), PSM 11 (sparse text), PSM 3 (automatic fallback)
   - Verified successful processing of Vietnamese ID card with 90% confidence and complete data extraction
-  - Implemented comprehensive Vietnamese text filtering to remove invalid characters and preserve only valid Vietnamese letters, numbers, and basic punctuation
-  - Created standalone VietnameseTextFilter utility for broader text cleaning operations
 ```
 
 ## User Preferences
