@@ -156,11 +156,12 @@ export class EnhancedTesseractProcessor {
 
       console.log('✅ Enhanced preprocessing completed');
 
-      // Run multiple Tesseract approaches and pick the best result
+      // Run multiple Tesseract approaches optimized for ID cards and documents
       const ocrResults = await Promise.all([
-        this.runSimpleTesseract(enhancedPath, 'vie', 3), // PSM 3: Fully automatic page segmentation
-        this.runSimpleTesseract(enhancedPath, 'vie', 6), // PSM 6: Single uniform block of text
-        this.runSimpleTesseract(enhancedPath, 'vie', 4), // PSM 4: Single column of text of variable sizes
+        this.runSimpleTesseract(enhancedPath, 'vie', 6), // PSM 6: Uniform block of text (best for ID cards)
+        this.runSimpleTesseract(enhancedPath, 'vie', 4), // PSM 4: Single column of text (good for documents)
+        this.runSimpleTesseract(enhancedPath, 'vie', 11), // PSM 11: Sparse text (good for forms/IDs)
+        this.runSimpleTesseract(enhancedPath, 'vie', 3), // PSM 3: Fully automatic page segmentation (fallback)
       ]);
 
       // Select best result based on confidence and text length
