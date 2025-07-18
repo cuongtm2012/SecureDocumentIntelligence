@@ -171,6 +171,12 @@ Changelog:
   - Added Training tab to dashboard for seamless user experience
   - Created detailed training guide with best practices and troubleshooting
   - System allows custom Vietnamese model training using user's own document data
+- July 18, 2025. Updated to latest Vietnamese language data with LSTM mode optimization
+  - Downloaded and installed latest vie.traineddata from tessdata_best (12MB vs 1.6MB)
+  - Configured Enhanced Tesseract processor to use LSTM mode (OEM 1) with proper TESSDATA_PREFIX
+  - Updated all OCR commands to use tessdata_best for improved Vietnamese text recognition
+  - Enhanced system now uses Tesseract 5.3.4 with latest Vietnamese language models
+  - Fixed receipt processing route to use stable enhanced processor instead of problematic Vietnamese processor
 ```
 
 ## User Preferences

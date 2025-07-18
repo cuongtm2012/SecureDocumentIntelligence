@@ -195,15 +195,17 @@ export class EnhancedTesseractProcessor {
     psm: number;
   }> {
     try {
-      // Use simple Tesseract command without character whitelist
-      const command = `tesseract "${imagePath}" stdout -l ${language} --oem 1 --psm ${psm}`;
+      // Use latest Vietnamese language data from tessdata_best with LSTM mode (OEM 1)
+      const tessDataPrefix = process.cwd(); // Use current directory where vie.traineddata is located
+      const command = `TESSDATA_PREFIX=${tessDataPrefix} tesseract "${imagePath}" stdout -l ${language} --oem 1 --psm ${psm}`;
       
+      console.log(`🔤 Running Tesseract with LSTM mode: PSM ${psm}, Language: ${language}`);
       const { stdout } = await execAsync(command);
       
       // Get confidence using hocr output for better accuracy
       let confidence = 50; // Default confidence
       try {
-        const hocrCommand = `tesseract "${imagePath}" stdout -l ${language} --oem 1 --psm ${psm} hocr`;
+        const hocrCommand = `TESSDATA_PREFIX=${tessDataPrefix} tesseract "${imagePath}" stdout -l ${language} --oem 1 --psm ${psm} hocr`;
         const { stdout: hocrOutput } = await execAsync(hocrCommand);
         
         // Parse confidence from hocr output
