@@ -63,29 +63,29 @@ export function CanvasPDFViewer({
   useEffect(() => {
     const loadPDF = async () => {
       if (!mountedRef.current) return;
-      
+
       try {
         setLoading(true);
         setError(null);
-        
+
         const pdfUrl = `/api/documents/${documentId}/raw?t=${Date.now()}`;
         console.log('📄 Loading PDF from:', pdfUrl);
-        
+
         const loadingTask = pdfjsLib.getDocument(pdfUrl);
         const pdf = await loadingTask.promise;
-        
+
         if (!mountedRef.current) return;
-        
+
         setPdfDoc(pdf);
         setNumPages(pdf.numPages);
         setLoading(false);
-        
+
         console.log('✅ PDF loaded successfully:', pdf.numPages, 'pages');
         toast({
           title: "PDF Loaded",
           description: `Successfully loaded ${pdf.numPages} page${pdf.numPages !== 1 ? 's' : ''}`,
         });
-        
+
       } catch (err: any) {
         if (!mountedRef.current) return;
         console.error('❌ PDF load error:', err);
@@ -101,7 +101,7 @@ export function CanvasPDFViewer({
   useEffect(() => {
     const renderPage = async () => {
       if (!pdfDoc || !canvasRef.current || !mountedRef.current) return;
-      
+
       // Cancel any existing render task
       if (renderTaskRef.current) {
         try {
@@ -123,11 +123,11 @@ export function CanvasPDFViewer({
         if (!mountedRef.current) return;
 
         const viewport = page.getViewport({ scale: zoom });
-        
+
         // Set canvas dimensions
         canvas.height = viewport.height;
         canvas.width = viewport.width;
-        
+
         // Clear canvas before rendering
         context.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -143,22 +143,22 @@ export function CanvasPDFViewer({
         renderTaskRef.current = renderTask;
 
         await renderTask.promise;
-        
+
         // Only update state if component is still mounted
         if (mountedRef.current) {
           renderTaskRef.current = null;
           console.log(`✅ Page ${currentPage} rendered successfully`);
         }
-        
+
       } catch (error: any) {
         if (!mountedRef.current) return;
-        
+
         // Ignore cancellation errors
         if (error.name === 'RenderingCancelledException') {
           console.log('🔄 Page render cancelled');
           return;
         }
-        
+
         console.error('❌ Page render error:', error);
         setError(`Failed to render page ${currentPage}: ${error.message}`);
       }
@@ -179,14 +179,19 @@ export function CanvasPDFViewer({
     }
   };
 
+  // Zoom handlers
   const handleZoomIn = () => {
-    const newZoom = Math.min(zoom * 1.2, 3);
+    const newZoom = Math.min(zoom * 1.2, 5.0);
     onZoomChange(newZoom);
   };
 
   const handleZoomOut = () => {
-    const newZoom = Math.max(zoom / 1.2, 0.3);
+    const newZoom = Math.max(zoom / 1.2, 0.1);
     onZoomChange(newZoom);
+  };
+
+  const handleZoomReset = () => {
+    onZoomChange(1.0);
   };
 
   if (loading) {
@@ -226,19 +231,24 @@ export function CanvasPDFViewer({
               </Badge>
             )}
           </div>
-          
+
           <div className="flex items-center gap-2">
-            {/* Zoom Controls */}
-            <Button size="sm" variant="outline" onClick={handleZoomOut}>
-              <ZoomOut className="h-4 w-4" />
-            </Button>
-            <span className="text-sm px-2 min-w-[60px] text-center">
-              {Math.round(zoom * 100)}%
-            </span>
-            <Button size="sm" variant="outline" onClick={handleZoomIn}>
-              <ZoomIn className="h-4 w-4" />
-            </Button>
-            
+              <Button size="sm" variant="outline" onClick={handleZoomOut}>
+                <ZoomOut className="h-4 w-4" />
+              </Button>
+              <Button 
+                size="sm" 
+                variant="outline" 
+                onClick={handleZoomReset}
+                className="min-w-[60px]"
+              >
+                {Math.round(zoom * 100)}%
+              </Button>
+              <Button size="sm" variant="outline" onClick={handleZoomIn}>
+                <ZoomIn className="h-4 w-4" />
+              </Button>
+            </div>
+
             {/* Page Navigation */}
             <div className="flex items-center gap-1 ml-4">
               <Button 
@@ -265,19 +275,28 @@ export function CanvasPDFViewer({
         </div>
       </div>
 
-      {/* PDF Canvas */}
-      <div className="flex-1 overflow-auto p-4">
-        <div className="flex justify-center">
-          <canvas
-            ref={canvasRef}
-            className="border border-gray-300 rounded-lg shadow-lg max-w-full"
-            style={{ 
-              display: 'block',
-              maxHeight: '80vh'
-            }}
-          />
+      {/* PDF Canvas Container */}
+        <div className="flex-1 overflow-auto bg-gray-100 dark:bg-gray-800">
+          <div className="flex justify-center items-center min-h-full p-4">
+            <div
+              style={{
+                transform: `scale(${zoom})`,
+                transformOrigin: 'center center',
+                transition: 'transform 0.2s ease-in-out',
+              }}
+            >
+              <canvas
+                ref={canvasRef}
+                className="border border-gray-300 shadow-lg bg-white"
+                style={{ 
+                  maxWidth: 'calc(100vw - 100px)',
+                  maxHeight: 'calc(100vh - 200px)',
+                  height: 'auto'
+                }}
+              />
+            </div>
+          </div>
         </div>
-      </div>
     </div>
   );
 }

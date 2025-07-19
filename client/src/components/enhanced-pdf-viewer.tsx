@@ -64,13 +64,17 @@ export function EnhancedPDFViewer({
 
   // Zoom handlers
   const handleZoomIn = () => {
-    const newZoom = Math.min(zoom * 1.2, 3);
+    const newZoom = Math.min(zoom * 1.2, 5.0);
     onZoomChange(newZoom);
   };
 
   const handleZoomOut = () => {
-    const newZoom = Math.max(zoom / 1.2, 0.3);
+    const newZoom = Math.max(zoom / 1.2, 0.1);
     onZoomChange(newZoom);
+  };
+
+  const handleZoomReset = () => {
+    onZoomChange(1.0);
   };
 
   const handleRotate = () => {
@@ -99,7 +103,7 @@ export function EnhancedPDFViewer({
     if (file.type !== 'image') return null;
 
     return (
-      <div className="flex flex-col h-full">
+      <div className="flex flex-col h-full overflow-hidden">
         {/* Controls Header */}
         <div className="p-3 border-b bg-gray-50 dark:bg-gray-700 flex-shrink-0">
           <div className="flex items-center justify-between">
@@ -112,9 +116,14 @@ export function EnhancedPDFViewer({
               <Button size="sm" variant="outline" onClick={handleZoomOut}>
                 <ZoomOut className="h-4 w-4" />
               </Button>
-              <span className="text-sm px-2 min-w-[60px] text-center">
+              <Button 
+                size="sm" 
+                variant="outline" 
+                onClick={handleZoomReset}
+                className="min-w-[60px]"
+              >
                 {Math.round(zoom * 100)}%
-              </span>
+              </Button>
               <Button size="sm" variant="outline" onClick={handleZoomIn}>
                 <ZoomIn className="h-4 w-4" />
               </Button>
@@ -126,19 +135,23 @@ export function EnhancedPDFViewer({
         </div>
 
         {/* Image Content */}
-        <div className="flex-1 overflow-auto p-4">
-          <div className="flex justify-center">
+        <div className="flex-1 overflow-auto bg-gray-100 dark:bg-gray-800">
+          <div className="flex justify-center items-center min-h-full p-4">
             <div
               style={{
                 transform: `scale(${zoom}) rotate(${rotation}deg)`,
                 transformOrigin: 'center center',
+                transition: 'transform 0.2s ease-in-out',
               }}
             >
               <img
                 src={`/api/documents/${documentId}/image?t=${Date.now()}`}
                 alt={file.name}
-                className="max-w-full h-auto border border-gray-300 rounded-lg shadow-lg"
-                style={{ maxHeight: '800px' }}
+                className="max-w-none h-auto border border-gray-300 rounded-lg shadow-lg"
+                style={{ 
+                  maxWidth: 'calc(100vw - 100px)',
+                  maxHeight: 'calc(100vh - 200px)'
+                }}
                 onLoad={() => {
                   setLoading(false);
                   setError(null);

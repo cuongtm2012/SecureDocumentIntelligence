@@ -121,8 +121,8 @@ export function OptimizedPDFOCRViewer({
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-7xl h-[90vh] flex flex-col">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-[95vw] h-[95vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b flex-shrink-0">
           <div className="flex items-center gap-3">
@@ -132,10 +132,10 @@ export function OptimizedPDFOCRViewer({
               ) : (
                 <ImageIcon className="h-5 w-5 text-blue-600" />
               )}
-              <h2 className="text-lg font-semibold">{file.name}</h2>
+              <h2 className="text-lg font-semibold truncate max-w-[300px]">{file.name}</h2>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Badge variant="outline">
                 {Math.round(confidence * 100)}% confidence
               </Badge>
@@ -148,6 +148,10 @@ export function OptimizedPDFOCRViewer({
 
               <Badge variant="outline" className="text-xs">
                 Doc ID: {documentId}
+              </Badge>
+
+              <Badge variant="outline" className="text-xs">
+                Zoom: {Math.round(zoom * 100)}%
               </Badge>
             </div>
           </div>
@@ -183,9 +187,9 @@ export function OptimizedPDFOCRViewer({
         </div>
 
         {/* Main Content - Two Panel Layout */}
-        <div className="flex-1 flex min-h-0">
+        <div className="flex-1 flex min-h-0 overflow-hidden">
           {/* Left Panel - Document Viewer */}
-          <div className="w-1/2 border-r">
+          <div className="w-1/2 border-r flex flex-col overflow-hidden">
             <EnhancedPDFViewer
               file={file}
               documentId={documentId}
@@ -199,7 +203,7 @@ export function OptimizedPDFOCRViewer({
           </div>
 
           {/* Right Panel - Scrollable Text */}
-          <div className="w-1/2">
+          <div className="w-1/2 flex flex-col overflow-hidden">
             <ScrollableTextPanel
               extractedText={extractedText}
               confidence={confidence}
