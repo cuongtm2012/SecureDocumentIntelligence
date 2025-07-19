@@ -430,8 +430,8 @@ export function VietnameseIDCardProcessor() {
                       </div>
                     </div>
                   )}
-                </div>
-              </CardContent>
+                </CardContent>
+              </Card>
             </TabsContent>
           </Tabs>
         </CardContent>
