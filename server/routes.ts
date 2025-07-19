@@ -22,6 +22,9 @@ import { z } from "zod";
 import { initializeDatabase } from "./init-db";
 import FormData from 'form-data';
 import axios from 'axios';
+import { directOCRProcessor } from './direct-ocr-processor.js';
+import { tesseractOCRProcessor } from './tesseract-ocr-processor.js';
+import { vietCardOCRProcessor } from './viet-card-ocr-processor.js';
 
 const writeFile = promisify(fs.writeFile);
 const readFile = promisify(fs.readFile);
@@ -37,19 +40,19 @@ async function convertPDFToImages(pdfPath: string, outputPattern: string): Promi
       pdfPath,
       outputPattern
     ];
-    
+
     console.log(`🔄 Running: convert ${args.join(' ')}`);
-    
+
     const convert = spawn('convert', args, {
       stdio: ['pipe', 'pipe', 'pipe']
     });
-    
+
     let stderr = '';
-    
+
     convert.stderr.on('data', (data: Buffer) => {
       stderr += data.toString();
     });
-    
+
     convert.on('close', (code: number) => {
       if (code === 0) {
         console.log('✅ PDF to images conversion completed');
@@ -58,11 +61,11 @@ async function convertPDFToImages(pdfPath: string, outputPattern: string): Promi
         reject(new Error(`ImageMagick failed with code ${code}: ${stderr}`));
       }
     });
-    
+
     convert.on('error', (error: any) => {
       reject(new Error(`Failed to start ImageMagick: ${error.message}`));
     });
-    
+
     setTimeout(() => {
       convert.kill('SIGTERM');
       reject(new Error('PDF conversion timeout'));
@@ -97,7 +100,7 @@ const upload = multer({
       'image/jpg', 
       'image/png'
     ];
-    
+
     if (allowedMimes.includes(file.mimetype)) {
       cb(null, true);
     } else {
@@ -115,18 +118,18 @@ if (!fs.existsSync(uploadsDir)) {
 // Helper function to process file with DeepSeek API as primary workflow
 async function processFileWithFallback(filePath: string, document: any, documentId: number, userId: number, req?: any, res?: any) {
   console.log(`🚀 Processing document ${document.originalName} with OpenCV + DeepSeek API workflow...`);
-  
+
   // Check if this might be a receipt based on filename or document type
   const isReceiptDocument = document.originalName.toLowerCase().includes('receipt') || 
                            document.originalName.toLowerCase().includes('hóa đơn') ||
                            document.originalName.toLowerCase().includes('biên lai');
-  
+
   let finalOcrResult;
 
   // Primary workflow: DeepSeek API processing
   if (process.env.OPENAI_API_KEY) {
     console.log('🤖 Starting DeepSeek API document processing...');
-    
+
     try {
       // Choose OCR processor based on document type
       let ocrResult;
@@ -137,13 +140,13 @@ async function processFileWithFallback(filePath: string, document: any, document
         console.log('📄 Using standard Vietnamese OCR processor...');
         ocrResult = await simpleTesseractProcessor.processDocument(filePath);
       }
-      
+
       // Then enhance with DeepSeek analysis for Vietnamese text improvement
       const deepseekAnalysis = await deepSeekService.analyzeDocument(
         ocrResult.extractedText, 
         "Vietnamese government document analysis"
       );
-      
+
       finalOcrResult = {
         success: true,
         file_id: document.originalName,
@@ -163,13 +166,13 @@ async function processFileWithFallback(filePath: string, document: any, document
           note: 'Processed with PaddleOCR + DeepSeek API for optimal Vietnamese text extraction'
         }
       };
-      
+
       console.log('✅ DeepSeek API processing completed successfully');
-      
+
     } catch (deepseekError) {
       console.warn('⚠️ DeepSeek API processing failed, trying direct OCR fallback...');
       console.error('DeepSeek error:', deepseekError instanceof Error ? deepseekError.message : deepseekError);
-      
+
       // Direct OCR fallback
       try {
         let directResult;
@@ -179,7 +182,7 @@ async function processFileWithFallback(filePath: string, document: any, document
         } else {
           directResult = await simpleTesseractProcessor.processDocument(filePath);
         }
-        
+
         finalOcrResult = {
           success: true,
           file_id: document.originalName,
@@ -204,7 +207,7 @@ async function processFileWithFallback(filePath: string, document: any, document
     }
   } else {
     console.log('⚠️ No DeepSeek API key available, using direct OCR fallback...');
-    
+
     try {
       let directResult;
       if (isReceiptDocument) {
@@ -213,7 +216,7 @@ async function processFileWithFallback(filePath: string, document: any, document
       } else {
         directResult = await simpleTesseractProcessor.processDocument(filePath);
       }
-      
+
       finalOcrResult = {
         success: true,
         file_id: document.originalName,
@@ -289,19 +292,19 @@ async function processFileWithFallback(filePath: string, document: any, document
   });
 
   const updatedDocument = await storage.getDocument(documentId);
-  
+
   // Only send response if res is provided (not background processing)
   if (res) {
     res.json(updatedDocument);
   }
-  
+
   return updatedDocument;
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Initialize database with default user
   await initializeDatabase();
-  
+
   // Apply security headers
   app.use(helmet({
     contentSecurityPolicy: {
@@ -351,18 +354,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Automatically start OCR processing after upload (background)
       console.log(`🚀 Auto-starting OCR processing for document ${document.id}...`);
-      
+
       // Process in background without blocking the response
       setImmediate(async () => {
         try {
           const filePath = path.join(process.cwd(), 'uploads', document.filename);
-          
+
           // Update status to processing
           await storage.updateDocument(document.id, { processingStatus: 'processing' });
-          
+
           // Process the document
           await processFileWithFallback(filePath, document, document.id, userId, undefined, undefined);
-          
+
           console.log(`✅ Auto-processing completed for document ${document.id}`);
         } catch (error) {
           console.error(`❌ Auto-processing failed for document ${document.id}:`, error);
@@ -402,7 +405,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     } catch (error) {
       console.error('Processing error:', error);
-      
+
       // Update document status to failed
       const documentId = parseInt(req.params.id);
       await storage.updateDocument(documentId, {
@@ -439,14 +442,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const filePath = path.join(uploadsDir, document.filename);
 
       console.log(`🧾 Processing document as Vietnamese receipt: ${document.originalName}`);
-      
+
       // Use enhanced Tesseract processor for stable processing
       const receiptResult = await enhancedTesseractProcessor.processDocument(filePath);
-      
+
       // Process with DeepSeek enhancement if API key available
       let enhancedText = receiptResult.extractedText;
       let deepseekAnalysis = { applied: false, reason: 'No API key available' };
-      
+
       if (process.env.OPENAI_API_KEY) {
         try {
           deepseekAnalysis = await deepSeekService.analyzeDocument(
@@ -509,7 +512,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     } catch (error) {
       console.error('Vietnamese receipt processing error:', error);
-      
+
       // Update document status to failed
       const documentId = parseInt(req.params.id);
       await storage.updateDocument(documentId, {
@@ -527,12 +530,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Tesseract Training API Endpoints
-  
+
   // Start training session
   app.post("/api/training/start", async (req, res) => {
     try {
       const { sessionName, documentIds } = req.body;
-      
+
       if (!sessionName || !documentIds || !Array.isArray(documentIds)) {
         return res.status(400).json({
           success: false,
@@ -542,7 +545,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Validate documents before training
       const validation = await trainingPipeline.validateDocumentsForTraining(documentIds);
-      
+
       if (validation.suitable.length < 5) {
         return res.status(400).json({
           success: false,
@@ -552,14 +555,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const sessionId = await trainingPipeline.startTrainingSession(sessionName, validation.suitable);
-      
+
       res.json({
         success: true,
         sessionId,
         validation,
         message: `Training session started with ${validation.suitable.length} documents`
       });
-      
+
     } catch (error) {
       console.error('Training start error:', error);
       res.status(500).json({
@@ -575,19 +578,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { sessionId } = req.params;
       const session = trainingPipeline.getSessionStatus(sessionId);
-      
+
       if (!session) {
         return res.status(404).json({
           success: false,
           error: "Training session not found"
         });
       }
-      
+
       res.json({
         success: true,
         session
       });
-      
+
     } catch (error) {
       console.error('Get training session error:', error);
       res.status(500).json({
@@ -601,12 +604,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/training/sessions", async (req, res) => {
     try {
       const sessions = trainingPipeline.getAllSessions();
-      
+
       res.json({
         success: true,
         sessions: sessions.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
       });
-      
+
     } catch (error) {
       console.error('List training sessions error:', error);
       res.status(500).json({
@@ -620,14 +623,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/training/install/:sessionId", async (req, res) => {
     try {
       const { sessionId } = req.params;
-      
+
       await trainingPipeline.installModel(sessionId);
-      
+
       res.json({
         success: true,
         message: "Improved Vietnamese model installed successfully"
       });
-      
+
     } catch (error) {
       console.error('Model installation error:', error);
       res.status(500).json({
@@ -642,7 +645,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/training/validate", async (req, res) => {
     try {
       const { documentIds } = req.body;
-      
+
       if (!documentIds || !Array.isArray(documentIds)) {
         return res.status(400).json({
           success: false,
@@ -651,12 +654,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const validation = await trainingPipeline.validateDocumentsForTraining(documentIds);
-      
+
       res.json({
         success: true,
         validation
       });
-      
+
     } catch (error) {
       console.error('Document validation error:', error);
       res.status(500).json({
@@ -670,12 +673,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/training/guide", async (req, res) => {
     try {
       const guide = await trainingPipeline.createSimpleTrainingWorkflow();
-      
+
       res.json({
         success: true,
         guide
       });
-      
+
     } catch (error) {
       console.error('Get training guide error:', error);
       res.status(500).json({
@@ -701,11 +704,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const documentId = parseInt(req.params.id);
       const document = await storage.getDocument(documentId);
-      
+
       if (!document) {
         return res.status(404).json({ message: "Document not found" });
       }
-      
+
       res.json(document);
     } catch (error) {
       console.error('Get document error:', error);
@@ -718,20 +721,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const documentId = parseInt(req.params.id);
       const document = await storage.getDocument(documentId);
-      
+
       if (!document) {
         return res.status(404).json({ message: "Document not found" });
       }
 
       const filePath = path.join(uploadsDir, document.filename);
-      
+
       if (!fs.existsSync(filePath)) {
         return res.status(404).json({ message: "File not found" });
       }
 
       res.setHeader('Content-Type', document.mimeType);
       res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
-      
+
       const fileStream = fs.createReadStream(filePath);
       fileStream.pipe(res);
     } catch (error) {
@@ -745,13 +748,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const documentId = parseInt(req.params.id);
       const document = await storage.getDocument(documentId);
-      
+
       if (!document) {
         return res.status(404).json({ message: "Document not found" });
       }
 
       const filePath = path.join(process.cwd(), 'uploads', document.filename);
-      
+
       if (!fs.existsSync(filePath)) {
         return res.status(404).json({ message: "File not found" });
       }
@@ -772,17 +775,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // For PDF files, generate page images using ImageMagick
       const tempDir = `/tmp/pdf_pages_${documentId}_${Date.now()}`;
       await fs.promises.mkdir(tempDir, { recursive: true });
-      
+
       try {
         // Convert PDF pages to images
         const outputPattern = path.join(tempDir, 'page-%d.png');
         // Convert PDF to images using ImageMagick directly
         await convertPDFToImages(filePath, outputPattern);
-        
+
         // Get generated page images
         const pageFiles = await fs.promises.readdir(tempDir);
         const pngFiles = pageFiles.filter(f => f.endsWith('.png')).sort();
-        
+
         if (pngFiles.length === 0) {
           throw new Error('No pages generated');
         }
@@ -790,7 +793,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Copy pages to public directory for serving
         const publicPagesDir = path.join(process.cwd(), 'client', 'public', 'pages', documentId.toString());
         await fs.promises.mkdir(publicPagesDir, { recursive: true });
-        
+
         const imageUrls = [];
         for (let i = 0; i < pngFiles.length; i++) {
           const sourcePath = path.join(tempDir, pngFiles[i]);
@@ -798,10 +801,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           await fs.promises.copyFile(sourcePath, destPath);
           imageUrls.push(`/pages/${documentId}/page-${i + 1}.png`);
         }
-        
+
         // Clean up temporary directory
         await fs.promises.rm(tempDir, { recursive: true, force: true });
-        
+
         res.json({
           success: true,
           images: imageUrls,
@@ -811,10 +814,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       } catch (conversionError) {
         console.warn('PDF page generation failed, falling back to direct PDF:', conversionError);
-        
+
         // Clean up on error
         await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
-        
+
         // Fallback to direct PDF display
         const pdfUrl = `/api/documents/${documentId}/raw?t=${Date.now()}`;
         res.json({
@@ -836,7 +839,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const documentId = parseInt(req.params.id);
       const document = await storage.getDocument(documentId);
-      
+
       if (!document) {
         return res.status(404).json({ message: "Document not found" });
       }
@@ -844,7 +847,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // For PDF files, redirect to the raw PDF endpoint  
       // For images, we could serve the image directly
       const rawUrl = `/api/documents/${documentId}/raw`;
-      
+
       // Redirect to the raw document
       res.redirect(rawUrl);
     } catch (error) {
@@ -866,6 +869,99 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to fetch user" });
     }
   });
+
+  // Enhanced Vietnamese OCR endpoint
+  app.post('/api/ocr/enhanced-vietnamese', upload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          error: 'No file provided'
+        });
+      }
+
+      console.log(`🇻🇳 Enhanced Vietnamese OCR: ${req.file.originalname}`);
+
+      const result = await enhancedVietnameseOCR.processDocument(req.file.path);
+
+      // Clean up uploaded file
+      await fs.unlink(req.file.path).catch(() => {});
+
+      res.json({
+        success: true,
+        ...result
+      });
+
+    } catch (error: any) {
+      console.error('Enhanced Vietnamese OCR error:', error);
+
+      if (req.file?.path) {
+        await fs.unlink(req.file.path).catch(() => {});
+      }
+
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
+  // VietCardOCR endpoint for Vietnamese ID cards
+  app.post('/api/ocr/process-id-card', upload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          error: 'No file provided'
+      });
+    }
+
+    console.log(`🪪 VietCardOCR processing: ${req.file.originalname}`);
+
+    const result = await vietCardOCRProcessor.processIDCard(req.file.path);
+
+    // Clean up uploaded file
+    await fs.unlink(req.file.path).catch(() => {});
+
+    res.json({
+      success: result.success,
+      structuredData: result.extractedData,
+      confidence: result.confidence,
+      processingTime: result.processingTime,
+      fieldsExtracted: Object.keys(result.extractedData).length,
+      error: result.error
+    });
+
+  } catch (error: any) {
+    console.error('VietCardOCR processing error:', error);
+
+    if (req.file?.path) {
+      await fs.unlink(req.file.path).catch(() => {});
+    }
+
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      structuredData: {},
+      confidence: 0,
+      processingTime: 0,
+      fieldsExtracted: 0
+    });
+  }
+});
+
+// VietCardOCR health check
+app.get('/api/ocr/vietcard/health', async (req, res) => {
+  try {
+    const health = await vietCardOCRProcessor.healthCheck();
+    res.json(health);
+  } catch (error: any) {
+    res.status(500).json({
+      status: 'error',
+      error: error.message
+    });
+  }
+});
 
   const httpServer = createServer(app);
   return httpServer;
