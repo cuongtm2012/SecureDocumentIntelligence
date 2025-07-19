@@ -30,7 +30,7 @@ export class OCRController {
   static async healthCheck(req: Request, res: Response) {
     try {
       const healthResult = await pythonOCRService.healthCheck();
-      
+
       res.status(healthResult.status === 'healthy' ? 200 : 503).json({
         timestamp: new Date().toISOString(),
         ...healthResult
@@ -120,7 +120,7 @@ export class OCRController {
 
     } catch (error) {
       console.error('Enhanced OCR processing error:', error);
-      
+
       if (req.file?.path) {
         await fs.unlink(req.file.path).catch(() => {});
       }
@@ -140,7 +140,7 @@ export class OCRController {
   static async processBatchFiles(req: Request, res: Response) {
     try {
       const files = req.files as Express.Multer.File[];
-      
+
       if (!files || files.length === 0) {
         return res.status(400).json({
           success: false,
@@ -150,7 +150,7 @@ export class OCRController {
 
       const { language = 'vie', confidenceThreshold = 60.0 } = req.body;
       const userId = (req as any).user?.id || 1;
-      
+
       // Create OCR requests for all files
       const ocrRequests: OCRRequest[] = files.map((file, index) => ({
         fileId: `batch_${Date.now()}_file_${index + 1}_${file.filename}`,
@@ -212,7 +212,7 @@ export class OCRController {
 
     } catch (error) {
       console.error('Batch OCR processing error:', error);
-      
+
       const files = req.files as Express.Multer.File[];
       if (files) {
         for (const file of files) {
@@ -235,7 +235,7 @@ export class OCRController {
   static async getBatchJobStatus(req: Request, res: Response) {
     try {
       const { jobId } = req.params;
-      
+
       if (!jobId) {
         return res.status(400).json({
           success: false,
@@ -244,7 +244,7 @@ export class OCRController {
       }
 
       const jobResult = activeJobs.get(jobId);
-      
+
       if (!jobResult) {
         return res.status(404).json({
           success: false,
@@ -275,7 +275,7 @@ export class OCRController {
   static async getSupportedLanguages(req: Request, res: Response) {
     try {
       const languages = await pythonOCRService.getSupportedLanguages();
-      
+
       res.json({
         success: true,
         languages,
