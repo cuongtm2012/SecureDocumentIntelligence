@@ -1,6 +1,10 @@
 
-vietcardocr
-pytesseract
-Pillow
+vietocr
+qdrant-client
+torch
+torchvision
 opencv-python
 numpy
+Pillow
+transformers
+sentence-transformers

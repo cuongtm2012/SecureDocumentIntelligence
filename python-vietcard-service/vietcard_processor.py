@@ -1,8 +1,8 @@
 
 #!/usr/bin/env python3
 """
-VietCardOCR Processor
-Processes Vietnamese ID cards using the VietCardOCR library
+VietOCR + Qdrant Processor
+Advanced Vietnamese OCR with vector-based search using VietOCR and Qdrant
 
 Author: SecureDocumentIntelligence Team
 Date: 2025-01-27
@@ -12,219 +12,475 @@ import sys
 import json
 import time
 import logging
+import uuid
 from pathlib import Path
+import cv2
+import numpy as np
+from typing import Dict, List, Any, Optional
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def process_vietnamese_id_card(image_path):
+class VietOCRQdrantProcessor:
     """
-    Process Vietnamese ID card using VietCardOCR
-    
-    Args:
-        image_path (str): Path to the ID card image
-    
-    Returns:
-        dict: Processing results with extracted data
+    Advanced Vietnamese OCR processor with vector search capabilities
     """
-    start_time = time.time()
     
-    try:
-        # Try different import methods for VietCardOCR
+    def __init__(self):
+        self.viet_ocr = None
+        self.qdrant_client = None
+        self.sentence_model = None
+        self.collection_name = "vietnamese_documents"
+        self.initialize_models()
+    
+    def initialize_models(self):
+        """Initialize VietOCR and Qdrant models"""
         try:
-            from vietcardocr.vietcardocr import VietCardOCR
-            logger.info("VietCardOCR imported successfully (method 1)")
-        except ImportError:
+            # Initialize VietOCR
+            from vietocr.tool.predictor import Predictor
+            from vietocr.tool.config import Cfg
+            
+            config = Cfg.load_config_from_name('vgg_transformer')
+            config['weights'] = 'https://drive.google.com/uc?id=13327Y1tz1ohsm5YZMyXVMPIOjoOA0OaA'
+            config['cnn']['pretrained'] = False
+            config['device'] = 'cpu'  # Use CPU for Replit compatibility
+            config['predictor']['beamsearch'] = False
+            
+            self.viet_ocr = Predictor(config)
+            logger.info("✅ VietOCR model initialized successfully")
+            
+            # Initialize Qdrant client
+            from qdrant_client import QdrantClient
+            from qdrant_client.models import Distance, VectorParams, PointStruct
+            
+            # Use in-memory Qdrant for simplicity (can be changed to server later)
+            self.qdrant_client = QdrantClient(":memory:")
+            
+            # Create collection if it doesn't exist
             try:
-                from vietcardocr import VietCardOCR
-                logger.info("VietCardOCR imported successfully (method 2)")
-            except ImportError:
+                self.qdrant_client.create_collection(
+                    collection_name=self.collection_name,
+                    vectors_config=VectorParams(size=384, distance=Distance.COSINE)
+                )
+                logger.info("✅ Qdrant collection created")
+            except Exception as e:
+                logger.info(f"Qdrant collection already exists or error: {e}")
+            
+            # Initialize sentence transformer for embeddings
+            from sentence_transformers import SentenceTransformer
+            self.sentence_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+            logger.info("✅ Sentence transformer model initialized")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize models: {e}")
+            self.viet_ocr = None
+            self.qdrant_client = None
+            self.sentence_model = None
+    
+    def preprocess_image(self, image_path: str) -> np.ndarray:
+        """
+        Preprocess image for better OCR results
+        """
+        try:
+            # Read image
+            image = cv2.imread(image_path)
+            if image is None:
+                raise ValueError(f"Could not read image: {image_path}")
+            
+            # Convert to RGB
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            
+            # Apply preprocessing techniques
+            # 1. Resize if too large
+            height, width = image.shape[:2]
+            if width > 2000 or height > 2000:
+                scale = min(2000/width, 2000/height)
+                new_width = int(width * scale)
+                new_height = int(height * scale)
+                image = cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_LANCZOS4)
+            
+            # 2. Convert to grayscale for processing
+            gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+            
+            # 3. Apply CLAHE (Contrast Limited Adaptive Histogram Equalization)
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+            enhanced = clahe.apply(gray)
+            
+            # 4. Noise reduction
+            denoised = cv2.fastNlMeansDenoising(enhanced)
+            
+            # 5. Convert back to RGB
+            processed = cv2.cvtColor(denoised, cv2.COLOR_GRAY2RGB)
+            
+            logger.info(f"Image preprocessed: {image.shape} -> {processed.shape}")
+            return processed
+            
+        except Exception as e:
+            logger.error(f"Image preprocessing failed: {e}")
+            # Return original image if preprocessing fails
+            image = cv2.imread(image_path)
+            return cv2.cvtColor(image, cv2.COLOR_BGR2RGB) if image is not None else None
+    
+    def extract_text_regions(self, image: np.ndarray) -> List[Dict]:
+        """
+        Extract text regions from image using OpenCV
+        """
+        try:
+            # Convert to grayscale
+            gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+            
+            # Apply morphological operations to find text regions
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+            
+            # Gradient
+            grad = cv2.morphologyEx(gray, cv2.MORPH_GRADIENT, kernel)
+            
+            # Binarize
+            _, bw = cv2.threshold(grad, 0.0, 255.0, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+            
+            # Connect horizontally oriented regions
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 1))
+            connected = cv2.morphologyEx(bw, cv2.MORPH_CLOSE, kernel)
+            
+            # Find contours
+            contours, _ = cv2.findContours(connected.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+            
+            # Filter and sort contours
+            text_regions = []
+            for contour in contours:
+                x, y, w, h = cv2.boundingRect(contour)
+                # Filter by size
+                if w > 20 and h > 8 and w * h > 200:
+                    # Extract region
+                    region = image[y:y+h, x:x+w]
+                    text_regions.append({
+                        'bbox': (x, y, w, h),
+                        'region': region
+                    })
+            
+            # Sort by position (top to bottom, left to right)
+            text_regions.sort(key=lambda r: (r['bbox'][1], r['bbox'][0]))
+            
+            logger.info(f"Extracted {len(text_regions)} text regions")
+            return text_regions
+            
+        except Exception as e:
+            logger.error(f"Text region extraction failed: {e}")
+            return [{'bbox': (0, 0, image.shape[1], image.shape[0]), 'region': image}]
+    
+    def process_with_vietocr(self, image_path: str) -> Dict[str, Any]:
+        """
+        Process image with VietOCR
+        """
+        start_time = time.time()
+        
+        try:
+            if self.viet_ocr is None:
+                return self.fallback_processing(image_path, start_time)
+            
+            logger.info(f"Processing with VietOCR: {image_path}")
+            
+            # Preprocess image
+            processed_image = self.preprocess_image(image_path)
+            if processed_image is None:
+                raise ValueError("Failed to preprocess image")
+            
+            # Extract text regions
+            text_regions = self.extract_text_regions(processed_image)
+            
+            # Process each region with VietOCR
+            all_text = []
+            region_results = []
+            
+            for i, region_data in enumerate(text_regions):
                 try:
-                    import vietcardocr
-                    VietCardOCR = vietcardocr.VietCardOCR
-                    logger.info("VietCardOCR imported successfully (method 3)")
-                except (ImportError, AttributeError):
-                    # Fallback to simple OCR if VietCardOCR is not available
-                    logger.warning("VietCardOCR not available, using fallback OCR")
-                    return process_with_fallback_ocr(image_path, start_time)
-        
-        logger.info(f"Processing ID card: {image_path}")
-        
-        # Initialize VietCardOCR detector
-        detector = VietCardOCR()
-        
-        # Process the image
-        result = detector.predict(image_path)
-        
-        processing_time = time.time() - start_time
-        
-        if result:
+                    region = region_data['region']
+                    bbox = region_data['bbox']
+                    
+                    # Convert to PIL Image for VietOCR
+                    from PIL import Image
+                    pil_image = Image.fromarray(region)
+                    
+                    # OCR with VietOCR
+                    text = self.viet_ocr.predict(pil_image)
+                    
+                    if text and text.strip():
+                        all_text.append(text.strip())
+                        region_results.append({
+                            'text': text.strip(),
+                            'bbox': bbox,
+                            'confidence': 0.9  # VietOCR doesn't provide confidence, estimate high
+                        })
+                        
+                        logger.info(f"Region {i+1}: {text.strip()[:50]}...")
+                
+                except Exception as e:
+                    logger.warning(f"Failed to process region {i+1}: {e}")
+                    continue
+            
+            # Combine all text
+            combined_text = '\n'.join(all_text)
+            
             # Extract structured data
-            extracted_data = {}
-            raw_text = ""
+            extracted_data = self.parse_vietnamese_id_card_text(combined_text)
             
-            # VietCardOCR typically returns a dictionary with detected fields
-            if isinstance(result, dict):
-                # Common ID card fields in Vietnamese
-                field_mapping = {
-                    'id': ['id', 'ID', 'Số', 'So', 'number', 'card_id'],
-                    'name': ['name', 'Name', 'Họ và tên', 'Ho va ten', 'full_name'],
-                    'date_of_birth': ['date_of_birth', 'dob', 'Ngày sinh', 'Ngay sinh', 'birth_date'],
-                    'sex': ['sex', 'gender', 'Giới tính', 'Gioi tinh'],
-                    'nationality': ['nationality', 'Quốc tịch', 'Quoc tich'],
-                    'place_of_origin': ['place_of_origin', 'Quê quán', 'Que quan', 'hometown'],
-                    'place_of_residence': ['place_of_residence', 'Nơi thường trú', 'Noi thuong tru', 'address'],
-                    'personal_identification': ['personal_identification', 'Đặc điểm nhận dạng', 'Dac diem nhan dang'],
-                    'date_of_issue': ['date_of_issue', 'Ngày cấp', 'Ngay cap', 'issue_date'],
-                    'date_of_expiry': ['date_of_expiry', 'Có giá trị đến', 'Co gia tri den', 'expiry_date']
-                }
-                
-                # Extract data based on field mapping
-                for key, possible_keys in field_mapping.items():
-                    for pkey in possible_keys:
-                        if pkey in result:
-                            extracted_data[key] = str(result[pkey]).strip()
-                            break
-                
-                # Also include any other fields found
-                for key, value in result.items():
-                    if key not in [item for sublist in field_mapping.values() for item in sublist]:
-                        raw_text += f"{key}: {value}\n"
+            # Store in Qdrant for future search
+            if self.qdrant_client and self.sentence_model and combined_text.strip():
+                try:
+                    self.store_in_qdrant(combined_text, extracted_data, image_path)
+                except Exception as e:
+                    logger.warning(f"Failed to store in Qdrant: {e}")
             
-            elif isinstance(result, str):
-                # If result is just text, parse it
-                raw_text = result
-                extracted_data = parse_text_for_id_fields(result)
-            
-            elif isinstance(result, list):
-                # If result is a list, try to extract from first item
-                if len(result) > 0:
-                    if isinstance(result[0], dict):
-                        extracted_data = result[0]
-                    else:
-                        raw_text = str(result[0])
-                        extracted_data = parse_text_for_id_fields(raw_text)
-            
-            # Calculate confidence based on number of fields extracted
-            confidence = min(95, 60 + len(extracted_data) * 5)
+            processing_time = time.time() - start_time
+            confidence = min(95, 70 + len(extracted_data) * 3)
             
             return {
                 "success": True,
                 "extractedData": extracted_data,
                 "confidence": confidence,
                 "processingTime": processing_time,
-                "rawText": raw_text.strip(),
-                "fieldsExtracted": len(extracted_data)
-            }
-        
-        else:
-            return {
-                "success": False,
-                "error": "No data extracted from ID card",
-                "extractedData": {},
-                "confidence": 0,
-                "processingTime": processing_time
+                "rawText": combined_text,
+                "fieldsExtracted": len(extracted_data),
+                "processingMethod": "vietocr-qdrant",
+                "regions": region_results
             }
             
-    except Exception as e:
-        logger.error(f"VietCardOCR processing failed: {e}")
-        # Fallback to simple OCR
-        return process_with_fallback_ocr(image_path, start_time)
-
-def process_with_fallback_ocr(image_path, start_time):
-    """
-    Fallback OCR processing using pytesseract
-    """
-    try:
-        import pytesseract
-        from PIL import Image
+        except Exception as e:
+            logger.error(f"VietOCR processing failed: {e}")
+            return self.fallback_processing(image_path, start_time)
+    
+    def store_in_qdrant(self, text: str, structured_data: Dict, image_path: str):
+        """
+        Store OCR results in Qdrant for vector search
+        """
+        try:
+            # Generate embedding
+            embedding = self.sentence_model.encode(text).tolist()
+            
+            # Create point
+            point_id = str(uuid.uuid4())
+            point = PointStruct(
+                id=point_id,
+                vector=embedding,
+                payload={
+                    "text": text,
+                    "structured_data": structured_data,
+                    "image_path": image_path,
+                    "timestamp": time.time(),
+                    "document_type": "vietnamese_id_card"
+                }
+            )
+            
+            # Upsert to Qdrant
+            self.qdrant_client.upsert(
+                collection_name=self.collection_name,
+                points=[point]
+            )
+            
+            logger.info(f"Stored document in Qdrant with ID: {point_id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to store in Qdrant: {e}")
+    
+    def search_similar_documents(self, query: str, limit: int = 5) -> List[Dict]:
+        """
+        Search for similar documents using vector similarity
+        """
+        try:
+            if not self.qdrant_client or not self.sentence_model:
+                return []
+            
+            # Generate query embedding
+            query_embedding = self.sentence_model.encode(query).tolist()
+            
+            # Search in Qdrant
+            search_results = self.qdrant_client.search(
+                collection_name=self.collection_name,
+                query_vector=query_embedding,
+                limit=limit
+            )
+            
+            # Format results
+            results = []
+            for result in search_results:
+                results.append({
+                    "id": result.id,
+                    "score": result.score,
+                    "text": result.payload.get("text", ""),
+                    "structured_data": result.payload.get("structured_data", {}),
+                    "image_path": result.payload.get("image_path", ""),
+                    "timestamp": result.payload.get("timestamp", 0)
+                })
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"Vector search failed: {e}")
+            return []
+    
+    def parse_vietnamese_id_card_text(self, text: str) -> Dict[str, str]:
+        """
+        Parse Vietnamese ID card text using improved patterns
+        """
+        extracted_data = {}
+        lines = text.split('\n')
         
-        logger.info("Using fallback pytesseract OCR")
-        
-        # Open and process image
-        image = Image.open(image_path)
-        
-        # Extract text using Vietnamese language
-        text = pytesseract.image_to_string(image, lang='vie')
-        
-        # Parse for ID card fields
-        extracted_data = parse_text_for_id_fields(text)
-        
-        processing_time = time.time() - start_time
-        
-        return {
-            "success": True,
-            "extractedData": extracted_data,
-            "confidence": max(50, len(extracted_data) * 10),
-            "processingTime": processing_time,
-            "rawText": text,
-            "fieldsExtracted": len(extracted_data),
-            "processingMethod": "fallback-tesseract"
+        # Enhanced Vietnamese ID card field patterns
+        patterns = {
+            'id': [
+                r'số:\s*(\d+)',
+                r'id:\s*(\d+)', 
+                r'cmnd:\s*(\d+)',
+                r'cccd:\s*(\d+)',
+                r'số cmnd:\s*(\d+)',
+                r'số cccd:\s*(\d+)',
+                r'(\d{9,12})'
+            ],
+            'name': [
+                r'họ và tên:\s*(.+)',
+                r'họ tên:\s*(.+)',
+                r'name:\s*(.+)',
+                r'tên:\s*(.+)',
+                r'full name:\s*(.+)'
+            ],
+            'date_of_birth': [
+                r'ngày sinh:\s*(.+)',
+                r'sinh:\s*(.+)',
+                r'date of birth:\s*(.+)',
+                r'dob:\s*(.+)',
+                r'(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4})'
+            ],
+            'sex': [
+                r'giới tính:\s*(.+)',
+                r'giới:\s*(.+)',
+                r'sex:\s*(.+)',
+                r'gender:\s*(.+)'
+            ],
+            'nationality': [
+                r'quốc tịch:\s*(.+)',
+                r'nationality:\s*(.+)',
+                r'quốc gia:\s*(.+)'
+            ],
+            'place_of_origin': [
+                r'quê quán:\s*(.+)',
+                r'nơi sinh:\s*(.+)',
+                r'place of origin:\s*(.+)',
+                r'quê:\s*(.+)',
+                r'hometown:\s*(.+)'
+            ],
+            'place_of_residence': [
+                r'nơi thường trú:\s*(.+)',
+                r'địa chỉ:\s*(.+)',
+                r'place of residence:\s*(.+)',
+                r'thường trú:\s*(.+)',
+                r'address:\s*(.+)'
+            ],
+            'date_of_issue': [
+                r'ngày cấp:\s*(.+)',
+                r'cấp ngày:\s*(.+)',
+                r'date of issue:\s*(.+)',
+                r'issued:\s*(.+)'
+            ],
+            'date_of_expiry': [
+                r'có giá trị đến:\s*(.+)',
+                r'giá trị đến:\s*(.+)',
+                r'date of expiry:\s*(.+)',
+                r'expires:\s*(.+)',
+                r'hết hạn:\s*(.+)'
+            ]
         }
         
-    except ImportError:
-        return {
-            "success": False,
-            "error": "Neither VietCardOCR nor pytesseract available",
-            "extractedData": {},
-            "confidence": 0,
-            "processingTime": time.time() - start_time
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "error": f"Fallback OCR failed: {e}",
-            "extractedData": {},
-            "confidence": 0,
-            "processingTime": time.time() - start_time
-        }
-
-def parse_text_for_id_fields(text):
-    """
-    Parse text for Vietnamese ID card fields
-    """
-    extracted_data = {}
-    lines = text.split('\n')
-    
-    # Vietnamese ID card field patterns
-    patterns = {
-        'id': [r'số:\s*(\d+)', r'id:\s*(\d+)', r'cmnd:\s*(\d+)', r'cccd:\s*(\d+)', r'(\d{9,12})'],
-        'name': [r'họ và tên:\s*(.+)', r'name:\s*(.+)', r'tên:\s*(.+)'],
-        'date_of_birth': [r'ngày sinh:\s*(.+)', r'date of birth:\s*(.+)', r'sinh:\s*(.+)'],
-        'sex': [r'giới tính:\s*(.+)', r'sex:\s*(.+)', r'giới:\s*(.+)'],
-        'nationality': [r'quốc tịch:\s*(.+)', r'nationality:\s*(.+)'],
-        'place_of_origin': [r'quê quán:\s*(.+)', r'place of origin:\s*(.+)', r'quê:\s*(.+)'],
-        'place_of_residence': [r'nơi thường trú:\s*(.+)', r'place of residence:\s*(.+)', r'thường trú:\s*(.+)'],
-        'date_of_issue': [r'ngày cấp:\s*(.+)', r'date of issue:\s*(.+)', r'cấp:\s*(.+)'],
-        'date_of_expiry': [r'có giá trị đến:\s*(.+)', r'date of expiry:\s*(.+)', r'giá trị:\s*(.+)']
-    }
-    
-    import re
-    
-    # Try to extract each field
-    for field_name, field_patterns in patterns.items():
-        for pattern in field_patterns:
-            for line in lines:
-                match = re.search(pattern, line, re.IGNORECASE)
-                if match and match.group(1) and match.group(1).strip():
-                    extracted_data[field_name] = match.group(1).strip()
+        import re
+        
+        # Extract fields using patterns
+        for field_name, field_patterns in patterns.items():
+            for pattern in field_patterns:
+                for line in lines:
+                    match = re.search(pattern, line, re.IGNORECASE)
+                    if match and match.group(1) and match.group(1).strip():
+                        value = match.group(1).strip()
+                        # Clean up the value
+                        value = re.sub(r'\s+', ' ', value)
+                        extracted_data[field_name] = value
+                        break
+                if field_name in extracted_data:
                     break
-            if field_name in extracted_data:
-                break
+        
+        logger.info(f"Extracted {len(extracted_data)} fields from text")
+        return extracted_data
     
-    return extracted_data
+    def fallback_processing(self, image_path: str, start_time: float) -> Dict[str, Any]:
+        """
+        Fallback to pytesseract if VietOCR fails
+        """
+        try:
+            import pytesseract
+            from PIL import Image
+            
+            logger.info("Using fallback pytesseract OCR")
+            
+            image = Image.open(image_path)
+            text = pytesseract.image_to_string(image, lang='vie')
+            
+            extracted_data = self.parse_vietnamese_id_card_text(text)
+            processing_time = time.time() - start_time
+            
+            return {
+                "success": True,
+                "extractedData": extracted_data,
+                "confidence": max(50, len(extracted_data) * 8),
+                "processingTime": processing_time,
+                "rawText": text,
+                "fieldsExtracted": len(extracted_data),
+                "processingMethod": "fallback-tesseract"
+            }
+            
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"All processing methods failed: {e}",
+                "extractedData": {},
+                "confidence": 0,
+                "processingTime": time.time() - start_time,
+                "processingMethod": "failed"
+            }
+
+def process_vietnamese_id_card(image_path: str) -> Dict[str, Any]:
+    """
+    Main processing function
+    """
+    processor = VietOCRQdrantProcessor()
+    return processor.process_with_vietocr(image_path)
+
+def search_documents(query: str, limit: int = 5) -> List[Dict]:
+    """
+    Search for similar documents
+    """
+    processor = VietOCRQdrantProcessor()
+    return processor.search_similar_documents(query, limit)
 
 def main():
     """Main function to process command line arguments"""
-    if len(sys.argv) != 2:
+    if len(sys.argv) < 2:
         print(json.dumps({
             "success": False,
-            "error": "Usage: python vietcard_processor.py <image_path>",
+            "error": "Usage: python vietcard_processor.py <image_path> [search_query]",
             "extractedData": {},
             "confidence": 0
         }))
         sys.exit(1)
+    
+    if len(sys.argv) == 3 and sys.argv[1] == "search":
+        # Search mode
+        query = sys.argv[2]
+        results = search_documents(query)
+        print(json.dumps({
+            "success": True,
+            "search_results": results,
+            "query": query
+        }, ensure_ascii=False, indent=2))
+        return
     
     image_path = sys.argv[1]
     

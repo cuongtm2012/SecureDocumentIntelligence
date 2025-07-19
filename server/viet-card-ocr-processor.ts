@@ -4,7 +4,7 @@ import { promises as fs } from 'fs';
 import * as path from 'path';
 import { enhancedTesseractProcessor } from "./enhanced-tesseract-processor";
 
-export interface VietCardOCRResult {
+export interface VietOCRResult {
   success: boolean;
   extractedData: {
     id?: string;
@@ -23,47 +23,63 @@ export interface VietCardOCRResult {
   processingTime: number;
   processingMethod: string;
   rawText?: string;
+  regions?: Array<{
+    text: string;
+    bbox: [number, number, number, number];
+    confidence: number;
+  }>;
   error?: string;
 }
 
-export class VietCardOCRProcessor {
+export interface VectorSearchResult {
+  id: string;
+  score: number;
+  text: string;
+  structured_data: any;
+  image_path: string;
+  timestamp: number;
+}
+
+export class VietOCRQdrantProcessor {
   private pythonScriptPath: string;
 
   constructor() {
     this.pythonScriptPath = path.join(process.cwd(), 'python-vietcard-service', 'vietcard_processor.py');
   }
 
-  async processIDCard(filePath: string): Promise<VietCardOCRResult> {
+  async processIDCard(filePath: string): Promise<VietOCRResult> {
     const startTime = Date.now();
     
-    console.log(`🪪 Processing Vietnamese ID card: ${path.basename(filePath)}`);
+    console.log(`🇻🇳 Processing Vietnamese ID card with VietOCR: ${path.basename(filePath)}`);
     
     try {
       // Check if file exists
       await fs.access(filePath);
       
-      // Try VietCardOCR first, fallback to enhanced Tesseract if not available
+      // Call VietOCR + Qdrant processor
       let result;
       try {
-        result = await this.callVietCardOCR(filePath);
+        result = await this.callVietOCRQdrant(filePath);
         
         if (result.success) {
-          console.log(`✅ VietCardOCR completed: ${Object.keys(result.extractedData).length} fields extracted`);
+          console.log(`✅ VietOCR completed: ${Object.keys(result.extractedData).length} fields extracted`);
+          console.log(`📊 Confidence: ${result.confidence}%, Method: ${result.processingMethod}`);
           
           return {
             success: true,
             extractedData: result.extractedData,
             confidence: result.confidence || 85,
             processingTime: Date.now() - startTime,
-            processingMethod: 'vietcard-ocr',
-            rawText: result.rawText
+            processingMethod: result.processingMethod || 'vietocr-qdrant',
+            rawText: result.rawText,
+            regions: result.regions
           };
         }
-      } catch (vietCardError: any) {
-        console.log(`⚠️ VietCardOCR not available: ${vietCardError.message}`);
+      } catch (vietOCRError: any) {
+        console.log(`⚠️ VietOCR not available: ${vietOCRError.message}`);
         console.log(`🔄 Falling back to enhanced Tesseract OCR for ID card processing`);
         
-        // Fallback to enhanced Tesseract OCR with ID card-specific processing
+        // Fallback to enhanced Tesseract OCR
         result = await this.processWithTesseractFallback(filePath);
       }
       
@@ -92,13 +108,33 @@ export class VietCardOCRProcessor {
         extractedData: {},
         confidence: 0,
         processingTime: Date.now() - startTime,
-        processingMethod: 'id-card-error',
+        processingMethod: 'vietocr-error',
         error: error.message
       };
     }
   }
 
-  private async callVietCardOCR(filePath: string): Promise<any> {
+  async searchSimilarDocuments(query: string, limit: number = 5): Promise<VectorSearchResult[]> {
+    try {
+      console.log(`🔍 Searching for similar documents: "${query}"`);
+      
+      const result = await this.callVietOCRSearch(query, limit);
+      
+      if (result.success) {
+        console.log(`✅ Found ${result.search_results.length} similar documents`);
+        return result.search_results;
+      } else {
+        console.warn('⚠️ Vector search failed:', result.error);
+        return [];
+      }
+      
+    } catch (error: any) {
+      console.error('❌ Vector search error:', error);
+      return [];
+    }
+  }
+
+  private async callVietOCRQdrant(filePath: string): Promise<any> {
     return new Promise((resolve, reject) => {
       const pythonProcess = spawn('python', [this.pythonScriptPath, filePath], {
         stdio: ['ignore', 'pipe', 'pipe']
@@ -121,21 +157,63 @@ export class VietCardOCRProcessor {
             const result = JSON.parse(stdout);
             resolve(result);
           } catch (parseError) {
-            reject(new Error(`Failed to parse VietCardOCR output: ${parseError.message}`));
+            reject(new Error(`Failed to parse VietOCR output: ${parseError.message}`));
           }
         } else {
-          reject(new Error(`VietCardOCR process failed with code ${code}: ${stderr}`));
+          reject(new Error(`VietOCR process failed with code ${code}: ${stderr}`));
         }
       });
 
       pythonProcess.on('error', (error) => {
-        reject(new Error(`Failed to start VietCardOCR process: ${error.message}`));
+        reject(new Error(`Failed to start VietOCR process: ${error.message}`));
+      });
+
+      // Set timeout (increased for VietOCR model loading)
+      setTimeout(() => {
+        pythonProcess.kill();
+        reject(new Error('VietOCR process timed out'));
+      }, 60000); // 60 seconds timeout
+    });
+  }
+
+  private async callVietOCRSearch(query: string, limit: number): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const pythonProcess = spawn('python', [this.pythonScriptPath, 'search', query], {
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      pythonProcess.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      pythonProcess.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      pythonProcess.on('close', (code) => {
+        if (code === 0) {
+          try {
+            const result = JSON.parse(stdout);
+            resolve(result);
+          } catch (parseError) {
+            reject(new Error(`Failed to parse search output: ${parseError.message}`));
+          }
+        } else {
+          reject(new Error(`Search process failed with code ${code}: ${stderr}`));
+        }
+      });
+
+      pythonProcess.on('error', (error) => {
+        reject(new Error(`Failed to start search process: ${error.message}`));
       });
 
       // Set timeout
       setTimeout(() => {
         pythonProcess.kill();
-        reject(new Error('VietCardOCR process timed out'));
+        reject(new Error('Search process timed out'));
       }, 30000); // 30 seconds timeout
     });
   }
@@ -154,7 +232,7 @@ export class VietCardOCRProcessor {
         return {
           success: true,
           extractedData,
-          confidence: Math.max(60, result.confidence || 70), // Ensure minimum confidence for ID cards
+          confidence: Math.max(60, result.confidence || 70),
           rawText: result.extractedText,
           processingMethod: 'enhanced-tesseract-fallback'
         };
@@ -183,17 +261,59 @@ export class VietCardOCRProcessor {
     const extractedData: any = {};
     const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
     
-    // Vietnamese ID card field patterns
+    // Enhanced Vietnamese ID card field patterns
     const patterns = {
-      id: [/số:\s*(\d+)/i, /id:\s*(\d+)/i, /cmnd:\s*(\d+)/i, /cccd:\s*(\d+)/i],
-      name: [/họ và tên:\s*(.+)/i, /name:\s*(.+)/i, /tên:\s*(.+)/i],
-      date_of_birth: [/ngày sinh:\s*(.+)/i, /date of birth:\s*(.+)/i, /sinh:\s*(.+)/i],
-      sex: [/giới tính:\s*(.+)/i, /sex:\s*(.+)/i, /giới:\s*(.+)/i],
-      nationality: [/quốc tịch:\s*(.+)/i, /nationality:\s*(.+)/i],
-      place_of_origin: [/quê quán:\s*(.+)/i, /place of origin:\s*(.+)/i, /quê:\s*(.+)/i],
-      place_of_residence: [/nơi thường trú:\s*(.+)/i, /place of residence:\s*(.+)/i, /thường trú:\s*(.+)/i],
-      date_of_issue: [/ngày cấp:\s*(.+)/i, /date of issue:\s*(.+)/i, /cấp:\s*(.+)/i],
-      date_of_expiry: [/có giá trị đến:\s*(.+)/i, /date of expiry:\s*(.+)/i, /giá trị:\s*(.+)/i]
+      id: [
+        /số:\s*(\d+)/i,
+        /id:\s*(\d+)/i, 
+        /cmnd:\s*(\d+)/i,
+        /cccd:\s*(\d+)/i,
+        /số cmnd:\s*(\d+)/i,
+        /số cccd:\s*(\d+)/i
+      ],
+      name: [
+        /họ và tên:\s*(.+)/i,
+        /họ tên:\s*(.+)/i,
+        /name:\s*(.+)/i,
+        /tên:\s*(.+)/i,
+        /full name:\s*(.+)/i
+      ],
+      date_of_birth: [
+        /ngày sinh:\s*(.+)/i,
+        /sinh:\s*(.+)/i,
+        /date of birth:\s*(.+)/i,
+        /dob:\s*(.+)/i
+      ],
+      sex: [
+        /giới tính:\s*(.+)/i,
+        /giới:\s*(.+)/i,
+        /sex:\s*(.+)/i,
+        /gender:\s*(.+)/i
+      ],
+      nationality: [
+        /quốc tịch:\s*(.+)/i,
+        /nationality:\s*(.+)/i
+      ],
+      place_of_origin: [
+        /quê quán:\s*(.+)/i,
+        /place of origin:\s*(.+)/i,
+        /quê:\s*(.+)/i
+      ],
+      place_of_residence: [
+        /nơi thường trú:\s*(.+)/i,
+        /place of residence:\s*(.+)/i,
+        /thường trú:\s*(.+)/i
+      ],
+      date_of_issue: [
+        /ngày cấp:\s*(.+)/i,
+        /date of issue:\s*(.+)/i,
+        /cấp:\s*(.+)/i
+      ],
+      date_of_expiry: [
+        /có giá trị đến:\s*(.+)/i,
+        /date of expiry:\s*(.+)/i,
+        /giá trị:\s*(.+)/i
+      ]
     };
     
     // Try to extract each field
@@ -222,7 +342,7 @@ export class VietCardOCRProcessor {
         }
       }
       
-      // Look for name patterns (Vietnamese names typically have 2-4 words)
+      // Look for name patterns
       for (const line of lines) {
         const words = line.split(/\s+/);
         if (words.length >= 2 && words.length <= 4 && /^[A-ZÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚÛÜ]/.test(line)) {
@@ -254,20 +374,26 @@ export class VietCardOCRProcessor {
       // Check if Python script exists
       await fs.access(this.pythonScriptPath);
       
-      // Test VietCardOCR availability
+      // Test VietOCR availability
       const testResult = await new Promise((resolve) => {
-        const testProcess = spawn('python', ['-c', 'import vietcardocr; print("OK")']);
+        const testProcess = spawn('python', ['-c', 'import vietocr; import qdrant_client; print("OK")']);
         testProcess.on('close', (code) => {
           resolve(code === 0);
         });
         testProcess.on('error', () => resolve(false));
+        
+        setTimeout(() => {
+          testProcess.kill();
+          resolve(false);
+        }, 10000);
       });
 
       return {
         status: testResult ? 'healthy' : 'unhealthy',
         details: {
           script_exists: true,
-          vietcardocr_available: testResult,
+          vietocr_available: testResult,
+          qdrant_available: testResult,
           python_available: true
         }
       };
@@ -277,7 +403,8 @@ export class VietCardOCRProcessor {
         status: 'unhealthy',
         details: {
           script_exists: false,
-          vietcardocr_available: false,
+          vietocr_available: false,
+          qdrant_available: false,
           python_available: false,
           error: error.message
         }
@@ -286,4 +413,4 @@ export class VietCardOCRProcessor {
   }
 }
 
-export const vietCardOCRProcessor = new VietCardOCRProcessor();
+export const vietOCRQdrantProcessor = new VietOCRQdrantProcessor();
