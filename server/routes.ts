@@ -3,7 +3,8 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import multer from "multer";
 import path from "path";
-import fs from "fs";
+import fs from "fs/promises";
+import * as fsSync from "fs";
 import { promisify } from "util";
 import { spawn } from "child_process";
 
@@ -77,8 +78,8 @@ async function convertPDFToImages(pdfPath: string, outputPattern: string): Promi
 const storage_config = multer.diskStorage({
   destination: (req, file, cb) => {
     const uploadsPath = path.join(process.cwd(), 'uploads');
-    if (!fs.existsSync(uploadsPath)) {
-      fs.mkdirSync(uploadsPath, { recursive: true });
+    if (!fsSync.existsSync(uploadsPath)) {
+      fsSync.mkdirSync(uploadsPath, { recursive: true });
     }
     cb(null, uploadsPath);
   },
@@ -111,8 +112,8 @@ const upload = multer({
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(process.cwd(), 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
+if (!fsSync.existsSync(uploadsDir)) {
+  fsSync.mkdirSync(uploadsDir, { recursive: true });
 }
 
 // Helper function to process file with DeepSeek API as primary workflow
@@ -728,14 +729,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const filePath = path.join(uploadsDir, document.filename);
 
-      if (!fs.existsSync(filePath)) {
+      if (!fsSync.existsSync(filePath)) {
         return res.status(404).json({ message: "File not found" });
       }
 
       res.setHeader('Content-Type', document.mimeType);
       res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
 
-      const fileStream = fs.createReadStream(filePath);
+      const fileStream = fsSync.createReadStream(filePath);
       fileStream.pipe(res);
     } catch (error) {
       console.error('Get raw document error:', error);
@@ -755,7 +756,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const filePath = path.join(process.cwd(), 'uploads', document.filename);
 
-      if (!fs.existsSync(filePath)) {
+      if (!fsSync.existsSync(filePath)) {
         return res.status(404).json({ message: "File not found" });
       }
 
