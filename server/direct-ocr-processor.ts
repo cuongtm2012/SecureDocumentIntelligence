@@ -60,16 +60,12 @@ export class DirectOCRProcessor {
       
       console.log(`📄 Processing ${pngFiles.length} pages with parallel Tesseract OCR...`);
       
-      // Process all pages in parallel with OpenCV preprocessing
+      // Process all pages in parallel for better performance
       const pagePromises = pngFiles.map(async (fileName, index) => {
         const imagePath = path.join(tempDir, fileName);
-        console.log(`🔍 Starting OpenCV preprocessing for page ${index + 1}/${pngFiles.length}...`);
+        console.log(`🔍 Starting page ${index + 1}/${pngFiles.length}...`);
         
-        // Apply comprehensive OpenCV preprocessing
-        const preprocessedPath = await this.applyOpenCVPreprocessing(imagePath);
-        
-        // Run Tesseract on preprocessed image
-        const pageResult = await this.processImageWithTesseract(preprocessedPath);
+        const pageResult = await this.processImageWithTesseract(imagePath);
         console.log(`✅ Completed page ${index + 1}/${pngFiles.length}`);
         
         return {
@@ -117,14 +113,14 @@ export class DirectOCRProcessor {
 
   private async convertPDFToImages(pdfPath: string, outputPattern: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      // Use ImageMagick convert to convert PDF to high-quality PNG for OpenCV preprocessing
+      // Use ImageMagick convert to convert PDF to PNG with ultra-fast settings
       const args = [
-        '-density', '200',      // Higher density for better preprocessing
-        '-quality', '100',      // High quality for preprocessing
-        '-colorspace', 'RGB',   // RGB for better preprocessing options
-        '-alpha', 'remove',     // Remove transparency
-        '-depth', '8',          // 8-bit depth
-        '-strip',               // Remove metadata
+        '-density', '150',  // Much lower density for speed (still good for OCR)
+        '-quality', '75',   // Lower quality for faster processing
+        '-colorspace', 'Gray',  // Convert to grayscale for faster OCR
+        '-compress', 'None',    // No compression for faster processing
+        '-depth', '8',      // 8-bit depth for faster processing
+        '-strip',           // Remove all metadata for faster processing
         pdfPath,
         outputPattern
       ];
@@ -157,25 +153,25 @@ export class DirectOCRProcessor {
 
   private async processImageWithTesseract(imagePath: string): Promise<{ text: string; confidence: number }> {
     return new Promise((resolve, reject) => {
-      // Set timeout for individual page processing
+      // Set timeout for individual page processing (15 seconds max for speed)
       const timeout = setTimeout(() => {
         console.warn(`⏰ Tesseract timeout for ${path.basename(imagePath)}`);
         process.kill();
         reject(new Error(`Tesseract timeout for ${path.basename(imagePath)}`));
-      }, 20000);
+      }, 15000);
 
-      // Optimized Tesseract settings for preprocessed images
+      // Use command-line Tesseract with ultra-fast settings
       const args = [
         imagePath,
         'stdout',
-        '-l', 'vie+eng',  // Vietnamese + English for better accuracy
-        '--psm', '6',     // Single uniform block of text
-        '--oem', '3',     // Use LSTM + legacy engine
+        '-l', 'vie',  // Use only Vietnamese for faster processing
+        '--psm', '6',  // PSM 6 for single uniform block - faster than PSM 3
         '-c', 'preserve_interword_spaces=1',
-        '-c', 'tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđĐÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸ .,;:!?()[]{}"\'-/\\@#$%^&*+=|`~<>',
-        '-c', 'tessedit_enable_dict_correction=1',  // Enable dictionary correction for better accuracy
-        '-c', 'textord_really_old_xheight=1',       // Better line detection
-        '-c', 'tessedit_pageseg_mode=6'            // Explicit PSM setting
+        '-c', 'tessedit_do_invert=0',  // Skip image inversion check
+        '-c', 'tessedit_pageseg_mode=6',  // Explicit PSM setting
+        '-c', 'load_system_dawg=0',      // Skip system dictionary for speed
+        '-c', 'load_freq_dawg=0',        // Skip frequency dictionary for speed
+        '-c', 'tessedit_enable_dict_correction=0'  // Skip dictionary correction for speed
       ];
       
       console.log(`🤖 Running: tesseract ${args.join(' ')}`);
@@ -219,112 +215,49 @@ export class DirectOCRProcessor {
   }
 
   async processImage(filePath: string, startTime: number): Promise<DirectOCRResult> {
-    console.log(`🔍 Processing image with OpenCV preprocessing + Tesseract: ${path.basename(filePath)}`);
+    console.log(`🔍 Processing image with Tesseract.js: ${path.basename(filePath)}`);
     
     try {
-      // Apply comprehensive OpenCV preprocessing
-      const preprocessedPath = await this.applyOpenCVPreprocessing(filePath);
+      // Create enhanced image buffer for better OCR
+      const processedImageBuffer = await sharp(filePath)
+        .resize(2000, null, { withoutEnlargement: true })
+        .greyscale()
+        .normalize()
+        .sharpen({ sigma: 1, m1: 0.5, m2: 2 })
+        .threshold(128)
+        .png({ quality: 100 })
+        .toBuffer();
+
+      // Initialize Tesseract worker with Vietnamese and English
+      const worker = await createWorker(['vie', 'eng'], 1, {
+        logger: m => console.log(`Tesseract: ${m.status} - ${m.progress}`)
+      });
       
-      // Use command-line Tesseract for better performance
-      const result = await this.processImageWithTesseract(preprocessedPath);
-      
-      // Clean up preprocessed file if it's different from original
-      if (preprocessedPath !== filePath) {
-        try {
-          await fs.unlink(preprocessedPath);
-        } catch (e) {
-          // Ignore cleanup errors
-        }
-      }
+      await worker.setParameters({
+        'preserve_interword_spaces': '1'
+      });
+
+      console.log('🤖 Running Tesseract OCR...');
+      const { data: { text, confidence } } = await worker.recognize(processedImageBuffer);
+      await worker.terminate();
 
       const processingTime = Date.now() - startTime;
       
-      if (result.text && result.text.trim()) {
-        console.log(`✅ OpenCV + Tesseract processing completed: ${result.confidence}% confidence`);
+      if (text && text.trim()) {
+        console.log(`✅ Tesseract OCR completed: ${confidence}% confidence`);
         return {
-          extractedText: this.cleanVietnameseText(result.text),
-          confidence: result.confidence,
+          extractedText: this.cleanVietnameseText(text),
+          confidence: confidence,
           pageCount: 1,
-          processingMethod: 'opencv-tesseract-direct',
+          processingMethod: 'tesseract-js',
           processingTime
         };
       } else {
         throw new Error('No text extracted from image');
       }
     } catch (error: any) {
-      console.error('OpenCV + Tesseract error:', error);
+      console.error('Tesseract.js error:', error);
       throw new Error(`Image OCR failed: ${error.message}`);
-    }
-  }
-
-  /**
-   * Apply comprehensive OpenCV preprocessing pipeline
-   */
-  private async applyOpenCVPreprocessing(imagePath: string): Promise<string> {
-    const preprocessedPath = imagePath.replace('.png', '_opencv_processed.png');
-    
-    try {
-      console.log(`🎨 Applying OpenCV preprocessing to ${path.basename(imagePath)}`);
-      
-      // Step 1: Convert to grayscale (reduce color noise)
-      const grayscalePath = imagePath.replace('.png', '_grayscale.png');
-      await sharp(imagePath)
-        .greyscale()
-        .png()
-        .toFile(grayscalePath);
-      
-      // Step 2: Increase contrast and normalize
-      const contrastPath = imagePath.replace('.png', '_contrast.png');
-      await sharp(grayscalePath)
-        .normalize() // Auto-adjust levels for better contrast
-        .linear(1.2, -(256 * 0.2)) // Additional contrast enhancement
-        .png()
-        .toFile(contrastPath);
-      
-      // Step 3: Remove noise with Gaussian blur then sharpen
-      const denoisedPath = imagePath.replace('.png', '_denoised.png');
-      await sharp(contrastPath)
-        .blur(0.5) // Light Gaussian blur to remove noise
-        .sharpen({ sigma: 1, m1: 0.5, m2: 2 }) // Sharpen to enhance text clarity
-        .png()
-        .toFile(denoisedPath);
-      
-      // Step 4: Resize for better OCR accuracy
-      const resizedPath = imagePath.replace('.png', '_resized.png');
-      await sharp(denoisedPath)
-        .resize({ 
-          width: 2000, 
-          height: 2000, 
-          fit: 'inside', 
-          withoutEnlargement: false 
-        })
-        .png()
-        .toFile(resizedPath);
-      
-      // Step 5: Final optimization - edge enhancement and binarization
-      await sharp(resizedPath)
-        .gamma(1.1) // Slight gamma correction
-        .threshold(200, { grayscale: false }) // Binary threshold for clean text
-        .png({ quality: 100, compressionLevel: 0 })
-        .toFile(preprocessedPath);
-      
-      // Clean up intermediate files
-      const tempFiles = [grayscalePath, contrastPath, denoisedPath, resizedPath];
-      for (const file of tempFiles) {
-        try {
-          await fs.unlink(file);
-        } catch (e) {
-          // Ignore cleanup errors
-        }
-      }
-      
-      console.log(`✅ OpenCV preprocessing completed: ${path.basename(preprocessedPath)}`);
-      return preprocessedPath;
-      
-    } catch (error: any) {
-      console.error('❌ OpenCV preprocessing failed:', error);
-      // Return original image if preprocessing fails
-      return imagePath;
     }
   }
 
