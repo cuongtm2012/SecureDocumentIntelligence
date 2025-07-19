@@ -25,7 +25,7 @@ import FormData from 'form-data';
 import axios from 'axios';
 import { directOCRProcessor } from './direct-ocr-processor.js';
 import { tesseractOCRProcessor } from './tesseract-ocr-processor.js';
-import { vietOCRQdrantProcessor } from './viet-card-ocr-processor';
+
 
 const writeFile = promisify(fs.writeFile);
 const readFile = promisify(fs.readFile);
@@ -907,101 +907,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-// VietOCR + Qdrant processing
-app.post('/api/ocr/process-id-card', upload.single('file'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        error: 'No file uploaded',
-        structuredData: {},
-        confidence: 0,
-        processingTime: 0,
-        fieldsExtracted: 0
-      });
-    }
 
-    console.log(`🇻🇳 VietOCR processing: ${req.file.originalname}`);
-
-    const result = await vietOCRQdrantProcessor.processIDCard(req.file.path);
-
-    // Clean up uploaded file
-    await fs.unlink(req.file.path).catch(() => {});
-
-    res.json({
-      success: result.success,
-      structuredData: result.extractedData,
-      confidence: result.confidence,
-      processingTime: result.processingTime,
-      processingMethod: result.processingMethod,
-      fieldsExtracted: Object.keys(result.extractedData).length,
-      regions: result.regions || [],
-      error: result.error
-    });
-
-  } catch (error: any) {
-    console.error('VietOCR processing error:', error);
-
-    if (req.file?.path) {
-      await fs.unlink(req.file.path).catch(() => {});
-    }
-
-    res.status(500).json({
-      success: false,
-      error: error.message,
-      structuredData: {},
-      confidence: 0,
-      processingTime: 0,
-      fieldsExtracted: 0
-    });
-  }
-});
-
-// Vector search endpoint
-app.post('/api/ocr/search-similar', async (req, res) => {
-  try {
-    const { query, limit = 5 } = req.body;
-
-    if (!query) {
-      return res.status(400).json({
-        success: false,
-        error: 'Search query is required'
-      });
-    }
-
-    console.log(`🔍 Vector search query: "${query}"`);
-
-    const results = await vietOCRQdrantProcessor.searchSimilarDocuments(query, limit);
-
-    res.json({
-      success: true,
-      query,
-      results,
-      count: results.length
-    });
-
-  } catch (error: any) {
-    console.error('Vector search error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-      results: []
-    });
-  }
-});
-
-// VietOCR health check
-app.get('/api/ocr/vietocr/health', async (req, res) => {
-  try {
-    const health = await vietOCRQdrantProcessor.healthCheck();
-    res.json(health);
-  } catch (error: any) {
-    res.status(500).json({
-      status: 'error',
-      error: error.message
-    });
-  }
-});
 
   const httpServer = createServer(app);
   return httpServer;
