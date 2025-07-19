@@ -31,8 +31,23 @@ def process_vietnamese_id_card(image_path):
     start_time = time.time()
     
     try:
-        # Import VietCardOCR
-        from vietcardocr import VietCardOCR
+        # Try different import methods for VietCardOCR
+        try:
+            from vietcardocr.vietcardocr import VietCardOCR
+            logger.info("VietCardOCR imported successfully (method 1)")
+        except ImportError:
+            try:
+                from vietcardocr import VietCardOCR
+                logger.info("VietCardOCR imported successfully (method 2)")
+            except ImportError:
+                try:
+                    import vietcardocr
+                    VietCardOCR = vietcardocr.VietCardOCR
+                    logger.info("VietCardOCR imported successfully (method 3)")
+                except (ImportError, AttributeError):
+                    # Fallback to simple OCR if VietCardOCR is not available
+                    logger.warning("VietCardOCR not available, using fallback OCR")
+                    return process_with_fallback_ocr(image_path, start_time)
         
         logger.info(f"Processing ID card: {image_path}")
         
@@ -53,48 +68,43 @@ def process_vietnamese_id_card(image_path):
             if isinstance(result, dict):
                 # Common ID card fields in Vietnamese
                 field_mapping = {
-                    'id': ['id', 'ID', 'Số', 'So'],
-                    'name': ['name', 'Name', 'Họ và tên', 'Ho va ten'],
-                    'date_of_birth': ['date_of_birth', 'dob', 'Ngày sinh', 'Ngay sinh'],
+                    'id': ['id', 'ID', 'Số', 'So', 'number', 'card_id'],
+                    'name': ['name', 'Name', 'Họ và tên', 'Ho va ten', 'full_name'],
+                    'date_of_birth': ['date_of_birth', 'dob', 'Ngày sinh', 'Ngay sinh', 'birth_date'],
                     'sex': ['sex', 'gender', 'Giới tính', 'Gioi tinh'],
                     'nationality': ['nationality', 'Quốc tịch', 'Quoc tich'],
-                    'place_of_origin': ['place_of_origin', 'Quê quán', 'Que quan'],
-                    'place_of_residence': ['place_of_residence', 'Nơi thường trú', 'Noi thuong tru'],
+                    'place_of_origin': ['place_of_origin', 'Quê quán', 'Que quan', 'hometown'],
+                    'place_of_residence': ['place_of_residence', 'Nơi thường trú', 'Noi thuong tru', 'address'],
                     'personal_identification': ['personal_identification', 'Đặc điểm nhận dạng', 'Dac diem nhan dang'],
-                    'date_of_issue': ['date_of_issue', 'Ngày cấp', 'Ngay cap'],
-                    'date_of_expiry': ['date_of_expiry', 'Có giá trị đến', 'Co gia tri den']
+                    'date_of_issue': ['date_of_issue', 'Ngày cấp', 'Ngay cap', 'issue_date'],
+                    'date_of_expiry': ['date_of_expiry', 'Có giá trị đến', 'Co gia tri den', 'expiry_date']
                 }
                 
                 # Extract data based on field mapping
                 for key, possible_keys in field_mapping.items():
                     for pkey in possible_keys:
                         if pkey in result:
-                            extracted_data[key] = result[pkey]
+                            extracted_data[key] = str(result[pkey]).strip()
                             break
                 
                 # Also include any other fields found
                 for key, value in result.items():
-                    if key not in extracted_data.values():
+                    if key not in [item for sublist in field_mapping.values() for item in sublist]:
                         raw_text += f"{key}: {value}\n"
             
             elif isinstance(result, str):
                 # If result is just text, parse it
                 raw_text = result
-                lines = result.split('\n')
-                
-                # Simple parsing for common patterns
-                for line in lines:
-                    line = line.strip()
-                    if 'Số:' in line or 'ID:' in line:
-                        extracted_data['id'] = line.split(':')[-1].strip()
-                    elif 'Họ và tên:' in line or 'Name:' in line:
-                        extracted_data['name'] = line.split(':')[-1].strip()
-                    elif 'Ngày sinh:' in line or 'Date of birth:' in line:
-                        extracted_data['date_of_birth'] = line.split(':')[-1].strip()
-                    elif 'Giới tính:' in line or 'Sex:' in line:
-                        extracted_data['sex'] = line.split(':')[-1].strip()
-                    elif 'Quốc tịch:' in line or 'Nationality:' in line:
-                        extracted_data['nationality'] = line.split(':')[-1].strip()
+                extracted_data = parse_text_for_id_fields(result)
+            
+            elif isinstance(result, list):
+                # If result is a list, try to extract from first item
+                if len(result) > 0:
+                    if isinstance(result[0], dict):
+                        extracted_data = result[0]
+                    else:
+                        raw_text = str(result[0])
+                        extracted_data = parse_text_for_id_fields(raw_text)
             
             # Calculate confidence based on number of fields extracted
             confidence = min(95, 60 + len(extracted_data) * 5)
@@ -117,25 +127,93 @@ def process_vietnamese_id_card(image_path):
                 "processingTime": processing_time
             }
             
-    except ImportError as e:
-        logger.error(f"VietCardOCR library not available: {e}")
-        return {
-            "success": False,
-            "error": f"VietCardOCR library not installed: {e}",
-            "extractedData": {},
-            "confidence": 0,
-            "processingTime": 0
-        }
-    
     except Exception as e:
         logger.error(f"VietCardOCR processing failed: {e}")
+        # Fallback to simple OCR
+        return process_with_fallback_ocr(image_path, start_time)
+
+def process_with_fallback_ocr(image_path, start_time):
+    """
+    Fallback OCR processing using pytesseract
+    """
+    try:
+        import pytesseract
+        from PIL import Image
+        
+        logger.info("Using fallback pytesseract OCR")
+        
+        # Open and process image
+        image = Image.open(image_path)
+        
+        # Extract text using Vietnamese language
+        text = pytesseract.image_to_string(image, lang='vie')
+        
+        # Parse for ID card fields
+        extracted_data = parse_text_for_id_fields(text)
+        
+        processing_time = time.time() - start_time
+        
+        return {
+            "success": True,
+            "extractedData": extracted_data,
+            "confidence": max(50, len(extracted_data) * 10),
+            "processingTime": processing_time,
+            "rawText": text,
+            "fieldsExtracted": len(extracted_data),
+            "processingMethod": "fallback-tesseract"
+        }
+        
+    except ImportError:
         return {
             "success": False,
-            "error": f"Processing failed: {e}",
+            "error": "Neither VietCardOCR nor pytesseract available",
             "extractedData": {},
             "confidence": 0,
             "processingTime": time.time() - start_time
         }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"Fallback OCR failed: {e}",
+            "extractedData": {},
+            "confidence": 0,
+            "processingTime": time.time() - start_time
+        }
+
+def parse_text_for_id_fields(text):
+    """
+    Parse text for Vietnamese ID card fields
+    """
+    extracted_data = {}
+    lines = text.split('\n')
+    
+    # Vietnamese ID card field patterns
+    patterns = {
+        'id': [r'số:\s*(\d+)', r'id:\s*(\d+)', r'cmnd:\s*(\d+)', r'cccd:\s*(\d+)', r'(\d{9,12})'],
+        'name': [r'họ và tên:\s*(.+)', r'name:\s*(.+)', r'tên:\s*(.+)'],
+        'date_of_birth': [r'ngày sinh:\s*(.+)', r'date of birth:\s*(.+)', r'sinh:\s*(.+)'],
+        'sex': [r'giới tính:\s*(.+)', r'sex:\s*(.+)', r'giới:\s*(.+)'],
+        'nationality': [r'quốc tịch:\s*(.+)', r'nationality:\s*(.+)'],
+        'place_of_origin': [r'quê quán:\s*(.+)', r'place of origin:\s*(.+)', r'quê:\s*(.+)'],
+        'place_of_residence': [r'nơi thường trú:\s*(.+)', r'place of residence:\s*(.+)', r'thường trú:\s*(.+)'],
+        'date_of_issue': [r'ngày cấp:\s*(.+)', r'date of issue:\s*(.+)', r'cấp:\s*(.+)'],
+        'date_of_expiry': [r'có giá trị đến:\s*(.+)', r'date of expiry:\s*(.+)', r'giá trị:\s*(.+)']
+    }
+    
+    import re
+    
+    # Try to extract each field
+    for field_name, field_patterns in patterns.items():
+        for pattern in field_patterns:
+            for line in lines:
+                match = re.search(pattern, line, re.IGNORECASE)
+                if match and match.group(1) and match.group(1).strip():
+                    extracted_data[field_name] = match.group(1).strip()
+                    break
+            if field_name in extracted_data:
+                break
+    
+    return extracted_data
 
 def main():
     """Main function to process command line arguments"""
