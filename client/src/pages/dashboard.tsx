@@ -5,7 +5,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useLanguage } from "@/hooks/use-language";
 import type { Document } from "@shared/schema";
 import { useState } from 'react';
-import { VietnameseIDCardProcessor } from '../components/vietnamese-id-card-processor';
 
 export default function Dashboard() {
   const { t } = useLanguage();
@@ -15,8 +14,6 @@ export default function Dashboard() {
   const { data: user } = useQuery({
     queryKey: ["/api/user"], 
   }) as { data: { name: string; clearanceLevel: string } | undefined };
-  const [activeTab, setActiveTab] = useState('general');
-
   return (
     <div className="min-h-screen bg-gray-50">
       <HeaderNavigation user={user} />
@@ -26,32 +23,9 @@ export default function Dashboard() {
           {/* Advanced OCR Dashboard */}
           <div className="mb-6">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">OCR Processing Dashboard</h1>
-          <div className="flex gap-4">
-            <button
-              onClick={() => setActiveTab('general')}
-              className={`px-4 py-2 rounded-lg ${
-                activeTab === 'general' 
-                  ? 'bg-blue-500 text-white' 
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              General OCR
-            </button>
-            <button
-              onClick={() => setActiveTab('idcard')}
-              className={`px-4 py-2 rounded-lg ${
-                activeTab === 'idcard' 
-                  ? 'bg-blue-500 text-white' 
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              Vietnamese ID Card
-            </button>
-          </div>
         </div>
 
-        {activeTab === 'general' && <AdvancedOCRDashboard />}
-        {activeTab === 'idcard' && <VietnameseIDCardProcessor />}
+        <AdvancedOCRDashboard />
       </main>
 
       <footer className="bg-gray-800 text-gray-300 py-6 mt-12">
