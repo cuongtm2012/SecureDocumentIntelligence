@@ -91,7 +91,7 @@ export function OptimizedPDFOCRViewer({
               <X className="h-4 w-4" />
             </Button>
           </div>
-          
+
           <div className="flex items-start gap-3 mb-4">
             <AlertTriangle className="h-5 w-5 text-red-500 mt-0.5" />
             <div>
@@ -106,7 +106,7 @@ export function OptimizedPDFOCRViewer({
               </div>
             </div>
           </div>
-          
+
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={onClose}>
               Close
@@ -134,18 +134,18 @@ export function OptimizedPDFOCRViewer({
               )}
               <h2 className="text-lg font-semibold">{file.name}</h2>
             </div>
-            
+
             <div className="flex items-center gap-2">
               <Badge variant="outline">
                 {Math.round(confidence * 100)}% confidence
               </Badge>
-              
+
               {file.type === 'pdf' && totalPages > 1 && (
                 <Badge variant="secondary">
                   Page {currentPage} of {totalPages}
                 </Badge>
               )}
-              
+
               <Badge variant="outline" className="text-xs">
                 Doc ID: {documentId}
               </Badge>
@@ -218,7 +218,7 @@ export function OptimizedPDFOCRViewer({
               <span>{extractedText.split(/\s+/).filter(w => w.length > 0).length.toLocaleString()} words</span>
               <span>File size: {(file.size / 1024 / 1024).toFixed(2)} MB</span>
             </div>
-            
+
             <div className="text-xs">
               {file.type === 'pdf' ? 'PDF Document' : 'Image Document'} • 
               {confidence > 0.8 ? ' High Quality' : confidence > 0.6 ? ' Good Quality' : ' Review Required'}
