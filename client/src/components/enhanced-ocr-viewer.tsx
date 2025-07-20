@@ -124,6 +124,18 @@ export function EnhancedOCRViewer({
     }
   };
 
+  const handlePrevPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(prev => prev - 1);
+    }
+  };
+
+  const handleNextPage = () => {
+    if (currentPage < (result.pageCount || 1)) {
+      setCurrentPage(prev => prev + 1);
+    }
+  };
+
   const highlightLowConfidenceWords = (text: string) => {
     if (!showHighlights || !result.lowConfidenceWords) return text;
 
@@ -215,7 +227,7 @@ export function EnhancedOCRViewer({
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => handlePageChange(currentPage - 1)}
+                    onClick={handlePrevPage}
                     disabled={currentPage === 1}
                   >
                     <ChevronLeft className="h-4 w-4" />
@@ -226,7 +238,7 @@ export function EnhancedOCRViewer({
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => handlePageChange(currentPage + 1)}
+                    onClick={handleNextPage}
                     disabled={currentPage === result.pageCount}
                   >
                     <ChevronRight className="h-4 w-4" />
@@ -269,7 +281,8 @@ export function EnhancedOCRViewer({
                 className="relative inline-block"
                 style={{
                   transform: `scale(${zoom / 100}) rotate(${rotation}deg)`,
-                  transformOrigin: 'center'
+                  transformOrigin: 'center',
+                  transition: 'transform 0.2s ease-in-out'
                 }}
               >
                 <img
