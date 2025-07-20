@@ -809,7 +809,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // For PDF files, generate page images using ImageMagick
       const tempDir = `/tmp/pdf_pages_${documentId}_${Date.now()}`;
-      await fs.promises.mkdir(tempDir, { recursive: true });
+      await fs.mkdir(tempDir, { recursive: true });
 
       try {
         // Convert PDF pages to images
@@ -818,7 +818,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await convertPDFToImages(filePath, outputPattern);
 
         // Get generated page images
-        const pageFiles = await fs.promises.readdir(tempDir);
+        const pageFiles = await fs.readdir(tempDir);
         const pngFiles = pageFiles.filter(f => f.endsWith('.png')).sort();
 
         if (pngFiles.length === 0) {
@@ -827,18 +827,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // Copy pages to public directory for serving
         const publicPagesDir = path.join(process.cwd(), 'client', 'public', 'pages', documentId.toString());
-        await fs.promises.mkdir(publicPagesDir, { recursive: true });
+        await fs.mkdir(publicPagesDir, { recursive: true });
 
         const imageUrls = [];
         for (let i = 0; i < pngFiles.length; i++) {
           const sourcePath = path.join(tempDir, pngFiles[i]);
           const destPath = path.join(publicPagesDir, `page-${i + 1}.png`);
-          await fs.promises.copyFile(sourcePath, destPath);
+          await fs.copyFile(sourcePath, destPath);
           imageUrls.push(`/pages/${documentId}/page-${i + 1}.png`);
         }
 
         // Clean up temporary directory
-        await fs.promises.rm(tempDir, { recursive: true, force: true });
+        await fs.rm(tempDir, { recursive: true, force: true });
 
         res.json({
           success: true,
@@ -851,7 +851,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.warn('PDF page generation failed, falling back to direct PDF:', conversionError);
 
         // Clean up on error
-        await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+        await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
 
         // Fallback to direct PDF display
         const pdfUrl = `/api/documents/${documentId}/raw?t=${Date.now()}`;
