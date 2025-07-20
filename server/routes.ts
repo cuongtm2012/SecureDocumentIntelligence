@@ -333,6 +333,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const userId = 1; // Default user ID
 
+      // Check for duplicate files
+      const existingDocument = await storage.findDuplicateDocument(
+        req.file.originalname,
+        req.file.size,
+        req.file.mimetype,
+        userId
+      );
+
+      if (existingDocument) {
+        // Delete the uploaded file since we found a duplicate
+        try {
+          await fs.unlink(req.file.path);
+        } catch (unlinkError) {
+          console.warn('Failed to delete duplicate file:', unlinkError);
+        }
+
+        // Log duplicate detection
+        await storage.createAuditLog({
+          userId,
+          action: `Duplicate file detected: ${req.file.originalname} (${req.file.size} bytes) - using existing document`,
+          documentId: existingDocument.id,
+          ipAddress: req.ip,
+          userAgent: req.get('User-Agent'),
+        });
+
+        console.log(`📋 Duplicate file detected: ${req.file.originalname} - using existing document ${existingDocument.id}`);
+        
+        return res.json({
+          ...existingDocument,
+          isDuplicate: true,
+          message: `File already exists on server. Using existing document from ${existingDocument.uploadedAt}.`
+        });
+      }
+
       const documentData = {
         filename: req.file.filename,
         originalName: req.file.originalname,

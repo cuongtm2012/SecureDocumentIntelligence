@@ -97,12 +97,29 @@ export function AdvancedOCRDashboard() {
       
       return Promise.all(promises);
     },
-    onSuccess: () => {
+    onSuccess: (results) => {
       queryClient.invalidateQueries({ queryKey: ['documents'] });
-      toast({
-        title: "Upload successful",
-        description: "Files uploaded and ready for processing.",
-      });
+      
+      const duplicateFiles = results.filter((r: any) => r.isDuplicate);
+      const newFiles = results.filter((r: any) => !r.isDuplicate);
+      
+      if (duplicateFiles.length > 0 && newFiles.length > 0) {
+        toast({
+          title: "Upload completed",
+          description: `${newFiles.length} new file(s) uploaded. ${duplicateFiles.length} duplicate(s) detected and existing files were used.`,
+        });
+      } else if (duplicateFiles.length > 0) {
+        toast({
+          title: "Duplicates detected",
+          description: `${duplicateFiles.length} file(s) already exist on server. Using existing documents for analysis.`,
+          variant: "default",
+        });
+      } else {
+        toast({
+          title: "Upload successful",
+          description: "Files uploaded and ready for processing.",
+        });
+      }
     },
     onError: (error) => {
       toast({

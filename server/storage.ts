@@ -1,6 +1,6 @@
 import { users, documents, auditLogs, type User, type InsertUser, type Document, type InsertDocument, type AuditLog, type InsertAuditLog } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 
 export interface IStorage {
   // User methods
@@ -20,6 +20,9 @@ export interface IStorage {
   createAuditLog(auditLog: InsertAuditLog): Promise<AuditLog>;
   getAuditLogsByUserId(userId: number): Promise<AuditLog[]>;
   getRecentAuditLogs(limit?: number): Promise<AuditLog[]>;
+
+  // Duplicate detection
+  findDuplicateDocument(originalName: string, fileSize: number, mimeType: string, userId: number): Promise<Document | undefined>;
 }
 
 export class MemStorage implements IStorage {
@@ -140,6 +143,19 @@ export class MemStorage implements IStorage {
       .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
       .slice(0, limit);
   }
+
+  async findDuplicateDocument(originalName: string, fileSize: number, mimeType: string, userId: number): Promise<Document | undefined> {
+    const documents = Array.from(this.documents.values())
+      .filter(doc => 
+        doc.originalName === originalName &&
+        doc.fileSize === fileSize &&
+        doc.mimeType === mimeType &&
+        doc.userId === userId
+      )
+      .sort((a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime());
+    
+    return documents[0] || undefined;
+  }
 }
 
 // Database storage implementation
@@ -216,6 +232,21 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(auditLogs)
       .orderBy(desc(auditLogs.timestamp))
       .limit(limit);
+  }
+
+  async findDuplicateDocument(originalName: string, fileSize: number, mimeType: string, userId: number): Promise<Document | undefined> {
+    const [document] = await db.select().from(documents)
+      .where(
+        and(
+          eq(documents.originalName, originalName),
+          eq(documents.fileSize, fileSize),
+          eq(documents.mimeType, mimeType),
+          eq(documents.userId, userId)
+        )
+      )
+      .orderBy(desc(documents.uploadedAt))
+      .limit(1);
+    return document || undefined;
   }
 }
 
