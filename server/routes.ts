@@ -24,8 +24,8 @@ import { z } from "zod";
 import { initializeDatabase } from "./init-db";
 import FormData from 'form-data';
 import axios from 'axios';
+import { abbyyOCRProcessor } from './abbyy-ocr-processor.js';
 import { directOCRProcessor } from './direct-ocr-processor.js';
-import { tesseractOCRProcessor } from './tesseract-ocr-processor.js';
 
 
 const writeFile = promisify(fs.writeFile);
@@ -133,26 +133,30 @@ async function processFileWithFallback(filePath: string, document: any, document
     console.log('🤖 Starting DeepSeek API document processing...');
 
     try {
-      // Choose OCR processor with fallback chain
+      // Choose OCR processor with ABBYY as primary
       let ocrResult;
       try {
-        if (isReceiptDocument) {
-          console.log('🧾 Using optimized Vietnamese receipt OCR processor...');
-          ocrResult = await vietnameseReceiptOCRProcessor.processDocument(filePath);
-        } else {
-          console.log('📄 Using direct OCR processor for better reliability...');
-          ocrResult = await directOCRProcessor.processDocument(filePath);
-        }
+        console.log('📄 Using ABBYY FineReader for superior OCR quality...');
+        ocrResult = await abbyyOCRProcessor.processDocument(filePath);
         
         // Validate OCR result quality
         if (!ocrResult.extractedText || ocrResult.extractedText.length < 10) {
-          console.warn('⚠️ Primary OCR yielded minimal text, trying fallback processor...');
+          console.warn('⚠️ ABBYY OCR yielded minimal text, trying fallback processor...');
           
-          // Fallback to alternative processor
-          const fallbackResult = await simpleTesseractProcessor.processDocument(filePath);
-          if (fallbackResult.extractedText && fallbackResult.extractedText.length > ocrResult.extractedText.length) {
-            console.log('✅ Fallback processor provided better results');
-            ocrResult = fallbackResult;
+          // Fallback to Tesseract-based processors
+          if (isReceiptDocument) {
+            console.log('🧾 Fallback: Using Vietnamese receipt OCR processor...');
+            const fallbackResult = await vietnameseReceiptOCRProcessor.processDocument(filePath);
+            if (fallbackResult.extractedText && fallbackResult.extractedText.length > ocrResult.extractedText.length) {
+              console.log('✅ Fallback processor provided better results');
+              ocrResult = fallbackResult;
+            }
+          } else {
+            const fallbackResult = await directOCRProcessor.processDocument(filePath);
+            if (fallbackResult.extractedText && fallbackResult.extractedText.length > ocrResult.extractedText.length) {
+              console.log('✅ Fallback processor provided better results');
+              ocrResult = fallbackResult;
+            }
           }
         }
         
@@ -161,11 +165,18 @@ async function processFileWithFallback(filePath: string, document: any, document
         console.log('🔄 Attempting fallback OCR processing...');
         
         try {
-          ocrResult = await simpleTesseractProcessor.processDocument(filePath);
-          console.log('✅ Fallback OCR processor succeeded');
-        } catch (fallbackError) {
-          console.error('❌ Fallback OCR processor also failed:', fallbackError);
-          throw new Error(`All OCR processors failed. Primary: ${primaryError.message}, Fallback: ${fallbackError.message}`);
+          console.log('🔄 Attempting ABBYY fallback OCR processing...');
+          ocrResult = await abbyyOCRProcessor.processDocument(filePath);
+          console.log('✅ ABBYY fallback OCR processor succeeded');
+        } catch (abbyyFallbackError) {
+          console.warn('⚠️ ABBYY fallback also failed, trying Tesseract...');
+          try {
+            ocrResult = await simpleTesseractProcessor.processDocument(filePath);
+            console.log('✅ Tesseract fallback processor succeeded');
+          } catch (tesseractError) {
+            console.error('❌ All OCR processors failed');
+            throw new Error(`All OCR processors failed. ABBYY: ${primaryError.message}, Tesseract: ${tesseractError.message}`);
+          }
         }
       }
 
@@ -189,9 +200,9 @@ async function processFileWithFallback(filePath: string, document: any, document
           confidence_threshold: 60.0,
           processing_timestamp: new Date(),
           file_size_bytes: document.fileSize,
-          processing_mode: 'paddleocr-deepseek',
+          processing_mode: 'abbyy-finereader-deepseek',
           deepseek_analysis: deepseekAnalysis,
-          note: 'Processed with PaddleOCR + DeepSeek API for optimal Vietnamese text extraction'
+          note: 'Processed with ABBYY FineReader + DeepSeek API for superior Vietnamese text extraction'
         }
       };
 
@@ -877,6 +888,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({
         success: false,
         error: "Failed to get training guide"
+      });
+    }
+  });
+
+  // ABBYY OCR health check endpoint
+  app.get("/api/ocr/abbyy/health", async (req, res) => {
+    try {
+      const healthResult = await abbyyOCRProcessor.healthCheck();
+      
+      res.json({
+        success: true,
+        ...healthResult
+      });
+
+    } catch (error) {
+      console.error('ABBYY health check error:', error);
+      res.status(500).json({
+        success: false,
+        error: "ABBYY health check failed",
+        details: error instanceof Error ? error.message : 'Unknown error'
       });
     }
   });

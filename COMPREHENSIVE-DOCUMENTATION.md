@@ -36,7 +36,7 @@ This is a sophisticated OCR (Optical Character Recognition) document processing 
 ## Features
 
 - 🔐 **Security-focused**: Multi-level clearance system with audit logging
-- 🇻🇳 **Vietnamese OCR**: Advanced Vietnamese text recognition using Tesseract.js and DeepSeek AI
+- 🇻🇳 **Vietnamese OCR**: Superior Vietnamese text recognition using ABBYY FineReader Engine and DeepSeek AI
 - 📄 **Multi-format support**: Images (JPG, PNG) and PDF documents
 - 🤖 **AI-powered**: DeepSeek integration for enhanced text extraction and analysis
 - 📊 **Real-time processing**: Live status updates and progress tracking
@@ -49,7 +49,7 @@ This is a sophisticated OCR (Optical Character Recognition) document processing 
 - **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, Radix UI
 - **Backend**: Node.js, Express, TypeScript
 - **Database**: PostgreSQL with Drizzle ORM
-- **OCR**: Tesseract.js, DeepSeek AI API
+- **OCR**: ABBYY FineReader Engine, Tesseract.js (fallback), DeepSeek AI API
 - **File Processing**: Sharp, PDF parsing, Multer
 
 ## Version History
