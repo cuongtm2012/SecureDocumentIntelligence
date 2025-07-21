@@ -59,26 +59,46 @@ export class SimpleTesseractProcessor {
         throw new Error('No pages extracted from PDF');
       }
       
-      // Process each page with simple approach
+      // Process pages in parallel with batches of 2
+      console.log(`🚀 Processing ${pageFiles.length} pages with parallel processing (max 2 concurrent)`);
+      
+      const batchSize = 2;
       const allTexts: string[] = [];
       let totalConfidence = 0;
       let successfulPages = 0;
       
-      for (let i = 0; i < pageFiles.length; i++) {
-        try {
-          console.log(`🔍 Processing page ${i + 1}/${pageFiles.length}...`);
-          const result = await this.processImageSimple(pageFiles[i]);
+      // Process in batches
+      for (let i = 0; i < pageFiles.length; i += batchSize) {
+        const batch = pageFiles.slice(i, i + batchSize);
+        
+        const batchPromises = batch.map(async (pageFile, batchIndex) => {
+          const pageNum = i + batchIndex + 1;
+          console.log(`🔍 Processing page ${pageNum}/${pageFiles.length}...`);
           
-          if (result.text && result.text.trim().length > 0) {
+          try {
+            const result = await this.processImageSimple(pageFile);
+            console.log(`✅ Page ${pageNum}/${pageFiles.length} completed - ${result.text.length} chars, ${result.confidence}% confidence`);
+            return {
+              text: result.text,
+              confidence: result.confidence,
+              pageNum
+            };
+          } catch (error) {
+            console.log(`❌ Page ${pageNum}/${pageFiles.length} failed: ${error}`);
+            return null;
+          }
+        });
+        
+        const batchResults = await Promise.all(batchPromises);
+        
+        // Process results from this batch
+        for (const result of batchResults) {
+          if (result && result.text && result.text.trim().length > 0) {
             allTexts.push(result.text);
             totalConfidence += result.confidence;
             successfulPages++;
+            console.log(`📝 Added page ${result.pageNum} text: ${result.text.substring(0, 100)}... (${result.text.length} chars)`);
           }
-          
-          console.log(`✅ Page ${i + 1}/${pageFiles.length} completed`);
-        } catch (error) {
-          console.log(`❌ Page ${i + 1}/${pageFiles.length} failed: ${error}`);
-          // Continue with other pages
         }
       }
       
@@ -222,11 +242,31 @@ export class SimpleTesseractProcessor {
         process.on('close', (code: number) => {
           const text = stdout.trim();
           
-          if (code === 0 && text.length > bestResult.text.length) {
-            bestResult = {
-              text: text,
-              confidence: Math.min(90, 60 + text.length)
-            };
+          console.log(`🔍 OCR attempt ${attemptIndex-1} (${attempt.lang}, PSM ${attempt.psm}): Code ${code}, Text length ${text.length}`);
+          
+          if (code === 0) {
+            // Calculate confidence based on text length and quality indicators
+            let confidence = 50; // Base confidence
+            
+            if (text.length > 100) confidence += 20;
+            if (text.length > 500) confidence += 10;
+            if (text.length > 1000) confidence += 10;
+            
+            // Bonus for Vietnamese diacritics (indicates good Vietnamese OCR)
+            const vietnameseChars = (text.match(/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/g) || []).length;
+            if (vietnameseChars > 0) confidence += Math.min(10, vietnameseChars / 10);
+            
+            const finalConfidence = Math.min(95, Math.max(50, confidence));
+            
+            if (text.length > bestResult.text.length) {
+              console.log(`✅ Better result found: ${text.length} chars, ${finalConfidence}% confidence`);
+              bestResult = {
+                text: text,
+                confidence: finalConfidence
+              };
+            }
+          } else {
+            console.log(`❌ OCR failed with code ${code}: ${stderr.trim()}`);
           }
           
           // Try next attempt

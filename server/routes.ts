@@ -14,6 +14,7 @@ import { vietnameseTextCleaner } from "./vietnamese-text-cleaner";
 import { enhancedVietnameseOCR } from "./enhanced-vietnamese-ocr";
 import { pdfProcessor } from "./pdf-processor";
 import { simpleTesseractProcessor } from "./simple-tesseract-processor";
+import { simplePDFOCRProcessor } from "./simple-pdf-ocr";
 import { vietnameseReceiptOCRProcessor } from "./vietnamese-receipt-ocr-processor";
 import { enhancedTesseractProcessor } from "./enhanced-tesseract-processor";
 import { trainingPipeline } from "./training-pipeline";
@@ -138,8 +139,8 @@ async function processFileWithFallback(filePath: string, document: any, document
         console.log('🧾 Using optimized Vietnamese receipt OCR processor...');
         ocrResult = await vietnameseReceiptOCRProcessor.processDocument(filePath);
       } else {
-        console.log('📄 Using standard Vietnamese OCR processor...');
-        ocrResult = await simpleTesseractProcessor.processDocument(filePath);
+        console.log('📄 Using simple PDF OCR processor...');
+        ocrResult = await simplePDFOCRProcessor.processDocument(filePath);
       }
 
       // Then enhance with DeepSeek analysis for Vietnamese text improvement
