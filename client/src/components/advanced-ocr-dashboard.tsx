@@ -394,8 +394,8 @@ export function AdvancedOCRDashboard() {
       (doc.originalName || doc.filename || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (doc.extractedText || '').toLowerCase().includes(searchQuery.toLowerCase());
 
-    // Date filter - use more robust date comparison
-    const docDate = new Date(doc.uploadedAt || doc.processedAt || doc.createdAt);
+    // Date filter - use processing date (when OCR was completed) instead of upload date
+    const docDate = new Date(doc.processedAt || doc.uploadedAt || doc.createdAt);
     const now = new Date();
     let dateMatch = true;
 
@@ -743,7 +743,7 @@ export function AdvancedOCRDashboard() {
                 searchQuery,
                 dateFilter,
                 recentDocuments: documents?.slice(0, 10).map((doc: any) => {
-                  const docDate = new Date(doc.uploadedAt || doc.processedAt || doc.createdAt);
+                  const docDate = new Date(doc.processedAt || doc.uploadedAt || doc.createdAt);
                   const now = new Date();
                   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
                   const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
@@ -752,7 +752,7 @@ export function AdvancedOCRDashboard() {
                     name: doc.originalName || doc.filename,
                     uploadedAt: doc.uploadedAt,
                     processedAt: doc.processedAt,
-                    docDateParsed: docDate.toISOString(),
+                    docDateUsedForFilter: docDate.toISOString(),
                     todayStart: todayStart.toISOString(),
                     todayEnd: todayEnd.toISOString(),
                     isToday: docDate >= todayStart && docDate < todayEnd,
@@ -898,13 +898,18 @@ export function AdvancedOCRDashboard() {
 
                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4 text-sm text-gray-600 mb-4">
                             <div>
-                              <span className="font-medium">Uploaded:</span>
-                              <div>{new Date(doc.uploadedAt).toLocaleDateString()}</div>
+                              <span className="font-medium">Processed:</span>
+                              <div>
+                                {doc.processedAt 
+                                  ? new Date(doc.processedAt).toLocaleDateString()
+                                  : new Date(doc.uploadedAt).toLocaleDateString()
+                                }
+                              </div>
                             </div>
                             {doc.processedAt && (
                               <div>
-                                <span className="font-medium">Processed:</span>
-                                <div>{new Date(doc.processedAt).toLocaleDateString()}</div>
+                                <span className="font-medium">Process Time:</span>
+                                <div>{new Date(doc.processedAt).toLocaleTimeString()}</div>
                               </div>
                             )}
                             <div>
