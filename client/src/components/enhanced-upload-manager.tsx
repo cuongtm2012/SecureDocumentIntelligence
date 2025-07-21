@@ -70,32 +70,32 @@ export function EnhancedUploadManager({
       console.log('Already processing files, ignoring drop');
       return;
     }
-    
+
     setIsProcessing(true);
-    
+
     // Filter files by type and size requirements
     const validFiles = acceptedFiles.filter(file => {
       const isValidType = getAcceptedTypes().includes(file.type);
       const isValidSize = file.size <= maxFileSize;
-      
+
       if (!isValidType) {
         console.warn(`File ${file.name} has unsupported type: ${file.type}`);
         return false;
       }
-      
+
       if (!isValidSize) {
         console.warn(`File ${file.name} exceeds size limit: ${file.size} bytes`);
         return false;
       }
-      
+
       return true;
     });
-    
+
     if (validFiles.length > 0) {
       console.log(`Processing ${validFiles.length} new files for upload`);
       onFileUpload(validFiles);
     }
-    
+
     // Reset processing flag after upload
     setTimeout(() => setIsProcessing(false), 1500);
   }, [activeTab, maxFileSize, onFileUpload, uploadedFiles, isProcessing]);
@@ -167,7 +167,7 @@ export function EnhancedUploadManager({
                 )}
               >
                 <input {...getInputProps()} />
-                
+
                 <div className="space-y-4">
                   <div className="mx-auto w-12 h-12 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center">
                     {activeTab === 'images' ? (
@@ -176,7 +176,7 @@ export function EnhancedUploadManager({
                       <FileText className="h-6 w-6 text-blue-600" />
                     )}
                   </div>
-                  
+
                   <div>
                     <p className="text-lg font-medium">
                       {isDragActive 
@@ -189,7 +189,7 @@ export function EnhancedUploadManager({
                     </p>
                   </div>
                     <div className="flex gap-2">
-                    
+
                     {onBatchUpload && (
                       <Button 
                         onClick={() => onBatchUpload(uploadedFiles.map(f => f.file))}
@@ -200,7 +200,7 @@ export function EnhancedUploadManager({
                       </Button>
                     )}
                   </div>
-                  
+
                   <p className="text-xs text-gray-400">
                     Max file size: {Math.round(maxFileSize / 1024 / 1024)}MB
                   </p>
@@ -246,12 +246,12 @@ export function EnhancedUploadManager({
                         </p>
                       </div>
                     </div>
-                    
+
                     <div className="flex items-center gap-2">
                       <Badge variant="outline">
                         {getStatusText(file.status)}
                       </Badge>
-                      
+
                       {file.status === 'queued' && (
                         <Button
                           size="sm"
@@ -261,7 +261,7 @@ export function EnhancedUploadManager({
                           <Play className="h-4 w-4" />
                         </Button>
                       )}
-                      
+
                       {(file.status === 'uploading' || file.status === 'processing') && (
                         <Button
                           size="sm"
@@ -271,7 +271,7 @@ export function EnhancedUploadManager({
                           <Pause className="h-4 w-4" />
                         </Button>
                       )}
-                      
+
                       {file.status === 'error' && (
                         <Button
                           size="sm"
@@ -281,7 +281,7 @@ export function EnhancedUploadManager({
                           <RotateCcw className="h-4 w-4" />
                         </Button>
                       )}
-                      
+
                       <Button
                         size="sm"
                         onClick={() => onFileRemove(file.id)}
@@ -291,7 +291,7 @@ export function EnhancedUploadManager({
                       </Button>
                     </div>
                   </div>
-                  
+
                   {/* Progress Bars */}
                   {file.status === 'uploading' && (
                     <div className="space-y-2">
@@ -302,7 +302,7 @@ export function EnhancedUploadManager({
                       <Progress value={file.uploadProgress} />
                     </div>
                   )}
-                  
+
                   {file.status === 'processing' && (
                     <div className="space-y-2">
                       <div className="flex justify-between text-sm">
@@ -365,7 +365,7 @@ export function EnhancedUploadManager({
                           <p className="text-gray-500">Pages</p>
                         </div>
                       </div>
-                      
+
                       <div className="mt-3 pt-2 border-t border-green-200 dark:border-green-700">
                         <p className="text-xs text-green-700 dark:text-green-300 line-clamp-2">
                           <strong>Preview:</strong> {file.result.extractedText.substring(0, 120)}
@@ -374,7 +374,7 @@ export function EnhancedUploadManager({
                       </div>
                     </div>
                   )}
-                  
+
                   {/* Error Message */}
                   {file.status === 'error' && file.error && (
                     <div className="bg-red-50 dark:bg-red-950 p-3 rounded-md">

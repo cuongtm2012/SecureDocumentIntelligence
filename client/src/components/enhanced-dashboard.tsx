@@ -14,7 +14,7 @@ export function EnhancedDashboard() {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
 
-  
+
   const { data: documents = [], isLoading: documentsLoading } = useQuery({
     queryKey: ['/api/documents'],
     refetchInterval: 5000,
@@ -42,10 +42,10 @@ export function EnhancedDashboard() {
       failed: { variant: "destructive" as const, className: "bg-red-100 text-red-800", icon: AlertCircle },
       pending: { variant: "outline" as const, className: "bg-gray-100 text-gray-800", icon: Clock }
     };
-    
+
     const config = statusMap[status as keyof typeof statusMap] || statusMap.pending;
     const Icon = config.icon;
-    
+
     return (
       <Badge variant={config.variant} className={config.className}>
         <Icon className="w-3 h-3 mr-1" />
@@ -87,7 +87,7 @@ export function EnhancedDashboard() {
               {sortedDocuments.length} {t('documents').toLowerCase()}
             </Badge>
           </div>
-          
+
           {documentsLoading ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
@@ -141,7 +141,7 @@ export function EnhancedDashboard() {
                   </div>
                 </div>
               ))}
-              
+
               {sortedDocuments.length > 5 && (
                 <div className="text-center pt-2">
                   <Button variant="outline" size="sm">
@@ -163,7 +163,7 @@ export function EnhancedDashboard() {
               {sortedAuditLogs.length} {t('recentActivity').toLowerCase()}
             </Badge>
           </div>
-          
+
           {logsLoading ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
@@ -189,7 +189,7 @@ export function EnhancedDashboard() {
                   </div>
                 </div>
               ))}
-              
+
               {sortedAuditLogs.length > 6 && (
                 <div className="text-center pt-2">
                   <Button variant="outline" size="sm">
