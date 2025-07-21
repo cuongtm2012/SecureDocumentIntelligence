@@ -16,7 +16,7 @@ import { DocumentExportManager } from './document-export-manager';
 import { MultiLanguageOCR } from './multi-language-ocr';
 import { BatchOCRProcessor } from './batch-ocr-processor';
 import { TesseractTrainingInterface } from './tesseract-training-interface';
-import { UnifiedDocumentViewer } from './unified-document-viewer';
+import { UnifiedDocumentViewer, DocumentData } from './unified-document-viewer';
 
 import { 
   Upload, 
@@ -69,6 +69,7 @@ export function AdvancedOCRDashboard() {
   const [currentDocument, setCurrentDocument] = useState<any>(null);
   const [showPDFViewer, setShowPDFViewer] = useState(false);
   const [selectedFileForViewer, setSelectedFileForViewer] = useState<UploadedFile | null>(null);
+
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -380,16 +381,8 @@ export function AdvancedOCRDashboard() {
   // Paginated documents
   const paginatedDocuments = documents.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  const [selectedDocument, setSelectedDocument] = useState<{
-    id: string;
-    fileName: string;
-    fileType: string;
-    extractedText: string;
-    confidence: number;
-    pageCount: number;
-    documentId: string;
-    imageUrl: string;
-  } | null>(null);
+  // Document selector state for PDF viewer
+  const [selectedDocument, setSelectedDocument] = useState<DocumentData | null>(null);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
@@ -742,13 +735,7 @@ export function AdvancedOCRDashboard() {
                                 confidence: (doc.confidence || 0), // Keep as decimal for EnhancedOCRViewer
                                 pageCount: doc.structuredData?.pageCount || 1,
                                 imageUrl: `/api/documents/${doc.id}/thumbnail`,
-                                lowConfidenceWords: [],
-                                pages: doc.type === 'pdf' ? undefined : [{
-                                  pageNumber: 1,
-                                  imageUrl: `/api/documents/${doc.id}/thumbnail`,
-                                  extractedText: doc.extractedText || '',
-                                  confidence: (doc.confidence || 0)
-                                }]
+                                lowConfidenceWords: []
                               });
                               setShowViewer(true);
                             }}
@@ -823,7 +810,7 @@ export function AdvancedOCRDashboard() {
                     Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, documents.length)} of {documents.length} results
                   </div>
 
-                  <div className="flex items-center justify-center space-x-1 sm:space-x-2>
+                  <div className="flex items-center justify-center space-x-1 sm:space-x-2">
                     <Button
                       variant="outline"
                       size="sm"

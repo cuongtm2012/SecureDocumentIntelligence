@@ -209,12 +209,12 @@ export function UnifiedDocumentViewer({
       // Fallback: export as text file
       const blob = new Blob([editedText], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
+      const link = window.document.createElement('a');
       link.href = url;
       link.download = `${document.fileName}_extracted_text.txt`;
-      document.body.appendChild(link);
+      window.document.body.appendChild(link);
       link.click();
-      document.body.removeChild(link);
+      window.document.body.removeChild(link);
       URL.revokeObjectURL(url);
       toast({ title: "Text exported successfully" });
     }
