@@ -823,7 +823,7 @@ export function AdvancedOCRDashboard() {
                     Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, documents.length)} of {documents.length} results
                   </div>
 
-                  <div className="flex items-center justify-center space-x-1 sm:space-x-2">
+                  <div className="flex items-center justify-center space-x-1 sm:space-x-2>
                     <Button
                       variant="outline"
                       size="sm"
@@ -1010,41 +1010,23 @@ export function AdvancedOCRDashboard() {
           />
         </DialogContent>
       </Dialog>
-    )}    {/* PDF Viewer Dialog */}
-    {selectedDocument && (
-      <Dialog open={showPDFViewer} onOpenChange={setShowPDFViewer}>
-        <DialogContent className="max-w-7xl max-h-[95vh] p-0">
-          <DialogHeader className="sr-only">
-            <DialogTitle>Document Viewer - {selectedDocument.fileName}</DialogTitle>
-            <DialogDescription>
-              View and edit the document content with OCR text extraction results
-            </DialogDescription>
-          </DialogHeader>
-          <UnifiedDocumentViewer
-            document={{
-              id: selectedDocument.id,
-              fileName: selectedDocument.fileName,
-              fileType: selectedDocument.fileType,
-              extractedText: selectedDocument.extractedText,
-              confidence: selectedDocument.confidence,
-              pageCount: selectedDocument.pageCount,
-              documentId: selectedDocument.documentId,
-              imageUrl: selectedDocument.imageUrl
-            }}
-            onTextEdit={(documentId, newText, pageNumber) => {
-              console.log('Text edited:', { documentId, newText, pageNumber });
-              // Handle text editing
-            }}
-            onExport={(documentId, format) => {
-              console.log('Export requested:', { documentId, format });
-              // Handle export
-            }}
-            onClose={() => setShowPDFViewer(false)}
-            mode="modal"
-          />
-        </DialogContent>
-      </Dialog>
     )}
+     {/* Document Details Modal */}
+        {selectedDocument && (
+          <Dialog open={showViewer} onOpenChange={setShowViewer}>
+            <DialogContent className="max-w-7xl h-[90vh] p-0 overflow-hidden">
+              <div className="h-full w-full">
+                <UnifiedDocumentViewer
+                  document={selectedDocument}
+                  onTextEdit={handleTextEdit}
+                  onExport={handleExport}
+                  onClose={() => setShowViewer(false)}
+                  mode="modal"
+                />
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
   </div>
 );
 }

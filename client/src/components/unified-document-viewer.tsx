@@ -286,13 +286,24 @@ export function UnifiedDocumentViewer({
 
     if (isPdfFile) {
       return (
-        <div className="h-full w-full min-h-[500px]">
+        <div className="h-full w-full">
           <iframe
             src={imageUrl}
-            className="w-full h-full border-0 rounded-lg"
-            style={{ minHeight: '500px' }}
+            className="w-full h-full border-0"
+            style={{ 
+              minHeight: mode === 'modal' ? '600px' : '500px',
+              width: '100%',
+              height: '100%'
+            }}
             title={`PDF Document - ${document.fileName}`}
             allow="autoplay; clipboard-read; clipboard-write"
+            onLoad={() => {
+              console.log('✅ PDF iframe loaded successfully:', imageUrl);
+            }}
+            onError={() => {
+              console.error('❌ PDF iframe failed to load:', imageUrl);
+              setError('Failed to load PDF document');
+            }}
           />
         </div>
       );
@@ -363,12 +374,12 @@ export function UnifiedDocumentViewer({
   };
 
   const layoutClass = mode === 'fullscreen' ? 'fixed inset-0 z-50 bg-white' : 
-                      mode === 'modal' ? 'h-full min-h-[600px]' : 'h-full';
+                      mode === 'modal' ? 'h-full w-full' : 'h-full';
 
   return (
-    <div className={cn(layoutClass, "flex flex-col", mode === 'modal' ? 'max-h-[85vh]' : 'max-h-screen')}>
+    <div className={cn(layoutClass, "flex flex-col h-full")}>
       {/* Header */}
-      <div className="border-b p-4 flex-shrink-0">
+      <div className="border-b p-3 flex-shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
@@ -508,7 +519,10 @@ export function UnifiedDocumentViewer({
                   className="flex-1 overflow-auto bg-gray-50 dark:bg-gray-800"
                   ref={imageContainerRef}
                   onScroll={handleImageScroll}
-                  style={{ minHeight: '500px', maxHeight: '75vh' }}
+                  style={{ 
+                    minHeight: mode === 'modal' ? '600px' : '500px',
+                    height: '100%'
+                  }}
                 >
                   {renderDocumentContent()}
                 </div>
