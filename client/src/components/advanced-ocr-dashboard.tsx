@@ -297,6 +297,7 @@ export function AdvancedOCRDashboard() {
         extractedText: file.result.extractedText,
         confidence: file.result.confidence,
         pageCount: file.result.pageCount || 1,
+        documentId: correspondingDocument.id,
         imageUrl: `/api/documents/${correspondingDocument.id}/thumbnail`,
         lowConfidenceWords: []
       };
@@ -749,13 +750,13 @@ export function AdvancedOCRDashboard() {
                               size="sm"
                               onClick={() => {
                                 setSelectedDocument({
-                                  id: doc.id.toString(), // Convert to string
+                                  id: doc.id.toString(),
                                   fileName: doc.filename,
                                   fileType: 'pdf',
                                   extractedText: doc.extractedText || '',
                                   confidence: (doc.confidence || 0),
                                   pageCount: doc.structuredData?.pageCount || 1,
-                                  documentId: doc.id.toString(),
+                                  documentId: doc.id,
                                   imageUrl: `/api/documents/${doc.id}/thumbnail`
                                 });
                                 setShowPDFViewer(true);

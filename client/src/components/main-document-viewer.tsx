@@ -102,8 +102,11 @@ export function UnifiedDocumentViewer({
   useEffect(() => {
     if (document.fileType === 'pdf' && document.documentId) {
       loadPdfPages();
+    } else if (document.fileType === 'pdf' && document.id) {
+      // Fallback for when documentId is not available but id is
+      loadPdfPagesWithId(document.id);
     }
-  }, [document.documentId, document.fileType]);
+  }, [document.documentId, document.fileType, document.id]);
 
   // Update edited text when page changes
   useEffect(() => {
@@ -143,6 +146,37 @@ export function UnifiedDocumentViewer({
       setError(error.message || 'Failed to load PDF content');
       
       const pdfUrl = `/api/documents/${document.documentId}/raw?t=${Date.now()}`;
+      setPdfImages([pdfUrl]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loadPdfPagesWithId = async (docId: string) => {
+    try {
+      setIsLoading(true);
+      setError('');
+
+      const response = await fetch(`/api/documents/${docId}/pages`);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to load PDF pages: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.success && data.images) {
+        setPdfImages(data.images);
+        console.log(`✅ Loaded ${data.images.length} PDF pages as images`);
+      } else {
+        const pdfUrl = `/api/documents/${docId}/raw?t=${Date.now()}`;
+        setPdfImages([pdfUrl]);
+      }
+    } catch (error: any) {
+      console.error('❌ Failed to load PDF images:', error);
+      setError(error.message || 'Failed to load PDF content');
+      
+      const pdfUrl = `/api/documents/${docId}/raw?t=${Date.now()}`;
       setPdfImages([pdfUrl]);
     } finally {
       setIsLoading(false);
@@ -286,25 +320,30 @@ export function UnifiedDocumentViewer({
 
     if (isPdfFile) {
       return (
-        <div className="h-full w-full">
-          <iframe
-            src={imageUrl}
-            className="w-full h-full border-0"
-            style={{ 
-              minHeight: mode === 'modal' ? '600px' : '500px',
-              width: '100%',
-              height: '100%'
-            }}
-            title={`PDF Document - ${document.fileName}`}
-            allow="autoplay; clipboard-read; clipboard-write"
-            onLoad={() => {
-              console.log('✅ PDF iframe loaded successfully:', imageUrl);
-            }}
-            onError={() => {
-              console.error('❌ PDF iframe failed to load:', imageUrl);
-              setError('Failed to load PDF document');
-            }}
-          />
+        <div className="h-full w-full flex items-center justify-center bg-gray-100 dark:bg-gray-800">
+          <div className="w-full h-full max-w-full max-h-full">
+            <iframe
+              src={imageUrl}
+              className="w-full h-full border border-gray-300 rounded-lg shadow-lg"
+              style={{ 
+                minHeight: mode === 'modal' ? '600px' : '500px',
+                width: '100%',
+                height: '100%',
+                backgroundColor: 'white'
+              }}
+              title={`PDF Document - ${document.fileName}`}
+              allow="autoplay; clipboard-read; clipboard-write; fullscreen"
+              sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+              onLoad={() => {
+                console.log('✅ PDF iframe loaded successfully:', imageUrl);
+                setError('');
+              }}
+              onError={() => {
+                console.error('❌ PDF iframe failed to load:', imageUrl);
+                setError('Failed to load PDF document');
+              }}
+            />
+          </div>
         </div>
       );
     }
