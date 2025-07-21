@@ -890,7 +890,11 @@ export function AdvancedOCRDashboard() {
             <>
               <div className="space-y-4">
                 {paginatedDocuments
-                  .sort((a: any, b: any) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime())
+                  .sort((a: any, b: any) => {
+                    const dateA = new Date(a.processingCompletedAt || a.processedAt || a.uploadedAt).getTime();
+                    const dateB = new Date(b.processingCompletedAt || b.processedAt || b.uploadedAt).getTime();
+                    return dateB - dateA;
+                  })
                   .map((doc: any) => (
                   <Card key={doc.id} className="border border-gray-200 hover:border-blue-300 transition-colors">
                     <CardContent className="p-4 sm:p-6">
@@ -914,16 +918,20 @@ export function AdvancedOCRDashboard() {
                             <div>
                               <span className="font-medium">Processed:</span>
                               <div>
-                                {doc.processedAt 
-                                  ? new Date(doc.processedAt).toLocaleDateString()
-                                  : new Date(doc.uploadedAt).toLocaleDateString()
+                                {doc.processingCompletedAt 
+                                  ? new Date(doc.processingCompletedAt).toLocaleDateString()
+                                  : doc.processedAt 
+                                    ? new Date(doc.processedAt).toLocaleDateString()
+                                    : new Date(doc.uploadedAt).toLocaleDateString()
                                 }
                               </div>
                             </div>
-                            {doc.processedAt && (
+                            {(doc.processingCompletedAt || doc.processedAt) && (
                               <div>
                                 <span className="font-medium">Process Time:</span>
-                                <div>{new Date(doc.processedAt).toLocaleTimeString()}</div>
+                                <div>
+                                  {new Date(doc.processingCompletedAt || doc.processedAt).toLocaleTimeString()}
+                                </div>
                               </div>
                             )}
                             <div>
