@@ -123,205 +123,103 @@ if (!fsSync.existsSync(uploadsDir)) {
 
 // Helper function to process file with DeepSeek API as primary workflow
 async function processFileWithFallback(filePath: string, document: any, documentId: number, userId: number, req?: any, res?: any) {
-  console.log(`🚀 Processing document ${document.originalName} with OpenCV + DeepSeek API workflow...`);
+  console.log(`🚀 Processing document ${document.originalName} with DeepSeek API workflow...`);
 
-  // Check if this might be a receipt based on filename or document type
-  const isReceiptDocument = document.originalName.toLowerCase().includes('receipt') || 
-                           document.originalName.toLowerCase().includes('hóa đơn') ||
-                           document.originalName.toLowerCase().includes('biên lai');
+  // Start progress tracking
+  const { ocrProgressTracker } = await import('./ocr-progress-tracker');
+  const progressId = `doc-${documentId}`;
+  ocrProgressTracker.startTracking(progressId, 5);
 
-  let finalOcrResult;
+  let ocrResult;
 
-  // Primary workflow: DeepSeek API processing
-  if (process.env.OPENAI_API_KEY) {
-    console.log('🤖 Starting DeepSeek API document processing...');
+  try {
+    // Update progress: Initializing
+    ocrProgressTracker.updateProgress(progressId, 'initializing', 1, 'Initializing DeepSeek processing...');
 
-    try {
-      // Smart OCR processor selection based on document type and availability
-      let ocrResult;
-      const isIdCard = document.originalName.toLowerCase().includes('cmt') || 
-                      document.originalName.toLowerCase().includes('id') ||
-                      document.originalName.toLowerCase().includes('card');
-      
-      try {
-        // Check if ABBYY is available first
-        const abbyyHealth = await abbyyOCRProcessor.healthCheck();
-        const abbyyAvailable = abbyyHealth.status === 'healthy';
-        
-        if (abbyyAvailable) {
-          console.log('📄 Using ABBYY FineReader for superior OCR quality...');
-          ocrResult = await abbyyOCRProcessor.processDocument(filePath);
-          
-          // Validate OCR result quality
-          if (!ocrResult.extractedText || ocrResult.extractedText.length < 10) {
-            console.warn('⚠️ ABBYY OCR yielded minimal text, trying optimized Tesseract...');
-            throw new Error('ABBYY result insufficient, trying fallback');
-          }
-        } else {
-          console.warn('⚠️ ABBYY FineReader not available, using optimized Tesseract directly...');
-          throw new Error('ABBYY not available, using fallback');
-        }
-        
-      } catch (primaryError) {
-        console.log('🔄 Using reliable Tesseract OCR processor for better accuracy...');
-        
-        try {
-          if (isIdCard) {
-            console.log('🆔 Detected ID card document - using optimized Tesseract configuration...');
-            ocrResult = await simpleTesseractProcessor.processDocument(filePath);
-            console.log('✅ Tesseract ID card processor succeeded');
-          } else if (isReceiptDocument) {
-            console.log('🧾 Using Vietnamese receipt OCR processor...');
-            ocrResult = await vietnameseReceiptOCRProcessor.processDocument(filePath);
-            console.log('✅ Vietnamese receipt processor succeeded');
-          } else {
-            // Use reliable processor first for better accuracy while investigating optimized issues
-            try {
-              console.log('🔧 Using reliable OCR processor with proven accuracy...');
-              const reliableResult = await reliableOCRProcessor.processDocument(filePath);
-              ocrResult = {
-                extractedText: reliableResult.extractedText,
-                confidence: reliableResult.confidence,
-                pageCount: reliableResult.pageCount,
-                processingTime: reliableResult.processingTime,
-                processingMethod: reliableResult.method
-              };
-              console.log('✅ Reliable OCR processor succeeded');
-            } catch (reliableError) {
-              console.warn('⚠️ Reliable processor failed, trying optimized fallback...');
-              try {
-                console.log('⚡ Falling back to optimized OCR processor with progress tracking...');
-                const optimizedResult = await optimizedOCRProcessor.processDocument(filePath, document.id.toString());
-                ocrResult = {
-                  extractedText: optimizedResult.extractedText,
-                  confidence: optimizedResult.confidence,
-                  pageCount: optimizedResult.pageCount,
-                  processingTime: optimizedResult.processingTime,
-                  processingMethod: optimizedResult.method,
-                  performanceMetrics: optimizedResult.performanceMetrics
-                };
-                console.log(`⚡ Optimized OCR completed: ${optimizedResult.performanceMetrics.pagesPerSecond} pages/sec`);
-              } catch (optimizedError) {
-                console.warn('⚠️ Both processors failed, using standard fallback...');
-                console.log('📄 Using standard Tesseract processor...');
-                ocrResult = await simpleTesseractProcessor.processDocument(filePath);
-                console.log('✅ Standard Tesseract processor succeeded');
-              }
-            }
-          }
-        } catch (tesseractError) {
-          console.error('❌ Tesseract OCR also failed');
-          const primaryMsg = primaryError instanceof Error ? primaryError.message : String(primaryError);
-          const tesseractMsg = tesseractError instanceof Error ? tesseractError.message : String(tesseractError);
-          throw new Error(`OCR processing failed. Primary: ${primaryMsg}, Tesseract: ${tesseractMsg}`);
-        }
-      }
+    // Check if it's a PDF file
+    const isPDF = document.originalName.toLowerCase().endsWith('.pdf');
 
-      // Then enhance with DeepSeek Vietnamese text reconstruction
-      const textReconstruction = await deepSeekService.reconstructVietnameseText(ocrResult.extractedText);
-      
-      // Also perform document analysis
-      const deepseekAnalysis = await deepSeekService.analyzeDocument(
-        textReconstruction.reconstructedText, 
-        "Vietnamese government document analysis"
-      );
+    if (isPDF) {
+      // Update progress: Converting
+      ocrProgressTracker.updateProgress(progressId, 'converting', 2, 'Converting PDF for processing...');
 
-      finalOcrResult = {
+      console.log('🤖 Processing PDF with DeepSeek API...');
+
+      // Update progress: Extracting
+      ocrProgressTracker.updateProgress(progressId, 'extracting', 3, 'Extracting text with Tesseract...');
+
+      const deepSeekResult = await deepSeekService.processPDFDocument(filePath, document.originalName);
+
+      // Update progress: Reconstructing
+      ocrProgressTracker.updateProgress(progressId, 'reconstructing', 4, 'Enhancing text with DeepSeek AI...');
+
+      ocrResult = {
         success: true,
         file_id: document.originalName,
-        text: textReconstruction.reconstructedText, // Use reconstructed text instead of raw OCR
-        confidence: Math.max(ocrResult.confidence, textReconstruction.confidence),
-        page_count: ocrResult.pageCount,
-        processing_time: ocrResult.processingTime / 1000,
+        text: deepSeekResult.extractedText,
+        confidence: deepSeekResult.confidence,
+        page_count: deepSeekResult.pageCount || 1,
+        processing_time: deepSeekResult.processingTime / 1000,
         metadata: {
-          character_count: textReconstruction.reconstructedText.length,
-          word_count: textReconstruction.reconstructedText.split(/\s+/).filter((word: string) => word.length > 0).length,
+          character_count: deepSeekResult.extractedText.length,
+          word_count: deepSeekResult.extractedText.split(/\s+/).filter(word => word.length > 0).length,
           language: 'vie',
           confidence_threshold: 60.0,
           processing_timestamp: new Date(),
           file_size_bytes: document.fileSize,
-          processing_mode: 'ocr-deepseek-reconstruction',
-          original_ocr_text: ocrResult.extractedText, // Keep original OCR text for comparison
-          text_reconstruction: {
-            applied: true,
-            improvements: textReconstruction.improvements,
-            confidence: textReconstruction.confidence
-          },
-          deepseek_analysis: deepseekAnalysis,
-          note: 'Processed with OCR + DeepSeek Vietnamese text reconstruction for superior accuracy'
+          processing_mode: 'deepseek-pdf-enhanced',
+          deepseek_improvements: deepSeekResult.improvements || [],
+          deepseek_analysis: deepSeekResult.structuredData || {},
+          note: 'Enhanced PDF processing with DeepSeek API'
         }
       };
 
-      console.log('✅ DeepSeek API processing completed successfully');
+    } else {
+      // Image processing with DeepSeek workflow
+      ocrProgressTracker.updateProgress(progressId, 'extracting', 3, 'Processing image with DeepSeek...');
 
-    } catch (deepseekError) {
-      console.warn('⚠️ DeepSeek API processing failed, trying direct OCR fallback...');
-      console.error('DeepSeek error:', deepseekError instanceof Error ? deepseekError.message : deepseekError);
+      console.log('🤖 Processing image with DeepSeek API...');
 
-      // Direct OCR fallback
-      try {
-        let directResult;
-        if (isReceiptDocument) {
-          console.log('🧾 Fallback: Using Vietnamese receipt OCR processor...');
-          directResult = await vietnameseReceiptOCRProcessor.processDocument(filePath);
-        } else {
-          directResult = await simpleTesseractProcessor.processDocument(filePath);
+      const deepSeekResult = await deepSeekService.processDocumentImage(filePath, document.originalName);
+
+      ocrResult = {
+        success: true,
+        file_id: document.originalName,
+        text: deepSeekResult.extractedText,
+        confidence: deepSeekResult.confidence,
+        page_count: 1,
+        processing_time: deepSeekResult.processingTime / 1000,
+        metadata: {
+          character_count: deepSeekResult.extractedText.length,
+          word_count: deepSeekResult.extractedText.split(/\s+/).filter(word => word.length > 0).length,
+          language: 'vie',
+          confidence_threshold: 60.0,
+          processing_timestamp: new Date(),
+          file_size_bytes: document.fileSize,
+          processing_mode: 'deepseek-image-enhanced',
+          deepseek_improvements: deepSeekResult.improvements || [],
+          deepseek_analysis: deepSeekResult.structuredData || {},
+          note: 'Enhanced image processing with DeepSeek API'
         }
-
-        // Try to apply Vietnamese text reconstruction even in fallback mode
-        let reconstructedText = directResult.extractedText;
-        let textReconstructionMeta = { applied: false, reason: 'DeepSeek API unavailable' };
-
-        try {
-          if (process.env.OPENAI_API_KEY && directResult.extractedText.length > 10) {
-            const textReconstruction = await deepSeekService.reconstructVietnameseText(directResult.extractedText);
-            reconstructedText = textReconstruction.reconstructedText;
-            textReconstructionMeta = {
-              applied: true,
-              reason: 'Text reconstruction applied successfully'
-            };
-          }
-        } catch (reconstructionError) {
-          console.warn('Text reconstruction failed in fallback mode:', reconstructionError);
-        }
-
-        finalOcrResult = {
-          success: true,
-          file_id: document.originalName,
-          text: reconstructedText,
-          confidence: directResult.confidence,
-          page_count: directResult.pageCount,
-          processing_time: directResult.processingTime / 1000,
-          metadata: {
-            character_count: reconstructedText.length,
-            word_count: reconstructedText.split(/\s+/).filter((word: string) => word.length > 0).length,
-            language: 'vie',
-            confidence_threshold: 60.0,
-            processing_timestamp: new Date(),
-            file_size_bytes: document.fileSize,
-            processing_mode: 'direct-fallback-with-reconstruction',
-            original_ocr_text: directResult.extractedText,
-            text_reconstruction: textReconstructionMeta,
-            note: 'Processed with direct OCR fallback + text reconstruction attempt'
-          }
-        };
-      } catch (directError: any) {
-        throw new Error('OCR processing failed: ' + (directError.message || 'Unknown error'));
-      }
+      };
     }
-  } else {
-    console.log('⚠️ No DeepSeek API key available, using direct OCR fallback...');
 
+    // Update progress: Completing
+    ocrProgressTracker.updateProgress(progressId, 'completing', 5, 'Processing completed successfully!');
+    console.log('✅ DeepSeek API processing completed successfully');
+
+  } catch (deepseekError) {
+    console.warn('⚠️ DeepSeek API processing failed, trying direct OCR fallback...');
+    console.error('DeepSeek error:', deepseekError instanceof Error ? deepseekError.message : deepseekError);
+
+    // Update progress: Fallback
+    ocrProgressTracker.updateProgress(progressId, 'extracting', 3, 'DeepSeek failed, using direct OCR...');
+
+    // Direct OCR fallback
     try {
-      let directResult;
-      if (isReceiptDocument) {
-        console.log('🧾 No API: Using Vietnamese receipt OCR processor...');
-        directResult = await vietnameseReceiptOCRProcessor.processDocument(filePath);
-      } else {
-        directResult = await simpleTesseractProcessor.processDocument(filePath);
-      }
+      const directResult = await directOCRProcessor.processDocument(filePath);
 
-      finalOcrResult = {
+      ocrResult = {
         success: true,
         file_id: document.originalName,
         text: directResult.extractedText,
@@ -330,61 +228,58 @@ async function processFileWithFallback(filePath: string, document: any, document
         processing_time: directResult.processingTime / 1000,
         metadata: {
           character_count: directResult.extractedText.length,
-          word_count: directResult.extractedText.split(/\s+/).filter((word: string) => word.length > 0).length,
+          word_count: directResult.extractedText.split(/\s+/).filter(word => word.length > 0).length,
           language: 'vie',
           confidence_threshold: 60.0,
           processing_timestamp: new Date(),
           file_size_bytes: document.fileSize,
           processing_mode: 'direct-fallback',
-          note: 'Processed with direct OCR (no API key)'
+          note: 'Processed with direct OCR (DeepSeek unavailable)'
         }
       };
+
+      ocrProgressTracker.updateProgress(progressId, 'completing', 5, 'Direct OCR completed');
     } catch (directError: any) {
+      ocrProgressTracker.completeTracking(progressId, false, { error: directError.message });
       throw new Error('OCR processing failed: ' + (directError.message || 'Unknown error'));
     }
   }
 
   // Extract data from OCR result
-  const extractedText = finalOcrResult.text || '';
-  const confidence = Math.min((finalOcrResult.confidence || 0) / 100, 1);
-  const deepseekAnalysis = finalOcrResult.metadata?.deepseek_analysis || {
+  const extractedText = ocrResult.text || '';
+  const confidence = Math.min((ocrResult.confidence || 0) / 100, 1);
+  const deepseekAnalysis = ocrResult.metadata?.deepseek_analysis || {
     applied: false,
     reason: 'Not processed with DeepSeek workflow'
   };
 
-  // Prepare structured data with receipt-specific information
+  // Prepare structured data
   const structuredData = {
-    pageCount: finalOcrResult.page_count || 1,
+    pageCount: ocrResult.page_count || 1,
     characterCount: extractedText.length,
-    wordCount: extractedText.split(/\s+/).filter((word: string) => word.length > 0).length,
-    language: finalOcrResult.metadata?.language || 'Vietnamese',
-    processingMode: finalOcrResult.metadata?.processing_mode || 'direct-fallback',
-    processingTime: finalOcrResult.processing_time || 0,
+    wordCount: extractedText.split(/\s+/).filter(word => word.length > 0).length,
+    language: ocrResult.metadata?.language || 'Vietnamese',
+    processingMode: ocrResult.metadata?.processing_mode || 'direct-fallback',
+    processingTime: ocrResult.processing_time || 0,
     deepseekAnalysis: deepseekAnalysis,
-    documentType: isReceiptDocument ? 'Vietnamese Receipt' : 'Unknown Document',
-    isReceiptDocument,
-    // Add receipt-specific structured data if available (from Vietnamese receipt processor)
-    ...((finalOcrResult as any).structuredData && {
-      receiptData: (finalOcrResult as any).structuredData,
-      storeName: (finalOcrResult as any).structuredData.storeName,
-      receiptTotal: (finalOcrResult as any).structuredData.total,
-      receiptDate: (finalOcrResult as any).structuredData.date,
-      itemCount: (finalOcrResult as any).structuredData.items?.length || 0
-    }),
-    // Add preprocessing information if available (from Vietnamese receipt processor)
-    ...((finalOcrResult as any).preprocessingSteps && {
-      preprocessingSteps: (finalOcrResult as any).preprocessingSteps
-    })
+    deepseekImprovements: ocrResult.metadata?.deepseek_improvements || [],
+    documentType: 'Unknown Document'
   };
 
   // Update document with processing results
   await storage.updateDocument(documentId, {
     processingStatus: 'completed',
     processingCompletedAt: new Date(),
-    processedAt: new Date(), // Ensure processedAt is set to current time
     confidence,
     extractedText,
     structuredData: JSON.stringify(structuredData),
+  });
+
+  // Complete progress tracking
+  ocrProgressTracker.completeTracking(progressId, true, {
+    totalCharacters: extractedText.length,
+    confidence: Math.round(confidence * 100),
+    improvements: ocrResult.metadata?.deepseek_improvements?.length || 0
   });
 
   // Log successful processing
@@ -392,18 +287,12 @@ async function processFileWithFallback(filePath: string, document: any, document
     userId,
     action: `Document processed: ${document.originalName} (${structuredData.pageCount} pages, ${Math.round(confidence * 100)}% confidence)`,
     documentId: document.id,
-    ipAddress: req?.ip || '127.0.0.1',
-    userAgent: req?.get('User-Agent') || 'Background Process',
+    ipAddress: req.ip,
+    userAgent: req.get('User-Agent'),
   });
 
   const updatedDocument = await storage.getDocument(documentId);
-
-  // Only send response if res is provided (not background processing)
-  if (res) {
-    res.json(updatedDocument);
-  }
-
-  return updatedDocument;
+  res.json(updatedDocument);
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -442,7 +331,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!forceReprocess) {
         // Fix encoding issues for Vietnamese filenames
         const originalNameUtf8 = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
-        
+
         const existingDocument = await storage.findDuplicateDocument(
           originalNameUtf8,
           req.file.size,
@@ -474,7 +363,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             processingStatus: existingDocument.processingStatus,
             processingCompletedAt: existingDocument.processingCompletedAt
           });
-          
+
           return res.json({
             ...existingDocument,
             isDuplicate: true,
@@ -490,7 +379,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Fix encoding for Vietnamese filenames
       const originalNameUtf8 = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
-      
+
       const documentData = {
         filename: req.file.filename,
         originalName: originalNameUtf8,
@@ -518,7 +407,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       setImmediate(async () => {
         try {
           const filePath = path.join(process.cwd(), 'uploads', document.filename);
-          
+
           // Check if file actually exists
           try {
             await fs.access(filePath);
@@ -571,26 +460,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       const filePath = path.join(uploadsDir, document.filename);
-      
+
       // Check if file exists before processing
       try {
         await fs.access(filePath);
       } catch (fileError) {
         console.error(`❌ File not found for document ${documentId}: ${filePath}`);
-        
+
         // Try to find an alternative file with same original name
         const uploads = await fs.readdir(uploadsDir);
         const alternativeFile = uploads.find(filename => 
           filename.includes(document.originalName) || 
           document.originalName.includes(filename.replace(/^\d+-/, ''))
         );
-        
+
         if (alternativeFile) {
           const alternativeFilePath = path.join(uploadsDir, alternativeFile);
           console.log(`🔄 Using alternative file: ${alternativeFile}`);
-          
+
           // Use the alternative file (no need to update document as filename is not in schema)
-          
+
           // Process the alternative file
           await processFileWithFallback(alternativeFilePath, document, documentId, userId, req, res);
           return;
@@ -752,24 +641,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       const filePath = path.join(uploadsDir, document.filename);
-      
+
       // Check if file exists before processing
       try {
         await fs.access(filePath);
       } catch (fileError) {
         console.error(`❌ File not found for document ${documentId}: ${filePath}`);
-        
+
         // Try to find an alternative file with same original name
         const uploads = await fs.readdir(uploadsDir);
         const alternativeFile = uploads.find(filename => 
           filename.includes(document.originalName) || 
           document.originalName.includes(filename.replace(/^\d+-/, ''))
         );
-        
+
         if (alternativeFile) {
           const alternativeFilePath = path.join(uploadsDir, alternativeFile);
           console.log(`🔄 Using alternative file: ${alternativeFile}`);
-          
+
           // Use the alternative file path (no need to update document as filename is not in schema)
           const filePath = alternativeFilePath;
         } else {
@@ -785,11 +674,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Process with parallel OCR (ABBYY + Tesseract) 
       console.log(`🔄 Processing with parallel OCR engines...`);
       const result = await parallelOCRProcessor.processDocument(filePath);
-      
+
       // Process with DeepSeek enhancement if available
       let enhancedText = result.combinedText;
       let deepseekAnalysis = { applied: false, reason: 'No API key available' };
-      
+
       if (result.combinedText && result.combinedText.length > 0) {
         try {
           const enhancement = await deepSeekService.analyzeDocument(result.combinedText, "Text enhancement analysis");
@@ -801,7 +690,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.warn('DeepSeek enhancement failed:', deepseekError);
         }
       }
-      
+
       // Create structured data
       const structuredData = {
         pageCount: 1,
@@ -896,7 +785,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Import pdf-parse dynamically  
         const pdfParse = (await import('pdf-parse')).default;
         const pdfData = await pdfParse(dataBuffer);
-        
+
         const debugInfo = {
           filename: document.originalName,
           fileSize: document.fileSize,
@@ -956,7 +845,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       const filePath = path.join(uploadsDir, document.filename);
-      
+
       // Check if file exists before processing
       try {
         await fs.access(filePath);
@@ -983,7 +872,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Process with ABBYY only
       const result = await abbyyOCRProcessor.processDocument(filePath);
-      
+
       // Create structured data
       const structuredData = {
         pageCount: result.pageCount || 1,
@@ -994,7 +883,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         processingTime: result.processingTime,
         documentType: 'Government Document',
         isReceiptDocument: false,
-      };
+      };```text
 
       // Update document with results
       await storage.updateDocument(documentId, {
@@ -1201,7 +1090,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/ocr/abbyy/health", async (req, res) => {
     try {
       const healthResult = await abbyyOCRProcessor.healthCheck();
-      
+
       res.json({
         success: true,
         ...healthResult
@@ -1221,7 +1110,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/ocr/reconstruct-text", async (req, res) => {
     try {
       const { rawText } = req.body;
-      
+
       if (!rawText || typeof rawText !== 'string') {
         return res.status(400).json({
           success: false,
@@ -1237,7 +1126,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const reconstruction = await deepSeekService.reconstructVietnameseText(rawText);
-      
+
       res.json({
         success: true,
         original_text: rawText,
@@ -1258,7 +1147,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/ocr/status", async (req, res) => {
     try {
       const abbyyHealth = await abbyyOCRProcessor.healthCheck();
-      
+
       const status = {
         engines: {
           abbyy: {
@@ -1292,7 +1181,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           text_reconstruction: !!process.env.OPENAI_API_KEY
         }
       };
-      
+
       res.json({
         success: true,
         ...status
@@ -1531,7 +1420,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const documentId = req.params.id;
       const progress = ocrProgressTracker.getProgress(documentId);
-      
+
       if (!progress) {
         return res.json({ 
           documentId, 
@@ -1541,7 +1430,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           message: 'No active processing found' 
         });
       }
-      
+
       res.json(progress);
     } catch (error: any) {
       console.error('Progress tracking error:', error);
@@ -1552,7 +1441,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Server-Sent Events for real-time progress
   app.get('/api/documents/:id/progress-stream', (req, res) => {
     const documentId = req.params.id;
-    
+
     // Set up SSE headers
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -1581,7 +1470,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const progressHandler = (progress: any) => {
       if (progress.documentId === documentId) {
         res.write(`data: ${JSON.stringify(progress)}\n\n`);
-        
+
         // Close connection when completed
         if (progress.stage === 'completing' && progress.progress >= 100) {
           setTimeout(() => {

@@ -5,10 +5,11 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Upload, File, Image, FileText, X, Play, Pause, RotateCcw, Copy, Download } from 'lucide-react';
+import { Upload, File, Image, FileText, X, Play, Pause, RotateCcw, Copy, Download, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-export interface UploadedFile {
+// Updated UploadedFile interface for DeepSeek features
+interface UploadedFile {
   id: string;
   file: File;
   name: string;
@@ -34,15 +35,18 @@ export interface UploadedFile {
     characterCount?: number;
   };
   structuredData?: string | any; // JSON string or parsed object for additional metadata
+  deepseekImprovements?: string[];
+  processingMode?: string;
   // Enhanced OCR progress tracking
   ocrProgress?: {
-    stage: 'initializing' | 'converting' | 'extracting' | 'enhancing' | 'completing';
+    stage: 'initializing' | 'converting' | 'extracting' | 'reconstructing' | 'completing';
     stageDescription: string;
+    currentStep: string;
+    progress: number;
+    processingSpeed?: string;
     totalPages?: number;
     pagesCompleted?: number;
     currentPage?: number;
-    estimatedTime?: string;
-    processingSpeed?: string;
   };
 }
 
@@ -154,6 +158,124 @@ export function EnhancedUploadManager({
   const filteredFiles = uploadedFiles.filter(file => 
     activeTab === 'images' ? file.type === 'image' : file.type === 'pdf'
   );
+
+  // Process uploaded file
+  const processFile = async (fileId: string) => {
+    const file = uploadedFiles.find(f => f.id === fileId);
+    if (!file) return;
+
+    setUploadedFiles(prev => prev.map(f => 
+      f.id === fileId ? { ...f, status: 'processing', processingProgress: 0 } : f
+    ));
+
+    // Set up progress tracking with Server-Sent Events
+    let eventSource: EventSource | null = null;
+
+    try {
+      // Start progress tracking
+      eventSource = new EventSource(`/api/documents/${file.documentId}/progress-stream`);
+
+      eventSource.onmessage = (event) => {
+        try {
+          const progressData = JSON.parse(event.data);
+          console.log('📊 Progress update:', progressData);
+
+          setUploadedFiles(prev => prev.map(f => 
+            f.id === fileId ? {
+              ...f,
+              processingProgress: Math.round(progressData.progress || 0),
+              ocrProgress: {
+                stage: progressData.stage,
+                stageDescription: progressData.currentStep,
+                currentStep: progressData.currentStep,
+                progress: progressData.progress,
+                processingSpeed: progressData.processingSpeed,
+                currentPage: progressData.details?.currentPage,
+                totalPages: progressData.details?.totalPages
+              }
+            } : f
+          ));
+
+          // Close connection when completed
+          if (progressData.stage === 'completing' && progressData.progress >= 100) {
+            eventSource?.close();
+            eventSource = null;
+          }
+        } catch (parseError) {
+          console.error('Failed to parse progress data:', parseError);
+        }
+      };
+
+      eventSource.onerror = (error) => {
+        console.warn('Progress stream error:', error);
+        eventSource?.close();
+        eventSource = null;
+      };
+
+      // Start actual processing
+      const response = await fetch(`/api/documents/${file.documentId}/process`, {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log('✅ Processing completed:', result);
+
+      // Close progress stream
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+
+      // Parse structured data to get DeepSeek improvements
+      let structuredData: any = {};
+      let deepseekImprovements: string[] = [];
+
+      if (result.structuredData) {
+        try {
+          structuredData = typeof result.structuredData === 'string' 
+            ? JSON.parse(result.structuredData) 
+            : result.structuredData;
+          deepseekImprovements = structuredData.deepseekImprovements || [];
+        } catch (parseError) {
+          console.warn('Failed to parse structured data:', parseError);
+        }
+      }
+
+      setUploadedFiles(prev => prev.map(f => 
+        f.id === fileId ? { 
+          ...f, 
+          status: 'completed', 
+          processingProgress: 100,
+          result,
+          extractedText: result.extractedText,
+          confidence: result.confidence ? Math.round(result.confidence * 100) : 0,
+          deepseekImprovements,
+          processingMode: structuredData.processingMode || 'unknown'
+        } : f
+      ));
+
+    } catch (error) {
+      console.error('❌ Processing error:', error);
+
+      // Close progress stream on error
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+
+      setUploadedFiles(prev => prev.map(f => 
+        f.id === fileId ? { 
+          ...f, 
+          status: 'error', 
+          error: error instanceof Error ? error.message : 'Processing failed'
+        } : f
+      ));
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -363,10 +485,10 @@ export function EnhancedUploadManager({
                                 file.ocrProgress.stage === 'initializing' && "bg-blue-500",
                                 file.ocrProgress.stage === 'converting' && "bg-yellow-500",
                                 file.ocrProgress.stage === 'extracting' && "bg-green-500",
-                                file.ocrProgress.stage === 'enhancing' && "bg-purple-500",
+                                file.ocrProgress.stage === 'reconstructing' && "bg-purple-500",
                                 file.ocrProgress.stage === 'completing' && "bg-emerald-500"
                               )} />
-                              {file.ocrProgress.stageDescription}
+                              {file.ocrProgress.currentStep || file.ocrProgress.stageDescription}
                               {file.ocrProgress.currentPage && file.ocrProgress.totalPages && (
                                 <span className="text-xs text-gray-500">
                                   (Page {file.ocrProgress.currentPage}/{file.ocrProgress.totalPages})
@@ -383,22 +505,13 @@ export function EnhancedUploadManager({
                               {file.ocrProgress.processingSpeed}
                             </span>
                           )}
-                          {file.processingProgress}%
+                          {Math.round(file.ocrProgress?.progress || file.processingProgress || 0)}%
                         </span>
                       </div>
-                      <Progress value={file.processingProgress} className={cn(
-                        "transition-all duration-300",
-                        file.ocrProgress?.stage === 'extracting' && "bg-green-100",
-                        file.ocrProgress?.stage === 'enhancing' && "bg-purple-100"
-                      )} />
-                      {file.ocrProgress?.estimatedTime && (
-                        <div className="text-xs text-gray-500 flex justify-between">
-                          <span>
-                            {file.ocrProgress.pagesCompleted || 0} of {file.ocrProgress.totalPages || 0} pages completed
-                          </span>
-                          <span>ETA: {file.ocrProgress.estimatedTime}</span>
-                        </div>
-                      )}
+                      <Progress 
+                        value={file.ocrProgress?.progress || file.processingProgress || 0} 
+                        className="h-2"
+                      />
                     </div>
                   )}
                     {/* OCR Result Summary - Clickable */}
@@ -542,6 +655,60 @@ export function EnhancedUploadManager({
                       </p>
                     </div>
                   )}
+                   {/* DeepSeek Text Improvements and Highlighting */}
+                  {file.status === 'completed' && file.result && (
+                  <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Extracted Text ({file.confidence}% confidence)
+                        </h4>
+                        {file.processingMode?.includes('deepseek') && (
+                          <Badge variant="secondary" className="text-xs">
+                            <Sparkles className="h-3 w-3 mr-1" />
+                            Enhanced by AI
+                          </Badge>
+                        )}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          navigator.clipboard.writeText(file.extractedText!);
+                          // Add toast notification here if needed
+                        }}
+                      >
+                        <Copy className="h-3 w-3 mr-1" />
+                        Copy
+                      </Button>
+                    </div>
+
+                    {file.deepseekImprovements && file.deepseekImprovements.length > 0 && (
+                      <div className="mb-2 p-2 bg-purple-50 dark:bg-purple-900/20 rounded border border-purple-200 dark:border-purple-800">
+                        <div className="flex items-center gap-1 mb-1">
+                          <Sparkles className="h-3 w-3 text-purple-600" />
+                          <span className="text-xs font-medium text-purple-700 dark:text-purple-300">
+                            DeepSeek AI Improvements:
+                          </span>
+                        </div>
+                        <ul className="text-xs text-purple-600 dark:text-purple-400 list-disc list-inside">
+                          {file.deepseekImprovements.map((improvement, index) => (
+                            <li key={index}>{improvement}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    <div className="relative">
+                      <pre className="text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap max-h-32 overflow-y-auto">
+                        {file.extractedText}
+                      </pre>
+                      {file.processingMode?.includes('deepseek') && (
+                        <div className="absolute top-0 left-0 w-2 h-full bg-gradient-to-b from-purple-500 to-blue-500 rounded-l opacity-30"></div>
+                      )}
+                    </div>
+                  </div>
+                )}
                 </div>
               ))
             )}
