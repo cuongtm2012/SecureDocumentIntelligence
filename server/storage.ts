@@ -13,7 +13,7 @@ export interface IStorage {
   getAllDocuments(): Promise<Document[]>;
   getDocumentsByUserId(userId: number): Promise<Document[]>;
   createDocument(document: InsertDocument): Promise<Document>;
-  updateDocument(id: number, updates: Partial<Document>): Promise<Document | undefined>;
+  updateDocument(id: number, updates: UpdateDocumentData): Promise<Document | undefined>;
   deleteDocument(id: number): Promise<boolean>;
 
   // Audit log methods
@@ -105,7 +105,7 @@ export class MemStorage implements IStorage {
     return document;
   }
 
-  async updateDocument(id: number, updates: Partial<Document>): Promise<Document | undefined> {
+  async updateDocument(id: number, updates: UpdateDocumentData): Promise<Document | undefined> {
     const document = this.documents.get(id);
     if (!document) return undefined;
 
@@ -159,13 +159,15 @@ export class MemStorage implements IStorage {
 }
 
 // Define the interface for the update document data
-interface UpdateDocumentData {
+export interface UpdateDocumentData {
   processingStatus?: 'pending' | 'processing' | 'completed' | 'failed';
+  processingStartedAt?: Date;
   processingCompletedAt?: Date;
   processedAt?: Date;
   confidence?: number;
   extractedText?: string;
   structuredData?: string;
+  errorMessage?: string;
 }
 
 // Database storage implementation

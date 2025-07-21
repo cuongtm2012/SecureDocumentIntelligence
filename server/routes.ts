@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { storage } from "./storage";
+import { storage, type UpdateDocumentData } from "./storage";
 import multer from "multer";
 import path from "path";
 import fs from "fs/promises";
@@ -339,44 +339,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Check for duplicate files (unless force reprocess is enabled)
       if (!forceReprocess) {
         const existingDocument = await storage.findDuplicateDocument(
-        req.file.originalname,
-        req.file.size,
-        req.file.mimetype,
-        userId
-      );
+          req.file.originalname,
+          req.file.size,
+          req.file.mimetype,
+          userId
+        );
 
-      if (existingDocument) {
-        // Delete the uploaded file since we found a duplicate
-        try {
-          await fs.unlink(req.file.path);
-        } catch (unlinkError) {
-          console.warn('Failed to delete duplicate file:', unlinkError);
+        if (existingDocument) {
+          // Delete the uploaded file since we found a duplicate
+          try {
+            await fs.unlink(req.file.path);
+          } catch (unlinkError) {
+            console.warn('Failed to delete duplicate file:', unlinkError);
+          }
+
+          // Log duplicate detection with proper encoding
+          const originalNameUtf8 = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+          await storage.createAuditLog({
+            userId,
+            action: `Duplicate file detected: ${originalNameUtf8} (${req.file.size} bytes) - using existing document`,
+            documentId: existingDocument.id,
+            ipAddress: req.ip,
+            userAgent: req.get('User-Agent'),
+          });
+
+          console.log(`📋 Duplicate file detected: ${originalNameUtf8} - using existing document ${existingDocument.id}`);
+          console.log(`📊 Existing document details:`, {
+            id: existingDocument.id,
+            originalName: existingDocument.originalName,
+            uploadedAt: existingDocument.uploadedAt,
+            processingStatus: existingDocument.processingStatus,
+            processingCompletedAt: existingDocument.processingCompletedAt
+          });
+          
+          return res.json({
+            ...existingDocument,
+            isDuplicate: true,
+            message: `File "${originalNameUtf8}" already exists on server. Using existing document (ID: ${existingDocument.id}) from ${new Date(existingDocument.uploadedAt).toLocaleString()}.`
+          });
         }
-
-        // Log duplicate detection with proper encoding
-        const originalNameUtf8 = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
-        await storage.createAuditLog({
-          userId,
-          action: `Duplicate file detected: ${originalNameUtf8} (${req.file.size} bytes) - using existing document`,
-          documentId: existingDocument.id,
-          ipAddress: req.ip,
-          userAgent: req.get('User-Agent'),
-        });
-
-        console.log(`📋 Duplicate file detected: ${originalNameUtf8} - using existing document ${existingDocument.id}`);
-        console.log(`📊 Existing document details:`, {
-          id: existingDocument.id,
-          originalName: existingDocument.originalName,
-          uploadedAt: existingDocument.uploadedAt,
-          processingStatus: existingDocument.processingStatus,
-          processingCompletedAt: existingDocument.processingCompletedAt
-        });
-        
-        return res.json({
-          ...existingDocument,
-          isDuplicate: true,
-          message: `File "${originalNameUtf8}" already exists on server. Using existing document (ID: ${existingDocument.id}) from ${new Date(existingDocument.uploadedAt).toLocaleString()}.`
-        });
       }
 
       if (forceReprocess) {
