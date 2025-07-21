@@ -314,15 +314,20 @@ export function EnhancedUploadManager({
                   )}
                     {/* OCR Result Summary - Clickable */}
                   {file.status === 'completed' && file.result && (
-                    <div 
-                      className="bg-green-50 dark:bg-green-950 p-4 rounded-lg border border-green-200 dark:border-green-800 cursor-pointer hover:bg-green-100 dark:hover:bg-green-900 transition-colors"
-                      onClick={() => onViewResult && onViewResult(file)}
-                    >
+                    <div className="bg-green-50 dark:bg-green-950 p-4 rounded-lg border border-green-200 dark:border-green-800">
                       <div className="flex items-center justify-between mb-2">
                         <h4 className="text-sm font-semibold text-green-800 dark:text-green-200">
                           ✅ OCR Processing Complete
                         </h4>
-                        <Button size="sm" variant="outline" className="text-xs">
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          className="text-xs hover:bg-green-200 dark:hover:bg-green-700"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onViewResult && onViewResult(file);
+                          }}
+                        >
                           View Details
                         </Button>
                       </div>
