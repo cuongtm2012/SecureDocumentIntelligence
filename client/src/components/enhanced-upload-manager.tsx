@@ -189,6 +189,17 @@ export function EnhancedUploadManager({
                     </p>
                   </div>
                     <div className="flex gap-2">
+                    <Button 
+                      onClick={() => {
+                        // Navigate to results tab
+                        const resultsTab = document.querySelector('button[value="results"]') as HTMLButtonElement;
+                        if (resultsTab) resultsTab.click();
+                      }}
+                      variant="outline"
+                      size="sm"
+                    >
+                      View Results
+                    </Button>
 
                     {onBatchUpload && (
                       <Button 

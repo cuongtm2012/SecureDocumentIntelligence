@@ -83,17 +83,15 @@ export function AdvancedOCRDashboard() {
   const { data: documents = [], isLoading } = useQuery({
     queryKey: ['documents'],
     queryFn: async () => {
+      console.log('🔄 Fetching documents from API...');
       const response = await fetch('/api/documents');
       if (!response.ok) throw new Error('Failed to fetch documents');
-      return response.json();
+      const data = await response.json();
+      console.log('📊 Documents fetched:', data.length, 'documents');
+      return data;
     },
-    refetchInterval: (data) => {
-      // Only poll if there are documents being processed
-      // Ensure data is an array before calling .some()
-      if (!Array.isArray(data)) return false;
-      const hasProcessing = data.some((d: any) => d.processingStatus === 'processing');
-      return hasProcessing ? 5000 : false; // Poll every 5 seconds if processing, otherwise don't poll
-    },
+    refetchInterval: 3000, // Refresh every 3 seconds for real-time updates
+    staleTime: 1000, // Consider data stale after 1 second
   });
 
   // Upload mutation
@@ -689,8 +687,24 @@ export function AdvancedOCRDashboard() {
               <p className="text-sm sm:text-base text-gray-600">
                 View and manage processed documents ({documents?.length || 0} total)
               </p>
+              {console.log('🎯 Results Tab - Documents state:', {
+                documentsLength: documents?.length,
+                isLoading,
+                firstDocument: documents?.[0],
+                allDocuments: documents
+              })}
             </div>
             <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  console.log('🔄 Manual refresh triggered');
+                  queryClient.invalidateQueries({ queryKey: ['documents'] });
+                }}
+              >
+                Refresh
+              </Button>
               <Select value={pageSize.toString()} onValueChange={(value) => {
                 setPageSize(Number(value));
                 setCurrentPage(1);
