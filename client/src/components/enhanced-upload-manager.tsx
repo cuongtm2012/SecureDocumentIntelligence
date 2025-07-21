@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Upload, File, Image, FileText, X, Play, Pause, RotateCcw } from 'lucide-react';
+import { Upload, File, Image, FileText, X, Play, Pause, RotateCcw, Copy, Download } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface UploadedFile {
@@ -319,29 +319,67 @@ export function EnhancedUploadManager({
                         <h4 className="text-sm font-semibold text-green-800 dark:text-green-200">
                           ✅ OCR Processing Complete
                         </h4>
-                        <Button 
-                          size="sm" 
-                          variant="outline" 
-                          className="text-xs hover:bg-green-200 dark:hover:bg-green-700"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            console.log('🔍 View Details clicked for file:', {
-                              id: file.id,
-                              name: file.name,
-                              type: file.type,
-                              status: file.status,
-                              hasResult: !!file.result,
-                              onViewResult: !!onViewResult
-                            });
-                            if (onViewResult) {
-                              onViewResult(file);
-                            } else {
-                              console.error('❌ onViewResult handler not provided');
-                            }
-                          }}
-                        >
-                          View Details
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          <Button 
+                            size="sm" 
+                            variant="outline" 
+                            className="text-xs hover:bg-green-200 dark:hover:bg-green-700"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (file.result) {
+                                navigator.clipboard.writeText(file.result.extractedText);
+                              }
+                            }}
+                            title="Copy text"
+                          >
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                          <Button 
+                            size="sm" 
+                            variant="outline" 
+                            className="text-xs hover:bg-green-200 dark:hover:bg-green-700"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (file.result) {
+                                const blob = new Blob([file.result.extractedText], { type: 'text/plain' });
+                                const url = URL.createObjectURL(blob);
+                                const link = document.createElement('a');
+                                link.href = url;
+                                link.download = `${file.name}_extracted_text.txt`;
+                                document.body.appendChild(link);
+                                link.click();
+                                document.body.removeChild(link);
+                                URL.revokeObjectURL(url);
+                              }
+                            }}
+                            title="Export text"
+                          >
+                            <Download className="h-3 w-3" />
+                          </Button>
+                          <Button 
+                            size="sm" 
+                            variant="outline" 
+                            className="text-xs hover:bg-green-200 dark:hover:bg-green-700"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              console.log('🔍 View Details clicked for file:', {
+                                id: file.id,
+                                name: file.name,
+                                type: file.type,
+                                status: file.status,
+                                hasResult: !!file.result,
+                                onViewResult: !!onViewResult
+                              });
+                              if (onViewResult) {
+                                onViewResult(file);
+                              } else {
+                                console.error('❌ onViewResult handler not provided');
+                              }
+                            }}
+                          >
+                            View Details
+                          </Button>
+                        </div>
                       </div>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
                         <div className="text-center p-2 bg-white dark:bg-gray-800 rounded">

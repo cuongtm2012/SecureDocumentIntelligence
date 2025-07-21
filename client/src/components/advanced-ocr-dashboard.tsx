@@ -37,7 +37,8 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
-  ChevronsRight
+  ChevronsRight,
+  Copy
 } from 'lucide-react';
 import { nanoid } from 'nanoid';
 import { useToast } from "@/hooks/use-toast";
@@ -384,6 +385,63 @@ export function AdvancedOCRDashboard() {
 
   // Document selector state for PDF viewer
   const [selectedDocument, setSelectedDocument] = useState<DocumentData | null>(null);
+
+  // Quick actions
+  const handleQuickView = (file: UploadedFile) => {
+    const correspondingDocument = documents.find((doc: any) => doc.originalName === file.name);
+
+    if (!correspondingDocument) {
+      toast({
+        title: "Document not found",
+        description: "Could not find the corresponding document on the server.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const result: OCRResult = {
+      id: correspondingDocument.id.toString(),
+      fileName: file.name,
+      fileType: file.type,
+      extractedText: file.result?.extractedText || '',
+      confidence: file.result?.confidence || 0,
+      pageCount: file.result?.pageCount || 1,
+      documentId: correspondingDocument.id,
+      imageUrl: `/api/documents/${correspondingDocument.id}/thumbnail`,
+      lowConfidenceWords: []
+    };
+    setSelectedResult(result);
+    setShowViewer(true);
+  };
+
+  const handleQuickCopy = (file: UploadedFile) => {
+    if (file.result?.extractedText) {
+      navigator.clipboard.writeText(file.result.extractedText);
+      toast({
+        title: "Text copied",
+        description: "Extracted text copied to clipboard.",
+      });
+    } else {
+      toast({
+        title: "No text available",
+        description: "No text extracted from this file yet.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleQuickExport = (file: UploadedFile) => {
+    const correspondingDocument = documents.find((doc: any) => doc.originalName === file.name);
+
+    if (!correspondingDocument) {
+      toast({
+        title: "Document not found",
+        description: "Could not find the corresponding document on the server.",
+        variant: "destructive",
+      });
+      return;
+    }
+    window.open(`/api/documents/${correspondingDocument.id}/export?format=txt`, '_blank');
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
