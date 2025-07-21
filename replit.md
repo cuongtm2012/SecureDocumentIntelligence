@@ -199,6 +199,14 @@ Changelog:
   - Successfully extracts Vietnamese text: 4-page PDF now processes 6,449 characters with 95% confidence
   - Processing time reduced to ~52 seconds with stable, reliable text extraction
   - System now handles duplicate files with missing source files by updating existing records
+- July 21, 2025. Fixed duplicate detection document ID mismatch and forceReprocess functionality
+  - Resolved critical issue where frontend processed wrong document IDs after duplicate detection
+  - Updated upload mutation to capture and store actual document IDs from server responses
+  - Fixed handleFileProcess to use stored documentId instead of unreliable filename matching
+  - Added forceReprocess flag support to upload workflow with Ctrl/Alt key detection
+  - Enhanced duplicate file detection with alternative file discovery for missing source files
+  - Improved Vietnamese character encoding handling in duplicate detection system
+  - System now correctly processes duplicate documents using their actual database IDs
 ```
 
 ## User Preferences

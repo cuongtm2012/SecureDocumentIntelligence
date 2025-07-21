@@ -452,6 +452,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       const filePath = path.join(uploadsDir, document.filename);
+      
+      // Check if file exists before processing
+      try {
+        await fs.access(filePath);
+      } catch (fileError) {
+        console.error(`❌ File not found for document ${documentId}: ${filePath}`);
+        
+        // Try to find an alternative file with same original name
+        const uploads = await fs.readdir(uploadsDir);
+        const alternativeFile = uploads.find(filename => 
+          filename.includes(document.originalName) || 
+          document.originalName.includes(filename.replace(/^\d+-/, ''))
+        );
+        
+        if (alternativeFile) {
+          const alternativeFilePath = path.join(uploadsDir, alternativeFile);
+          console.log(`🔄 Using alternative file: ${alternativeFile}`);
+          
+          // Update document with correct filename
+          await storage.updateDocument(documentId, { filename: alternativeFile });
+          
+          // Process the alternative file
+          await processFileWithFallback(alternativeFilePath, document, documentId, userId, req, res);
+          return;
+        } else {
+          return res.status(400).json({ 
+            success: false, 
+            error: "File not found for processing. Please re-upload the document." 
+          });
+        }
+      }
 
       // Process the file with DeepSeek API workflow
       await processFileWithFallback(filePath, document, documentId, userId, req, res);
