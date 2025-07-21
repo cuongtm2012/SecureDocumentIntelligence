@@ -278,6 +278,7 @@ async function processFileWithFallback(filePath: string, document: any, document
   await storage.updateDocument(documentId, {
     processingStatus: 'completed',
     processingCompletedAt: new Date(),
+    processedAt: new Date(), // Ensure processedAt is set to current time
     confidence,
     extractedText,
     structuredData: JSON.stringify(structuredData),
@@ -528,6 +529,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.updateDocument(documentId, {
         processingStatus: 'completed',
         processingCompletedAt: new Date(),
+        processedAt: new Date(), // Ensure processedAt is set to current time
         confidence,
         extractedText: enhancedText,
         structuredData: JSON.stringify(structuredData),

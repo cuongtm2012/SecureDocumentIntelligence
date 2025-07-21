@@ -153,9 +153,19 @@ export class MemStorage implements IStorage {
         doc.userId === userId
       )
       .sort((a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime());
-    
+
     return documents[0] || undefined;
   }
+}
+
+// Define the interface for the update document data
+interface UpdateDocumentData {
+  processingStatus?: 'pending' | 'processing' | 'completed' | 'failed';
+  processingCompletedAt?: Date;
+  processedAt?: Date;
+  confidence?: number;
+  extractedText?: string;
+  structuredData?: string;
 }
 
 // Database storage implementation
@@ -202,7 +212,8 @@ export class DatabaseStorage implements IStorage {
     return document;
   }
 
-  async updateDocument(id: number, updates: Partial<Document>): Promise<Document | undefined> {
+  async updateDocument(id: number, updates: UpdateDocumentData): Promise<Document | undefined> {
+    
     const [document] = await db
       .update(documents)
       .set(updates)
