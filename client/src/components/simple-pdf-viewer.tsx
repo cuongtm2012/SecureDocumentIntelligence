@@ -189,11 +189,14 @@ export function SimplePDFViewer({
     if (isPdfFile) {
       // Show raw PDF in iframe as fallback
       return (
-        <div className="h-full w-full">
+        <div className="h-full w-full overflow-auto">
           <iframe
             src={currentImage}
-            className="w-full h-full border-0"
-            style={{ minHeight: '600px' }}
+            className="w-full border-0"
+            style={{ 
+              minHeight: '800px',
+              height: 'calc(100vh - 120px)'
+            }}
             title={`PDF Document - ${fileName}`}
             allow="autoplay; clipboard-read; clipboard-write"
           />
@@ -203,17 +206,25 @@ export function SimplePDFViewer({
 
     // Show image pages
     return (
-      <div className="flex items-center justify-center h-full">
-        <img
-          src={currentImage}
-          alt={`Page ${currentPage} of ${fileName}`}
-          style={{ 
-            transform: `scale(${zoom / 100})`,
-            maxWidth: '100%',
-            maxHeight: '100%'
-          }}
-          className="border border-gray-200 shadow-lg"
-        />
+      <div className="h-full w-full overflow-auto">
+        <div className="flex items-center justify-center min-h-full p-4">
+          <img
+            src={currentImage}
+            alt={`Page ${currentPage} of ${fileName}`}
+            style={{ 
+              transform: `scale(${zoom / 100})`,
+              maxWidth: zoom > 100 ? 'none' : '100%',
+              maxHeight: zoom > 100 ? 'none' : '100%'
+            }}
+            className="border border-gray-200 shadow-lg bg-white"
+            onLoad={(e) => {
+              console.log(`✅ Page ${currentPage} loaded successfully:`, currentImage);
+            }}
+            onError={(e) => {
+              console.error(`❌ Page ${currentPage} failed to load:`, currentImage);
+            }}
+          />
+        </div>
       </div>
     );
   };
