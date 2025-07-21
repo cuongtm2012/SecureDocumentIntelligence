@@ -177,6 +177,15 @@ Changelog:
   - Updated all OCR commands to use tessdata_best for improved Vietnamese text recognition
   - Enhanced system now uses Tesseract 5.3.4 with latest Vietnamese language models
   - Fixed receipt processing route to use stable enhanced processor instead of problematic Vietnamese processor
+- July 19, 2025. Implemented comprehensive duplicate file detection and fixed image viewer issues
+  - Added duplicate detection for files with same name, size, and MIME type during upload
+  - Duplicate files are automatically detected and existing documents are used instead of creating new uploads
+  - Enhanced notifications display duplicate detection status with detailed messages
+  - Improved audit logging to track duplicate detection events for compliance
+  - Fixed image sizing issues in OCR viewer - images now properly fit containers without overflow
+  - Enhanced zoom functionality with fit-to-screen, actual size, and mouse wheel zoom support
+  - Added proper height constraints and scrolling behavior for improved user experience
+  - System now prevents unnecessary file storage and processing for duplicate uploads
 ```
 
 ## User Preferences

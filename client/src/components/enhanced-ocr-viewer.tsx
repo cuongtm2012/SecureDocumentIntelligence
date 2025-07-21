@@ -112,6 +112,24 @@ export function EnhancedOCRViewer({
   const handleZoomIn = () => setZoom(prev => Math.min(prev + 25, 400));
   const handleZoomOut = () => setZoom(prev => Math.max(prev - 25, 25));
   const handleRotate = () => setRotation(prev => (prev + 90) % 360);
+  
+  const handleFitToScreen = () => {
+    if (imageRef.current && imageContainerRef.current) {
+      const container = imageContainerRef.current;
+      const containerWidth = container.clientWidth - 32; // Account for padding
+      const containerHeight = container.clientHeight - 32;
+      const imageWidth = imageRef.current.naturalWidth;
+      const imageHeight = imageRef.current.naturalHeight;
+      
+      const scaleX = containerWidth / imageWidth;
+      const scaleY = containerHeight / imageHeight;
+      const scale = Math.min(scaleX, scaleY, 1); // Don't upscale beyond 100%
+      
+      setZoom(Math.round(scale * 100));
+    }
+  };
+  
+  const handleActualSize = () => setZoom(100);
 
   const handleSaveText = () => {
     onTextEdit(result.id, editedText, currentPage);
@@ -154,9 +172,9 @@ export function EnhancedOCRViewer({
   };
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col max-h-screen">
       {/* Header */}
-      <div className="border-b p-4">
+      <div className="border-b p-4 flex-shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
@@ -214,10 +232,10 @@ export function EnhancedOCRViewer({
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex">
+      <div className="flex-1 flex overflow-hidden">
         {/* Left Panel - Image */}
-        <div className="w-1/2 border-r flex flex-col">
-          <div className="border-b p-3 flex items-center justify-between">
+        <div className="w-1/2 border-r flex flex-col h-full">
+          <div className="border-b p-3 flex items-center justify-between flex-shrink-0">
             <h3 className="font-medium">Original Document</h3>
             
             <div className="flex items-center gap-2">
@@ -248,13 +266,24 @@ export function EnhancedOCRViewer({
               )}
               
               {/* Zoom Controls */}
-              <Button size="sm" variant="outline" onClick={handleZoomOut}>
+              <Button size="sm" variant="outline" onClick={handleZoomOut} disabled={zoom <= 25}>
                 <ZoomOut className="h-4 w-4" />
               </Button>
-              <span className="text-sm px-2">{zoom}%</span>
-              <Button size="sm" variant="outline" onClick={handleZoomIn}>
+              <span className="text-sm px-2 min-w-[3rem] text-center">{zoom}%</span>
+              <Button size="sm" variant="outline" onClick={handleZoomIn} disabled={zoom >= 400}>
                 <ZoomIn className="h-4 w-4" />
               </Button>
+              
+              <Separator orientation="vertical" className="h-6 mx-1" />
+              
+              <Button size="sm" variant="outline" onClick={handleFitToScreen} title="Fit to screen">
+                Fit
+              </Button>
+              <Button size="sm" variant="outline" onClick={handleActualSize} title="Actual size (100%)">
+                100%
+              </Button>
+              
+              <Separator orientation="vertical" className="h-6 mx-1" />
               
               <Button size="sm" variant="outline" onClick={handleRotate}>
                 <RotateCw className="h-4 w-4" />
@@ -272,11 +301,11 @@ export function EnhancedOCRViewer({
           </div>
           
           <ScrollArea 
-            className="flex-1"
+            className="flex-1 overflow-auto"
             ref={imageContainerRef}
             onScroll={handleImageScroll}
           >
-            <div className="p-4 flex justify-center">
+            <div className="p-4 flex justify-center items-center min-h-full">
               <div 
                 className="relative inline-block"
                 style={{
@@ -284,12 +313,44 @@ export function EnhancedOCRViewer({
                   transformOrigin: 'center',
                   transition: 'transform 0.2s ease-in-out'
                 }}
+                onWheel={(e) => {
+                  e.preventDefault();
+                  if (e.deltaY < 0) {
+                    handleZoomIn();
+                  } else {
+                    handleZoomOut();
+                  }
+                }}
               >
                 <img
                   ref={imageRef}
                   src={currentPageData.imageUrl}
                   alt={`${result.fileName} - Page ${currentPage}`}
-                  className="max-w-none border rounded-lg shadow-lg"
+                  className="max-w-full max-h-full w-auto h-auto border rounded-lg shadow-lg"
+                  style={{
+                    maxWidth: zoom > 100 ? 'none' : '100%',
+                    maxHeight: zoom > 100 ? 'none' : '100%'
+                  }}
+                  onLoad={() => {
+                    // Reset zoom to fit if image is too large
+                    if (imageRef.current) {
+                      const container = imageContainerRef.current;
+                      if (container && zoom === 100) {
+                        const containerWidth = container.clientWidth - 32; // Account for padding
+                        const containerHeight = container.clientHeight - 32;
+                        const imageWidth = imageRef.current.naturalWidth;
+                        const imageHeight = imageRef.current.naturalHeight;
+                        
+                        const scaleX = containerWidth / imageWidth;
+                        const scaleY = containerHeight / imageHeight;
+                        const scale = Math.min(scaleX, scaleY, 1); // Don't upscale
+                        
+                        if (scale < 1) {
+                          setZoom(Math.round(scale * 100));
+                        }
+                      }
+                    }
+                  }}
                 />
                 
                 {/* Highlight detected text regions */}
@@ -298,10 +359,10 @@ export function EnhancedOCRViewer({
                     key={index}
                     className="absolute border-2 border-yellow-400 bg-yellow-200/30"
                     style={{
-                      left: `${word.position.x}px`,
-                      top: `${word.position.y}px`,
-                      width: `${word.position.width}px`,
-                      height: `${word.position.height}px`,
+                      left: `${word.position.x * (zoom / 100)}px`,
+                      top: `${word.position.y * (zoom / 100)}px`,
+                      width: `${word.position.width * (zoom / 100)}px`,
+                      height: `${word.position.height * (zoom / 100)}px`,
                     }}
                     title={`${word.word} (${Math.round(word.confidence * 100)}% confidence)`}
                   />
@@ -312,8 +373,8 @@ export function EnhancedOCRViewer({
         </div>
 
         {/* Right Panel - Text */}
-        <div className="w-1/2 flex flex-col">
-          <div className="border-b p-3 flex items-center justify-between">
+        <div className="w-1/2 flex flex-col h-full">
+          <div className="border-b p-3 flex items-center justify-between flex-shrink-0">
             <h3 className="font-medium">Extracted Text</h3>
             
             <div className="flex items-center gap-2">
@@ -369,7 +430,7 @@ export function EnhancedOCRViewer({
       </div>
 
       {/* Footer */}
-      <div className="border-t p-3 bg-gray-50 dark:bg-gray-900">
+      <div className="border-t p-3 bg-gray-50 dark:bg-gray-900 flex-shrink-0">
         <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400">
           <div>
             Characters: {(currentPageData.extractedText || '').length} • 
