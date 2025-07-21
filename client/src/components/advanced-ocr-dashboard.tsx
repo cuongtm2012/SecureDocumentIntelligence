@@ -12,12 +12,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 
 // Import our enhanced components
 import { EnhancedUploadManager, UploadedFile } from './enhanced-upload-manager';
-import { EnhancedOCRViewer, OCRResult } from './enhanced-ocr-viewer';
 import { DocumentExportManager } from './document-export-manager';
 import { MultiLanguageOCR } from './multi-language-ocr';
 import { BatchOCRProcessor } from './batch-ocr-processor';
-import { SimplePDFViewer } from './simple-pdf-viewer';
 import { TesseractTrainingInterface } from './tesseract-training-interface';
+import { UnifiedDocumentViewer } from './unified-document-viewer';
 
 import { 
   Upload, 
@@ -54,11 +53,11 @@ export function AdvancedOCRDashboard() {
   const [currentDocument, setCurrentDocument] = useState<any>(null);
   const [showPDFViewer, setShowPDFViewer] = useState(false);
   const [selectedFileForViewer, setSelectedFileForViewer] = useState<UploadedFile | null>(null);
-  
+
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  
+
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -85,24 +84,24 @@ export function AdvancedOCRDashboard() {
       const promises = files.map(async (file) => {
         const formData = new FormData();
         formData.append('file', file);
-        
+
         const response = await fetch('/api/documents/upload', {
           method: 'POST',
           body: formData,
         });
-        
+
         if (!response.ok) throw new Error(`Upload failed for ${file.name}`);
         return response.json();
       });
-      
+
       return Promise.all(promises);
     },
     onSuccess: (results) => {
       queryClient.invalidateQueries({ queryKey: ['documents'] });
-      
+
       const duplicateFiles = results.filter((r: any) => r.isDuplicate);
       const newFiles = results.filter((r: any) => !r.isDuplicate);
-      
+
       if (duplicateFiles.length > 0 && newFiles.length > 0) {
         toast({
           title: "Upload completed",
@@ -172,7 +171,7 @@ export function AdvancedOCRDashboard() {
 
     try {
       await uploadMutation.mutateAsync(files);
-      
+
       // Update files to queued status
       setUploadedFiles(prev => prev.map(f => 
         newFiles.some(nf => nf.id === f.id) 
@@ -206,7 +205,7 @@ export function AdvancedOCRDashboard() {
       const document = documents.find((d: any) => d.originalName === file.name);
       if (document) {
         const result = await processMutation.mutateAsync(document.id.toString());
-        
+
         setUploadedFiles(prev => prev.map(f => 
           f.id === fileId 
             ? { 
@@ -255,7 +254,7 @@ export function AdvancedOCRDashboard() {
   const handleViewUploadedFileResult = (file: UploadedFile) => {
     // Find the corresponding document from the backend
     const correspondingDocument = documents.find((doc: any) => doc.originalName === file.name);
-    
+
     if (!correspondingDocument) {
       toast({
         title: "Document not found",
@@ -264,13 +263,13 @@ export function AdvancedOCRDashboard() {
       });
       return;
     }
-    
+
     console.log('📄 Opening PDF viewer for document:', {
       fileId: file.id,
       documentId: correspondingDocument.id,
       fileName: file.name
     });
-    
+
     setSelectedFileForViewer(file);
     setCurrentDocument(correspondingDocument); // Store the real document
     setShowPDFViewer(true);
@@ -347,6 +346,17 @@ export function AdvancedOCRDashboard() {
   // Paginated documents
   const paginatedDocuments = documents.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
+  const [selectedDocument, setSelectedDocument] = useState<{
+    id: string;
+    fileName: string;
+    fileType: string;
+    extractedText: string;
+    confidence: number;
+    pageCount: number;
+    documentId: string;
+    imageUrl: string;
+  } | null>(null);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
       <div className="container mx-auto p-6 space-y-6">
@@ -360,7 +370,7 @@ export function AdvancedOCRDashboard() {
               Multi-language document processing with AI-powered analysis
             </p>
           </div>
-          
+
           <div className="flex items-center gap-3">
             <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
               <Shield className="h-3 w-3 mr-1" />
@@ -513,7 +523,7 @@ export function AdvancedOCRDashboard() {
                       </div>
                       <Progress value={documents.length > 0 ? documents.filter((d: any) => d.processingStatus === 'completed').length / documents.length * 100 : 0} className="h-2" />
                     </div>
-                    
+
                     <div className="space-y-2">
                       <div className="flex justify-between text-sm mb-1">
                         <span>Average Processing Time</span>
@@ -521,7 +531,7 @@ export function AdvancedOCRDashboard() {
                       </div>
                       <Progress value={75} className="h-2" />
                     </div>
-                    
+
                     <div className="grid grid-cols-2 gap-4 pt-2">
                       <div className="text-center">
                         <p className="text-2xl font-bold text-blue-600">{documents.filter((d: any) => new Date(d.uploadedAt).toDateString() === new Date().toDateString()).length}</p>
@@ -649,7 +659,7 @@ export function AdvancedOCRDashboard() {
                               {doc.status}
                             </Badge>
                           </div>
-                          
+
                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4 text-sm text-gray-600 mb-4">
                             <div>
                               <span className="font-medium">Uploaded:</span>
@@ -717,22 +727,16 @@ export function AdvancedOCRDashboard() {
                               variant="outline"
                               size="sm"
                               onClick={() => {
-                                setSelectedFileForViewer({
+                                setSelectedDocument({
                                   id: doc.id.toString(), // Convert to string
-                                  name: doc.filename,
-                                  size: doc.fileSize || 0,
-                                  type: 'pdf' as const,
-                                  status: 'completed',
-                                  uploadProgress: 100,
-                                  processingProgress: 100,
-                                  file: new File([], doc.filename, { type: 'application/pdf' }),
-                                  result: {
-                                    extractedText: doc.extractedText || '',
-                                    confidence: Math.round((doc.confidence || 0) * 100),
-                                    pageCount: doc.structuredData?.pageCount || 1
-                                  }
+                                  fileName: doc.filename,
+                                  fileType: 'pdf',
+                                  extractedText: doc.extractedText || '',
+                                  confidence: (doc.confidence || 0),
+                                  pageCount: doc.structuredData?.pageCount || 1,
+                                  documentId: doc.id.toString(),
+                                  imageUrl: `/api/documents/${doc.id}/thumbnail`
                                 });
-                                setCurrentDocument(doc);
                                 setShowPDFViewer(true);
                               }}
                               className="whitespace-nowrap"
@@ -741,7 +745,7 @@ export function AdvancedOCRDashboard() {
                               PDF Viewer
                             </Button>
                           )}
-                          
+
                           {/* Vietnamese Receipt OCR Button */}
                           <Button
                             variant="outline"
@@ -754,7 +758,7 @@ export function AdvancedOCRDashboard() {
                                     'Content-Type': 'application/json',
                                   },
                                 });
-                                
+
                                 if (response.ok) {
                                   // Refresh documents list to show updated processing results
                                   queryClient.invalidateQueries({ queryKey: ['/api/documents'] });
@@ -784,7 +788,7 @@ export function AdvancedOCRDashboard() {
                   <div className="text-xs sm:text-sm text-gray-600 text-center sm:text-left">
                     Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, documents.length)} of {documents.length} results
                   </div>
-                  
+
                   <div className="flex items-center justify-center space-x-1 sm:space-x-2">
                     <Button
                       variant="outline"
@@ -795,7 +799,7 @@ export function AdvancedOCRDashboard() {
                     >
                       <ChevronsLeft className="h-4 w-4" />
                     </Button>
-                    
+
                     <Button
                       variant="outline"
                       size="sm"
@@ -805,11 +809,11 @@ export function AdvancedOCRDashboard() {
                     >
                       <ChevronLeft className="h-4 w-4" />
                     </Button>
-                    
+
                     <span className="text-xs sm:text-sm font-medium px-2 sm:px-3 py-1 bg-gray-100 rounded">
                       {currentPage}
                     </span>
-                    
+
                     <Button
                       variant="outline"
                       size="sm"
@@ -817,9 +821,9 @@ export function AdvancedOCRDashboard() {
                       disabled={currentPage >= Math.ceil(documents.length / pageSize)}
                       className="p-2"
                     >
-                      <ChevronRight className="h-4 w-4" />
+                                            <ChevronRight className="h-4 w-4" />
                     </Button>
-                    
+
                     <Button
                       variant="outline"
                       size="sm"
@@ -912,7 +916,7 @@ export function AdvancedOCRDashboard() {
                     </div>
                     <Progress value={documents.length > 0 ? documents.reduce((acc: number, doc: any) => acc + (doc.confidence || 0), 0) / documents.length * 100 : 0} className="h-2" />
                   </div>
-                  
+
                   <div>
                     <div className="flex justify-between text-sm mb-1">
                       <span>Success Rate</span>
@@ -939,11 +943,20 @@ export function AdvancedOCRDashboard() {
           <DialogHeader>
             <DialogTitle>OCR Results - {selectedResult.fileName}</DialogTitle>
           </DialogHeader>
-          <EnhancedOCRViewer
-            result={selectedResult}
+          <UnifiedDocumentViewer
+            document={{
+              id: selectedResult.id,
+              fileName: selectedResult.fileName,
+              fileType: selectedResult.fileType,
+              extractedText: selectedResult.extractedText,
+              confidence: selectedResult.confidence,
+              pageCount: selectedResult.pageCount,
+              imageUrl: selectedResult.imageUrl
+            }}
             onTextEdit={handleTextEdit}
             onExport={handleExport}
             onClose={() => setShowViewer(false)}
+            mode="modal"
           />
         </DialogContent>
       </Dialog>
@@ -964,29 +977,36 @@ export function AdvancedOCRDashboard() {
         </DialogContent>
       </Dialog>
     )}    {/* PDF Viewer Dialog */}
-    {selectedFileForViewer && currentDocument && (
+    {selectedDocument && (
       <Dialog open={showPDFViewer} onOpenChange={setShowPDFViewer}>
         <DialogContent className="max-w-7xl max-h-[95vh] p-0">
           <DialogHeader className="sr-only">
-            <DialogTitle>Document Viewer - {selectedFileForViewer.name}</DialogTitle>
+            <DialogTitle>Document Viewer - {selectedDocument.fileName}</DialogTitle>
             <DialogDescription>
               View and edit the document content with OCR text extraction results
             </DialogDescription>
           </DialogHeader>
-          <SimplePDFViewer
-            documentId={currentDocument.id}
-            fileName={selectedFileForViewer.name}
-            extractedText={selectedFileForViewer.result?.extractedText || ''}
-            confidence={Math.round((selectedFileForViewer.result?.confidence || 0) * 100)}
-            onTextEdit={(newText) => {
-              console.log('Text edited:', newText);
-              // For now, just log the text edit
+          <UnifiedDocumentViewer
+            document={{
+              id: selectedDocument.id,
+              fileName: selectedDocument.fileName,
+              fileType: selectedDocument.fileType,
+              extractedText: selectedDocument.extractedText,
+              confidence: selectedDocument.confidence,
+              pageCount: selectedDocument.pageCount,
+              documentId: selectedDocument.documentId,
+              imageUrl: selectedDocument.imageUrl
             }}
-            onExport={(format) => {
-              console.log('Export requested:', format);
-              // For now, just log the export request
+            onTextEdit={(documentId, newText, pageNumber) => {
+              console.log('Text edited:', { documentId, newText, pageNumber });
+              // Handle text editing
+            }}
+            onExport={(documentId, format) => {
+              console.log('Export requested:', { documentId, format });
+              // Handle export
             }}
             onClose={() => setShowPDFViewer(false)}
+            mode="modal"
           />
         </DialogContent>
       </Dialog>
