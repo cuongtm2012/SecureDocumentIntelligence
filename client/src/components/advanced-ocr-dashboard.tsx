@@ -734,12 +734,18 @@ export function AdvancedOCRDashboard() {
                   View and manage processed documents ({filteredDocuments?.length || 0} of {documents?.length || 0} total)
                 </p>
                 {console.log('🎯 Results Tab - Documents state:', {
-                  documentsLength: documents?.length,
-                  filteredLength: filteredDocuments?.length,
-                  isLoading,
-                  searchQuery,
-                  dateFilter
-                })}
+                documentsLength: documents?.length,
+                filteredLength: filteredDocuments?.length,
+                isLoading,
+                searchQuery,
+                dateFilter,
+                documentDates: documents?.slice(0, 5).map((doc: any) => ({
+                  name: doc.originalName || doc.filename,
+                  uploadedAt: doc.uploadedAt,
+                  uploadedAtParsed: new Date(doc.uploadedAt).toISOString(),
+                  isToday: new Date(doc.uploadedAt).toDateString() === new Date().toDateString()
+                }))
+              })}
               </div>
               <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
                 <Button
