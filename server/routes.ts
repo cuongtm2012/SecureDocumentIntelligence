@@ -245,8 +245,7 @@ async function processFileWithFallback(filePath: string, document: any, document
             reconstructedText = textReconstruction.reconstructedText;
             textReconstructionMeta = {
               applied: true,
-              improvements: textReconstruction.improvements,
-              confidence: textReconstruction.confidence
+              reason: 'Text reconstruction applied successfully'
             };
           }
         } catch (reconstructionError) {
@@ -862,7 +861,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         const dataBuffer = await fs.readFile(filePath);
         // Import pdf-parse dynamically  
-        const pdfParse = (await import('pdf-parse')).default as any;
+        const pdfParse = (await import('pdf-parse')).default;
         const pdfData = await pdfParse(dataBuffer);
         
         const debugInfo = {

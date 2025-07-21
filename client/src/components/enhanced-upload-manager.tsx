@@ -33,6 +33,7 @@ export interface UploadedFile {
     wordCount?: number;
     characterCount?: number;
   };
+  structuredData?: string | any; // JSON string or parsed object for additional metadata
 }
 
 interface EnhancedUploadManagerProps {

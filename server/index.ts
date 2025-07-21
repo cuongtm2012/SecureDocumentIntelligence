@@ -65,7 +65,7 @@ app.use((req, res, next) => {
       
       testServer.listen(startPort, "0.0.0.0", () => {
         const address = testServer.address();
-        const port = typeof address === 'string' ? startPort : address?.port;
+        const port = typeof address === 'string' ? startPort : address?.port || startPort;
         testServer.close(() => resolve(port));
       });
       
