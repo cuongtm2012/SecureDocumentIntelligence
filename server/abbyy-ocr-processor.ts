@@ -304,7 +304,7 @@ export class ABBYYOCRProcessor {
               reject(new Error(`ABBYY processing failed (code ${code}): ${stderr.substring(0, 200)}`));
             }
           }
-        } catch (error) {
+        } catch (error: any) {
           reject(new Error(`Failed to read ABBYY output: ${error.message}`));
         }
       });
@@ -525,7 +525,7 @@ export class ABBYYOCRProcessor {
         });
       });
       
-    } catch (error) {
+    } catch (error: any) {
       return {
         status: 'unhealthy',
         details: {

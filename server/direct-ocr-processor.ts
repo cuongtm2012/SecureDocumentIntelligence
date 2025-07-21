@@ -166,7 +166,7 @@ export class DirectOCRProcessor {
           console.log('✅ PDF to images conversion completed successfully');
           // Check if any images were actually created
           const dir = require('path').dirname(outputPattern);
-          const files = require('fs').readdirSync(dir).filter(f => f.endsWith('.png'));
+          const files = require('fs').readdirSync(dir).filter((f: string) => f.endsWith('.png'));
           if (files.length === 0) {
             reject(new Error('PDF conversion completed but no images were generated'));
           } else {
@@ -206,8 +206,8 @@ export class DirectOCRProcessor {
       const timeout = setTimeout(() => {
         console.warn(`⏰ Tesseract timeout for ${path.basename(imagePath)} (120s limit reached)`);
         // Try to kill the process if it's still running
-        if (process && !process.killed) {
-          process.kill('SIGTERM');
+        if (process && process.pid) {
+          process.kill(15); // SIGTERM signal
         }
         // Return partial results instead of complete failure
         resolve({
