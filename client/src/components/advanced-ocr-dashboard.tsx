@@ -416,10 +416,31 @@ export function AdvancedOCRDashboard() {
       (doc.originalName || doc.filename || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (doc.extractedText || '').toLowerCase().includes(searchQuery.toLowerCase());
 
-    // Date filter - use processing date (when OCR was completed) instead of upload date
-    const docDate = new Date(doc.processedAt || doc.uploadedAt || doc.createdAt);
+    // Date filter - use processing completion date (when OCR was actually completed)
+    const docDate = new Date(doc.processingCompletedAt || doc.processedAt || doc.uploadedAt || doc.createdAt);
     const now = new Date();
     let dateMatch = true;
+
+    if (dateFilter !== 'all') {
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+      
+      switch (dateFilter) {
+        case 'today':
+          dateMatch = docDate >= today && docDate < tomorrow;
+          break;
+        case 'week':
+          const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          dateMatch = docDate >= weekAgo;
+          break;
+        case 'month':
+          const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+          dateMatch = docDate >= monthAgo;
+          break;
+      }
+    }
+
+    return searchMatch && dateMatch;h = true;
 
     switch (dateFilter) {
       case 'today':
@@ -688,8 +709,14 @@ export function AdvancedOCRDashboard() {
 
                     <div className="grid grid-cols-2 gap-4 pt-2">
                       <div className="text-center">
-                        <p className="text-2xl font-bold text-blue-600">{documents.filter((d: any) => new Date(d.uploadedAt).toDateString() === new Date().toDateString()).length}</p>
-                        <p className="text-xs text-gray-500">Today</p>
+                        <p className="text-2xl font-bold text-blue-600">{documents.filter((d: any) => {
+                          const docDate = new Date(d.processingCompletedAt || d.processedAt || d.uploadedAt || d.createdAt);
+                          const today = new Date();
+                          const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                          const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+                          return docDate >= todayStart && docDate < todayEnd;
+                        }).length}</p>
+                        <p className="text-xs text-gray-500">Processed Today</p>
                       </div>
                       <div className="text-center">
                         <p className="text-2xl font-bold text-green-600">{documents.length}</p>
@@ -765,7 +792,7 @@ export function AdvancedOCRDashboard() {
                 searchQuery,
                 dateFilter,
                 recentDocuments: documents?.slice(0, 10).map((doc: any) => {
-                  const docDate = new Date(doc.processedAt || doc.uploadedAt || doc.createdAt);
+                  const docDate = new Date(doc.processingCompletedAt || doc.processedAt || doc.uploadedAt || doc.createdAt);
                   const now = new Date();
                   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
                   const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
@@ -774,6 +801,16 @@ export function AdvancedOCRDashboard() {
                     name: doc.originalName || doc.filename,
                     uploadedAt: doc.uploadedAt,
                     processedAt: doc.processedAt,
+                    processingCompletedAt: doc.processingCompletedAt,
+                    docDateUsedForFilter: docDate.toISOString(),
+                    todayStart: todayStart.toISOString(),
+                    todayEnd: todayEnd.toISOString(),
+                    isToday: docDate >= todayStart && docDate < todayEnd,
+                    processingStatus: doc.processingStatus,
+                    hasExtractedText: !!doc.extractedText
+                  };
+                })?.slice(0, 5) // Limit to 5 items for cleaner debug output
+              })}processedAt,
                     docDateUsedForFilter: docDate.toISOString(),
                     todayStart: todayStart.toISOString(),
                     todayEnd: todayEnd.toISOString(),
