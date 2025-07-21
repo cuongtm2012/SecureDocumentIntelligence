@@ -325,7 +325,19 @@ export function EnhancedUploadManager({
                           className="text-xs hover:bg-green-200 dark:hover:bg-green-700"
                           onClick={(e) => {
                             e.stopPropagation();
-                            onViewResult && onViewResult(file);
+                            console.log('🔍 View Details clicked for file:', {
+                              id: file.id,
+                              name: file.name,
+                              type: file.type,
+                              status: file.status,
+                              hasResult: !!file.result,
+                              onViewResult: !!onViewResult
+                            });
+                            if (onViewResult) {
+                              onViewResult(file);
+                            } else {
+                              console.error('❌ onViewResult handler not provided');
+                            }
                           }}
                         >
                           View Details

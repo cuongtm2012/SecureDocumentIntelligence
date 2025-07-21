@@ -42,6 +42,22 @@ import {
 import { nanoid } from 'nanoid';
 import { useToast } from "@/hooks/use-toast";
 
+// OCR Result interface
+interface OCRResult {
+  id: string;
+  fileName: string;
+  fileType: 'image' | 'pdf';
+  extractedText: string;
+  confidence: number;
+  pageCount?: number;
+  imageUrl?: string;
+  lowConfidenceWords?: Array<{
+    word: string;
+    confidence: number;
+    position: { x: number; y: number; width: number; height: number };
+  }>;
+}
+
 export function AdvancedOCRDashboard() {
   const [activeTab, setActiveTab] = useState('upload');
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
@@ -264,15 +280,33 @@ export function AdvancedOCRDashboard() {
       return;
     }
 
-    console.log('📄 Opening PDF viewer for document:', {
+    console.log('📄 Opening viewer for document:', {
       fileId: file.id,
       documentId: correspondingDocument.id,
-      fileName: file.name
+      fileName: file.name,
+      fileType: file.type
     });
 
-    setSelectedFileForViewer(file);
-    setCurrentDocument(correspondingDocument); // Store the real document
-    setShowPDFViewer(true);
+    // For both images and PDFs, use the unified document viewer
+    if (file.result) {
+      const result: OCRResult = {
+        id: correspondingDocument.id.toString(),
+        fileName: file.name,
+        fileType: file.type,
+        extractedText: file.result.extractedText,
+        confidence: file.result.confidence,
+        pageCount: file.result.pageCount || 1,
+        imageUrl: `/api/documents/${correspondingDocument.id}/thumbnail`,
+        lowConfidenceWords: []
+      };
+      setSelectedResult(result);
+      setShowViewer(true);
+    } else {
+      // Fallback to PDF viewer for documents without results
+      setSelectedFileForViewer(file);
+      setCurrentDocument(correspondingDocument);
+      setShowPDFViewer(true);
+    }
   };
 
   // View OCR result from documents
