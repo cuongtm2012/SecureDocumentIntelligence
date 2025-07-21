@@ -84,6 +84,13 @@ export function OCRProgressTracker({
             // Call completion callback when processing is done
             if (progressData.stage === 'completing' && progressData.progress >= 100) {
               const success = progressData.details?.success !== false;
+              
+              // Force invalidate documents cache to ensure UI updates
+              import('@/lib/queryClient').then(({ queryClient }) => {
+                queryClient.invalidateQueries({ queryKey: ['/api/documents'] });
+                console.log('🔄 Force invalidated documents cache on completion');
+              });
+              
               onComplete?.(success, progressData.details);
               
               // Close connection after completion
