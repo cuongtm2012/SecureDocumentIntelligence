@@ -356,6 +356,16 @@ export function EnhancedUploadManager({
                       <div className="flex items-center justify-between mb-2">
                         <h4 className="text-sm font-semibold text-green-800 dark:text-green-200">
                           ✅ OCR Processing Complete
+                          {(() => {
+                            try {
+                              const structuredData = typeof file.structuredData === 'string' ? 
+                                JSON.parse(file.structuredData) : file.structuredData;
+                              if (structuredData?.text_reconstruction?.applied) {
+                                return <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">🔧 Text Reconstructed</span>;
+                              }
+                            } catch (e) {}
+                            return null;
+                          })()}
                         </h4>
                         <div className="flex items-center gap-1">
                           <Button 
@@ -443,6 +453,28 @@ export function EnhancedUploadManager({
                       </div>
 
                       <div className="mt-3 pt-2 border-t border-green-200 dark:border-green-700">
+                        {(() => {
+                          try {
+                            const structuredData = typeof file.structuredData === 'string' ? 
+                              JSON.parse(file.structuredData) : file.structuredData;
+                            if (structuredData?.text_reconstruction?.applied) {
+                              return (
+                                <div className="mb-2 p-2 bg-purple-50 dark:bg-purple-900 rounded text-xs">
+                                  <strong className="text-purple-700 dark:text-purple-300">📝 Text Reconstruction Applied:</strong>
+                                  <ul className="mt-1 text-purple-600 dark:text-purple-400 list-disc list-inside">
+                                    {structuredData.text_reconstruction.improvements?.slice(0, 2).map((improvement: string, idx: number) => (
+                                      <li key={idx}>{improvement}</li>
+                                    ))}
+                                  </ul>
+                                  <p className="mt-1 text-purple-500">
+                                    Confidence: {Math.round((structuredData.text_reconstruction.confidence || 0) * 100)}%
+                                  </p>
+                                </div>
+                              );
+                            }
+                          } catch (e) {}
+                          return null;
+                        })()}
                         <p className="text-xs text-green-700 dark:text-green-300 line-clamp-2">
                           <strong>Preview:</strong> {file.result.extractedText.substring(0, 120)}
                           {file.result.extractedText.length > 120 ? '...' : ''}

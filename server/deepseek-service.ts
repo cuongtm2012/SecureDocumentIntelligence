@@ -305,6 +305,92 @@ Guidelines:
     }
   }
 
+  async reconstructVietnameseText(rawOcrText: string): Promise<{
+    reconstructedText: string;
+    improvements: string[];
+    confidence: number;
+  }> {
+    try {
+      const completion = await openai.chat.completions.create({
+        model: "deepseek-chat",
+        messages: [
+          {
+            role: "system",
+            content: `Bạn là chuyên gia xử lý văn bản tiếng Việt, chuyên về việc phục hồi văn bản hành chính/pháp lý bị lỗi OCR.
+
+Nhiệm vụ của bạn:
+- Phục hồi lại văn bản gốc từ text đã bị lỗi OCR
+- Sửa các lỗi chính tả, lỗi ký tự, lỗi định dạng
+- Đảm bảo đúng thể thức văn bản hành chính Việt Nam
+- Chuẩn hóa câu chữ pháp lý
+- Tuyệt đối KHÔNG tự ý thêm hoặc bớt nội dung
+
+Trả về kết quả theo định dạng JSON:
+{
+  "reconstructedText": "văn bản đã được phục hồi",
+  "improvements": ["danh sách các cải tiến đã thực hiện"],
+  "confidence": 0.95
+}`
+          },
+          {
+            role: "user",
+            content: `Dưới đây là một đoạn văn bản hành chính/pháp lý của cơ quan nhà nước Việt Nam, nhưng đã bị lỗi nhiều ký tự do nhận diện từ ảnh (OCR).
+
+Nhiệm vụ của bạn:
+Phục hồi lại văn bản gốc, viết lại đoạn văn bản sao cho đúng thể thức, chuẩn câu chữ pháp lý, sửa các lỗi chính tả, lỗi ký tự, lỗi định dạng do OCR gây ra.
+Tuyệt đối không tự ý thêm hoặc bớt nội dung, chỉ sửa các lỗi và căn chỉnh cho đúng văn phong văn bản hành chính.
+
+Đây là đoạn raw text cần phục hồi:
+${rawOcrText}`
+          }
+        ],
+        temperature: 0.1,
+        max_tokens: 4000
+      });
+
+      const responseContent = completion.choices[0]?.message?.content;
+      if (!responseContent) {
+        throw new Error("No response from DeepSeek API for text reconstruction");
+      }
+
+      // Parse the JSON response
+      try {
+        const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          return {
+            reconstructedText: parsed.reconstructedText || rawOcrText,
+            improvements: parsed.improvements || ["Text reconstruction applied"],
+            confidence: parsed.confidence || 0.8
+          };
+        }
+      } catch (parseError) {
+        console.warn('Failed to parse JSON response, using raw response');
+      }
+
+      // Fallback: treat as plain text response
+      return {
+        reconstructedText: responseContent.replace(/^[^a-zA-ZÀ-ỹ]*/, '').trim(),
+        improvements: ["DeepSeek text reconstruction applied (fallback)"],
+        confidence: 0.7
+      };
+
+    } catch (error: any) {
+      console.error('DeepSeek text reconstruction error:', error);
+      
+      // Handle specific error types
+      if (error.status === 402) {
+        throw new Error(`DeepSeek API insufficient balance. Please add credits to your DeepSeek account.`);
+      } else if (error.status === 401) {
+        throw new Error(`DeepSeek API authentication failed. Please check your API key.`);
+      } else if (error.status === 429) {
+        throw new Error(`DeepSeek API rate limit exceeded. Please try again later.`);
+      } else {
+        throw new Error(`Text reconstruction failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }
+  }
+
   async analyzeDocument(extractedText: string, documentContext?: string): Promise<any> {
     try {
       const completion = await openai.chat.completions.create({

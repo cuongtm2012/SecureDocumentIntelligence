@@ -184,29 +184,38 @@ async function processFileWithFallback(filePath: string, document: any, document
         }
       }
 
-      // Then enhance with DeepSeek analysis for Vietnamese text improvement
+      // Then enhance with DeepSeek Vietnamese text reconstruction
+      const textReconstruction = await deepSeekService.reconstructVietnameseText(ocrResult.extractedText);
+      
+      // Also perform document analysis
       const deepseekAnalysis = await deepSeekService.analyzeDocument(
-        ocrResult.extractedText, 
+        textReconstruction.reconstructedText, 
         "Vietnamese government document analysis"
       );
 
       finalOcrResult = {
         success: true,
         file_id: document.originalName,
-        text: ocrResult.extractedText,
-        confidence: ocrResult.confidence,
+        text: textReconstruction.reconstructedText, // Use reconstructed text instead of raw OCR
+        confidence: Math.max(ocrResult.confidence, textReconstruction.confidence),
         page_count: ocrResult.pageCount,
         processing_time: ocrResult.processingTime / 1000,
         metadata: {
-          character_count: ocrResult.extractedText.length,
-          word_count: ocrResult.extractedText.split(/\s+/).filter((word: string) => word.length > 0).length,
+          character_count: textReconstruction.reconstructedText.length,
+          word_count: textReconstruction.reconstructedText.split(/\s+/).filter((word: string) => word.length > 0).length,
           language: 'vie',
           confidence_threshold: 60.0,
           processing_timestamp: new Date(),
           file_size_bytes: document.fileSize,
-          processing_mode: 'abbyy-finereader-deepseek',
+          processing_mode: 'ocr-deepseek-reconstruction',
+          original_ocr_text: ocrResult.extractedText, // Keep original OCR text for comparison
+          text_reconstruction: {
+            applied: true,
+            improvements: textReconstruction.improvements,
+            confidence: textReconstruction.confidence
+          },
           deepseek_analysis: deepseekAnalysis,
-          note: 'Processed with ABBYY FineReader + DeepSeek API for superior Vietnamese text extraction'
+          note: 'Processed with OCR + DeepSeek Vietnamese text reconstruction for superior accuracy'
         }
       };
 
@@ -226,22 +235,42 @@ async function processFileWithFallback(filePath: string, document: any, document
           directResult = await simpleTesseractProcessor.processDocument(filePath);
         }
 
+        // Try to apply Vietnamese text reconstruction even in fallback mode
+        let reconstructedText = directResult.extractedText;
+        let textReconstructionMeta = { applied: false, reason: 'DeepSeek API unavailable' };
+
+        try {
+          if (process.env.OPENAI_API_KEY && directResult.extractedText.length > 10) {
+            const textReconstruction = await deepSeekService.reconstructVietnameseText(directResult.extractedText);
+            reconstructedText = textReconstruction.reconstructedText;
+            textReconstructionMeta = {
+              applied: true,
+              improvements: textReconstruction.improvements,
+              confidence: textReconstruction.confidence
+            };
+          }
+        } catch (reconstructionError) {
+          console.warn('Text reconstruction failed in fallback mode:', reconstructionError);
+        }
+
         finalOcrResult = {
           success: true,
           file_id: document.originalName,
-          text: directResult.extractedText,
+          text: reconstructedText,
           confidence: directResult.confidence,
           page_count: directResult.pageCount,
           processing_time: directResult.processingTime / 1000,
           metadata: {
-            character_count: directResult.extractedText.length,
-            word_count: directResult.extractedText.split(/\s+/).filter((word: string) => word.length > 0).length,
+            character_count: reconstructedText.length,
+            word_count: reconstructedText.split(/\s+/).filter((word: string) => word.length > 0).length,
             language: 'vie',
             confidence_threshold: 60.0,
             processing_timestamp: new Date(),
             file_size_bytes: document.fileSize,
-            processing_mode: 'direct-fallback',
-            note: 'Processed with direct OCR (DeepSeek unavailable)'
+            processing_mode: 'direct-fallback-with-reconstruction',
+            original_ocr_text: directResult.extractedText,
+            text_reconstruction: textReconstructionMeta,
+            note: 'Processed with direct OCR fallback + text reconstruction attempt'
           }
         };
       } catch (directError: any) {
@@ -1156,6 +1185,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Text reconstruction endpoint for testing
+  app.post("/api/ocr/reconstruct-text", async (req, res) => {
+    try {
+      const { rawText } = req.body;
+      
+      if (!rawText || typeof rawText !== 'string') {
+        return res.status(400).json({
+          success: false,
+          error: "rawText is required and must be a string"
+        });
+      }
+
+      if (!process.env.OPENAI_API_KEY) {
+        return res.status(503).json({
+          success: false,
+          error: "DeepSeek API key not configured"
+        });
+      }
+
+      const reconstruction = await deepSeekService.reconstructVietnameseText(rawText);
+      
+      res.json({
+        success: true,
+        original_text: rawText,
+        ...reconstruction
+      });
+
+    } catch (error) {
+      console.error('Text reconstruction error:', error);
+      res.status(500).json({
+        success: false,
+        error: "Text reconstruction failed",
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
   // OCR engines status endpoint
   app.get("/api/ocr/status", async (req, res) => {
     try {
@@ -1176,13 +1242,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
               id_card_support: true,
               psm_configurations: [3, 6, 8, 13]
             }
+          },
+          deepseek_text_reconstruction: {
+            available: !!process.env.OPENAI_API_KEY,
+            status: process.env.OPENAI_API_KEY ? 'healthy' : 'unavailable',
+            details: {
+              purpose: 'Vietnamese administrative text reconstruction',
+              improvements: ['Fix OCR errors', 'Standardize legal terminology', 'Correct formatting']
+            }
           }
         },
         recommendations: {
           id_cards: abbyyHealth.status === 'healthy' ? 'ABBYY (preferred) or Tesseract PSM 6' : 'Tesseract PSM 6',
           receipts: 'Vietnamese Receipt Processor',
           documents: abbyyHealth.status === 'healthy' ? 'ABBYY (preferred) or Tesseract' : 'Tesseract',
-          parallel_processing: abbyyHealth.status === 'healthy'
+          parallel_processing: abbyyHealth.status === 'healthy',
+          text_reconstruction: !!process.env.OPENAI_API_KEY
         }
       };
       
