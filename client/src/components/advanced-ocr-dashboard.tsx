@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 
 // Import our enhanced components
 import { EnhancedUploadManager, UploadedFile } from './enhanced-upload-manager';
@@ -38,7 +39,11 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
-  Copy
+  Copy,
+  Search,
+  Calendar,
+  Filter,
+  X
 } from 'lucide-react';
 import { nanoid } from 'nanoid';
 import { useToast } from "@/hooks/use-toast";
@@ -75,6 +80,10 @@ export function AdvancedOCRDashboard() {
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+
+  // Filter and search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -378,8 +387,44 @@ export function AdvancedOCRDashboard() {
       processedAt: new Date(doc.processedAt || doc.uploadedAt),
     }));
 
+  // Filter documents by search query and date
+  const filteredDocuments = documents.filter((doc: any) => {
+    // Search filter
+    const searchMatch = searchQuery === '' || 
+      (doc.originalName || doc.filename || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (doc.extractedText || '').toLowerCase().includes(searchQuery.toLowerCase());
+
+    // Date filter
+    const docDate = new Date(doc.uploadedAt);
+    const now = new Date();
+    let dateMatch = true;
+
+    switch (dateFilter) {
+      case 'today':
+        dateMatch = docDate.toDateString() === now.toDateString();
+        break;
+      case 'week':
+        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        dateMatch = docDate >= weekAgo;
+        break;
+      case 'month':
+        const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        dateMatch = docDate >= monthAgo;
+        break;
+      default:
+        dateMatch = true;
+    }
+
+    return searchMatch && dateMatch;
+  });
+
+  // Reset current page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, dateFilter]);
+
   // Paginated documents
-  const paginatedDocuments = documents.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const paginatedDocuments = filteredDocuments.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   // Document selector state for PDF viewer
   const [selectedDocument, setSelectedDocument] = useState<DocumentData | null>(null);
@@ -681,47 +726,102 @@ export function AdvancedOCRDashboard() {
 
           {/* Results Tab */}
           <TabsContent value="results" className="space-y-6">
-          <div className="flex flex-col space-y-4 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
-            <div>
-              <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Processing Results</h2>
-              <p className="text-sm sm:text-base text-gray-600">
-                View and manage processed documents ({documents?.length || 0} total)
-              </p>
-              {console.log('🎯 Results Tab - Documents state:', {
-                documentsLength: documents?.length,
-                isLoading,
-                firstDocument: documents?.[0],
-                allDocuments: documents
-              })}
+          <div className="flex flex-col space-y-4">
+            <div className="flex flex-col space-y-4 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
+              <div>
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Processing Results</h2>
+                <p className="text-sm sm:text-base text-gray-600">
+                  View and manage processed documents ({filteredDocuments?.length || 0} of {documents?.length || 0} total)
+                </p>
+                {console.log('🎯 Results Tab - Documents state:', {
+                  documentsLength: documents?.length,
+                  filteredLength: filteredDocuments?.length,
+                  isLoading,
+                  searchQuery,
+                  dateFilter
+                })}
+              </div>
+              <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    console.log('🔄 Manual refresh triggered');
+                    queryClient.invalidateQueries({ queryKey: ['documents'] });
+                  }}
+                >
+                  Refresh
+                </Button>
+                <Select value={pageSize.toString()} onValueChange={(value) => {
+                  setPageSize(Number(value));
+                  setCurrentPage(1);
+                }}>
+                  <SelectTrigger className="w-full sm:w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="5">5 per page</SelectItem>
+                    <SelectItem value="10">10 per page</SelectItem>
+                    <SelectItem value="20">20 per page</SelectItem>
+                    <SelectItem value="50">50 per page</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Badge variant="outline" className="text-xs sm:text-sm text-center">
+                  Page {currentPage} of {Math.ceil((filteredDocuments?.length || 0) / pageSize)}
+                </Badge>
+              </div>
             </div>
-            <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  console.log('🔄 Manual refresh triggered');
-                  queryClient.invalidateQueries({ queryKey: ['documents'] });
-                }}
-              >
-                Refresh
-              </Button>
-              <Select value={pageSize.toString()} onValueChange={(value) => {
-                setPageSize(Number(value));
-                setCurrentPage(1);
-              }}>
-                <SelectTrigger className="w-full sm:w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="5">5 per page</SelectItem>
-                  <SelectItem value="10">10 per page</SelectItem>
-                  <SelectItem value="20">20 per page</SelectItem>
-                  <SelectItem value="50">50 per page</SelectItem>
-                </SelectContent>
-              </Select>
-              <Badge variant="outline" className="text-xs sm:text-sm text-center">
-                Page {currentPage} of {Math.ceil((documents?.length || 0) / pageSize)}
-              </Badge>
+
+            {/* Search and Filter Controls */}
+            <div className="flex flex-col space-y-3 sm:flex-row sm:items-center sm:space-y-0 sm:space-x-4 p-4 bg-gray-50 rounded-lg border">
+              <div className="flex items-center space-x-2 flex-1">
+                <Search className="h-4 w-4 text-gray-500" />
+                <Input
+                  placeholder="Search by filename or extracted text..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="flex-1 bg-white"
+                />
+                {searchQuery && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSearchQuery('')}
+                    className="px-2"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Filter className="h-4 w-4 text-gray-500" />
+                <Select value={dateFilter} onValueChange={(value: any) => setDateFilter(value)}>
+                  <SelectTrigger className="w-full sm:w-40 bg-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All dates</SelectItem>
+                    <SelectItem value="today">Today</SelectItem>
+                    <SelectItem value="week">This week</SelectItem>
+                    <SelectItem value="month">This month</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {(searchQuery || dateFilter !== 'all') && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setDateFilter('all');
+                  }}
+                  className="whitespace-nowrap"
+                >
+                  Clear filters
+                </Button>
+              )}
             </div>
           </div>
 
@@ -736,12 +836,11 @@ export function AdvancedOCRDashboard() {
                 </Card>
               ))}
             </div>
-          ) : documents && documents.length > 0 ? (
+          ) : filteredDocuments && filteredDocuments.length > 0 ? (
             <>
               <div className="space-y-4">
-                {documents
+                {paginatedDocuments
                   .sort((a: any, b: any) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime())
-                  .slice((currentPage - 1) * pageSize, currentPage * pageSize)
                   .map((doc: any) => (
                   <Card key={doc.id} className="border border-gray-200 hover:border-blue-300 transition-colors">
                     <CardContent className="p-4 sm:p-6">
@@ -905,10 +1004,11 @@ export function AdvancedOCRDashboard() {
               </div>
 
               {/* Pagination Controls */}
-              {documents.length > pageSize && (
+              {filteredDocuments.length > pageSize && (
                 <div className="flex flex-col space-y-4 sm:flex-row sm:items-center sm:justify-between sm:space-y-0 border-t pt-6">
                   <div className="text-xs sm:text-sm text-gray-600 text-center sm:text-left">
-                    Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, documents.length)} of {documents.length} results
+                    Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, filteredDocuments.length)} of {filteredDocuments.length} results
+                    {searchQuery || dateFilter !== 'all' ? ` (filtered from ${documents.length} total)` : ''}
                   </div>
 
                   <div className="flex items-center justify-center space-x-1 sm:space-x-2">
@@ -939,8 +1039,8 @@ export function AdvancedOCRDashboard() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setCurrentPage(prev => Math.min(Math.ceil(documents.length / pageSize), prev + 1))}
-                      disabled={currentPage >= Math.ceil(documents.length / pageSize)}
+                      onClick={() => setCurrentPage(prev => Math.min(Math.ceil(filteredDocuments.length / pageSize), prev + 1))}
+                      disabled={currentPage >= Math.ceil(filteredDocuments.length / pageSize)}
                       className="p-2"
                     >
                                             <ChevronRight className="h-4 w-4" />
@@ -949,8 +1049,8 @@ export function AdvancedOCRDashboard() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setCurrentPage(Math.ceil(documents.length / pageSize))}
-                      disabled={currentPage >= Math.ceil(documents.length / pageSize)}
+                      onClick={() => setCurrentPage(Math.ceil(filteredDocuments.length / pageSize))}
+                      disabled={currentPage >= Math.ceil(filteredDocuments.length / pageSize)}
                       className="p-2"
                     >
                       <ChevronsRight className="h-4 w-4" />
@@ -959,6 +1059,25 @@ export function AdvancedOCRDashboard() {
                 </div>
               )}
             </>
+          ) : documents && documents.length > 0 ? (
+            <Card className="border-dashed border-2 border-gray-300">
+              <CardContent className="p-12 text-center">
+                <Search className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">No Results Found</h3>
+                <p className="text-gray-600 mb-4">
+                  No documents match your current search criteria.
+                </p>
+                <Button 
+                  variant="outline"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setDateFilter('all');
+                  }}
+                >
+                  Clear Filters
+                </Button>
+              </CardContent>
+            </Card>
           ) : (
             <Card className="border-dashed border-2 border-gray-300">
               <CardContent className="p-12 text-center">
