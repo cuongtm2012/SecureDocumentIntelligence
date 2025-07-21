@@ -191,7 +191,7 @@ export function AdvancedOCRDashboard() {
     },
   });
 
-  // Process document mutation with progress tracking
+  // Enhanced process document mutation with detailed progress tracking
   const processMutation = useMutation({
     mutationFn: async (documentId: string) => {
       // Mark as processing
@@ -221,7 +221,7 @@ export function AdvancedOCRDashboard() {
       
       toast({
         title: "Processing completed",
-        description: "Optimized OCR processing completed successfully.",
+        description: "OCR processing completed successfully with enhanced progress tracking.",
       });
     },
     onError: (error, documentId) => {
@@ -314,7 +314,177 @@ export function AdvancedOCRDashboard() {
     }
   };
 
-  // Process uploaded file
+  // Enhanced OCR progress tracker with log monitoring
+  const trackOCRProgress = (documentId: string, fileId: string) => {
+    let eventSource: EventSource | null = null;
+    let progressInterval: NodeJS.Timeout;
+    
+    // Start SSE connection to monitor server logs
+    const connectToProgressStream = () => {
+      eventSource = new EventSource(`/api/documents/${documentId}/progress-stream`);
+      
+      eventSource.onmessage = (event) => {
+        try {
+          const logData = JSON.parse(event.data);
+          
+          setUploadedFiles(prev => prev.map(f => {
+            if (f.id !== fileId) return f;
+            
+            // Calculate progress based on log patterns
+            let progress = f.processingProgress;
+            let ocrProgress = f.ocrProgress || {
+              stage: 'initializing',
+              stageDescription: 'Starting OCR...',
+              totalPages: 1,
+              pagesCompleted: 0,
+              currentPage: 1
+            };
+            
+            // Parse different log types
+            if (logData.message?.includes('Starting PDF OCR processing')) {
+              ocrProgress = {
+                stage: 'initializing',
+                stageDescription: 'Starting PDF processing...',
+                totalPages: logData.pageCount || 1,
+                pagesCompleted: 0,
+                currentPage: 1,
+                processingSpeed: '~60s estimated'
+              };
+              progress = 5;
+            } else if (logData.message?.includes('Converting page')) {
+              const pageMatch = logData.message.match(/page (\d+) of (\d+)/);
+              if (pageMatch) {
+                const currentPage = parseInt(pageMatch[1]);
+                const totalPages = parseInt(pageMatch[2]);
+                ocrProgress = {
+                  ...ocrProgress,
+                  stage: 'converting',
+                  stageDescription: 'Converting PDF pages...',
+                  currentPage,
+                  totalPages,
+                  processingSpeed: '200 DPI conversion'
+                };
+                progress = 10 + ((currentPage - 1) / totalPages) * 30; // 10-40%
+              }
+            } else if (logData.message?.includes('OCR processing page')) {
+              const pageMatch = logData.message.match(/page (\d+) of (\d+)/);
+              if (pageMatch) {
+                const currentPage = parseInt(pageMatch[1]);
+                const totalPages = parseInt(pageMatch[2]);
+                ocrProgress = {
+                  ...ocrProgress,
+                  stage: 'extracting',
+                  stageDescription: 'Extracting text from pages...',
+                  currentPage,
+                  totalPages,
+                  pagesCompleted: currentPage - 1,
+                  processingSpeed: 'Tesseract OCR'
+                };
+                progress = 40 + ((currentPage - 1) / totalPages) * 40; // 40-80%
+              }
+            } else if (logData.message?.includes('Page') && logData.message?.includes('processed with')) {
+              const pageMatch = logData.message.match(/Page (\d+)/);
+              const confidenceMatch = logData.message.match(/(\d+)% confidence/);
+              if (pageMatch) {
+                const pageNumber = parseInt(pageMatch[1]);
+                const confidence = confidenceMatch ? parseInt(confidenceMatch[1]) : 0;
+                ocrProgress = {
+                  ...ocrProgress,
+                  stage: 'extracting',
+                  stageDescription: `Page ${pageNumber} extracted (${confidence}% confidence)`,
+                  pagesCompleted: pageNumber,
+                  processingSpeed: `${confidence}% accuracy`
+                };
+                progress = 40 + (pageNumber / (ocrProgress.totalPages || 1)) * 40; // Up to 80%
+              }
+            } else if (logData.message?.includes('DeepSeek API processing')) {
+              ocrProgress = {
+                ...ocrProgress,
+                stage: 'enhancing',
+                stageDescription: 'Enhancing text with AI...',
+                processingSpeed: 'DeepSeek AI'
+              };
+              progress = 85;
+            } else if (logData.message?.includes('DeepSeek API processing completed successfully')) {
+              ocrProgress = {
+                ...ocrProgress,
+                stage: 'completing',
+                stageDescription: 'Processing completed successfully!',
+                processingSpeed: 'Complete'
+              };
+              progress = 100;
+            }
+            
+            return {
+              ...f,
+              processingProgress: Math.min(progress, 100),
+              ocrProgress
+            };
+          }));
+        } catch (error) {
+          console.error('Error parsing progress data:', error);
+        }
+      };
+      
+      eventSource.onerror = () => {
+        eventSource?.close();
+        // Fallback to polling if SSE fails
+        startProgressPolling();
+      };
+    };
+    
+    // Fallback progress polling
+    const startProgressPolling = () => {
+      progressInterval = setInterval(async () => {
+        try {
+          const response = await fetch(`/api/documents/${documentId}`);
+          const doc = await response.json();
+          
+          setUploadedFiles(prev => prev.map(f => {
+            if (f.id !== fileId) return f;
+            
+            if (doc.status === 'processing') {
+              return {
+                ...f,
+                processingProgress: Math.min((f.processingProgress || 0) + 2, 95),
+                ocrProgress: {
+                  ...f.ocrProgress,
+                  stageDescription: 'Processing in progress...'
+                }
+              };
+            } else if (doc.status === 'completed') {
+              clearInterval(progressInterval);
+              return {
+                ...f,
+                status: 'completed',
+                processingProgress: 100,
+                ocrProgress: {
+                  stage: 'completing',
+                  stageDescription: 'Processing completed!',
+                  processingSpeed: 'Complete'
+                }
+              };
+            }
+            return f;
+          }));
+        } catch (error) {
+          console.error('Progress polling error:', error);
+          clearInterval(progressInterval);
+        }
+      }, 2000);
+    };
+    
+    // Try SSE first, fallback to polling
+    connectToProgressStream();
+    
+    // Cleanup function
+    return () => {
+      eventSource?.close();
+      if (progressInterval) clearInterval(progressInterval);
+    };
+  };
+
+  // Process uploaded file with enhanced progress tracking
   const handleFileProcess = async (fileId: string) => {
     const file = uploadedFiles.find(f => f.id === fileId);
     if (!file || !file.documentId) {
@@ -326,13 +496,30 @@ export function AdvancedOCRDashboard() {
 
     setUploadedFiles(prev => prev.map(f => 
       f.id === fileId 
-        ? { ...f, status: 'processing', processingProgress: 0 }
+        ? { 
+            ...f, 
+            status: 'processing', 
+            processingProgress: 0,
+            ocrProgress: {
+              stage: 'initializing',
+              stageDescription: 'Initializing OCR processing...',
+              totalPages: 1,
+              pagesCompleted: 0,
+              currentPage: 1
+            }
+          }
         : f
     ));
+
+    // Start progress tracking
+    const cleanupProgress = trackOCRProgress(file.documentId.toString(), fileId);
 
     try {
       // Use the stored document ID directly (this is the correct ID from server)
       const result = await processMutation.mutateAsync(file.documentId.toString());
+
+      // Cleanup progress tracking
+      cleanupProgress();
 
       setUploadedFiles(prev => prev.map(f => 
         f.id === fileId 
@@ -340,21 +527,39 @@ export function AdvancedOCRDashboard() {
               ...f, 
               status: 'completed', 
               processingProgress: 100,
+              ocrProgress: {
+                stage: 'completing',
+                stageDescription: 'Processing completed successfully!',
+                processingSpeed: 'Complete'
+              },
               result: {
                 extractedText: result.extractedText || '',
                 confidence: result.confidence || 0,
-                pageCount: result.pageCount,
-                wordCount: result.extractedText ? result.extractedText.split(/\s+/).filter((word: string) => word.length > 0).length : 0,
-                characterCount: result.extractedText ? result.extractedText.length : 0,
-              }
+                pageCount: result.pageCount || 1,
+                characterCount: result.extractedText?.length || 0,
+                wordCount: result.extractedText?.split(/\s+/).length || 0
+              },
+              structuredData: result.structuredData
             }
           : f
       ));
-    } catch (error) {
-      console.error('❌ Processing failed for document ID', file.documentId, error);
+    } catch (error: any) {
+      // Cleanup progress tracking
+      cleanupProgress();
+      
+      console.error('Processing error:', error);
       setUploadedFiles(prev => prev.map(f => 
         f.id === fileId 
-          ? { ...f, status: 'error', error: 'Processing failed' }
+          ? { 
+              ...f, 
+              status: 'error', 
+              error: error.message,
+              ocrProgress: {
+                stage: 'completing',
+                stageDescription: 'Processing failed',
+                processingSpeed: 'Error'
+              }
+            }
           : f
       ));
     }

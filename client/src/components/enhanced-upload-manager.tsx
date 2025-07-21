@@ -34,6 +34,16 @@ export interface UploadedFile {
     characterCount?: number;
   };
   structuredData?: string | any; // JSON string or parsed object for additional metadata
+  // Enhanced OCR progress tracking
+  ocrProgress?: {
+    stage: 'initializing' | 'converting' | 'extracting' | 'enhancing' | 'completing';
+    stageDescription: string;
+    totalPages?: number;
+    pagesCompleted?: number;
+    currentPage?: number;
+    estimatedTime?: string;
+    processingSpeed?: string;
+  };
 }
 
 interface EnhancedUploadManagerProps {
@@ -345,10 +355,50 @@ export function EnhancedUploadManager({
                   {file.status === 'processing' && (
                     <div className="space-y-2">
                       <div className="flex justify-between text-sm">
-                        <span>Processing OCR...</span>
-                        <span>{file.processingProgress}%</span>
+                        <span className="flex items-center gap-2">
+                          {file.ocrProgress ? (
+                            <>
+                              <div className={cn(
+                                "w-2 h-2 rounded-full animate-pulse",
+                                file.ocrProgress.stage === 'initializing' && "bg-blue-500",
+                                file.ocrProgress.stage === 'converting' && "bg-yellow-500",
+                                file.ocrProgress.stage === 'extracting' && "bg-green-500",
+                                file.ocrProgress.stage === 'enhancing' && "bg-purple-500",
+                                file.ocrProgress.stage === 'completing' && "bg-emerald-500"
+                              )} />
+                              {file.ocrProgress.stageDescription}
+                              {file.ocrProgress.currentPage && file.ocrProgress.totalPages && (
+                                <span className="text-xs text-gray-500">
+                                  (Page {file.ocrProgress.currentPage}/{file.ocrProgress.totalPages})
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            <>Processing OCR...</>
+                          )}
+                        </span>
+                        <span className="flex items-center gap-2">
+                          {file.ocrProgress?.processingSpeed && (
+                            <span className="text-xs text-gray-500">
+                              {file.ocrProgress.processingSpeed}
+                            </span>
+                          )}
+                          {file.processingProgress}%
+                        </span>
                       </div>
-                      <Progress value={file.processingProgress} />
+                      <Progress value={file.processingProgress} className={cn(
+                        "transition-all duration-300",
+                        file.ocrProgress?.stage === 'extracting' && "bg-green-100",
+                        file.ocrProgress?.stage === 'enhancing' && "bg-purple-100"
+                      )} />
+                      {file.ocrProgress?.estimatedTime && (
+                        <div className="text-xs text-gray-500 flex justify-between">
+                          <span>
+                            {file.ocrProgress.pagesCompleted || 0} of {file.ocrProgress.totalPages || 0} pages completed
+                          </span>
+                          <span>ETA: {file.ocrProgress.estimatedTime}</span>
+                        </div>
+                      )}
                     </div>
                   )}
                     {/* OCR Result Summary - Clickable */}
