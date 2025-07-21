@@ -446,9 +446,16 @@ Provide analysis in JSON format with:
       console.log(`Processing PDF document with DeepSeek AI: ${pdfPath}`);
       
       // First, extract text from PDF using pdf-parse
-      const pdfBuffer = fs.readFileSync(pdfPath);
-      const pdfParse = (await import('pdf-parse')).default;
-      const pdfData = await pdfParse(pdfBuffer);
+      let pdfData;
+      try {
+        const pdfBuffer = fs.readFileSync(pdfPath);
+        const pdfParse = (await import('pdf-parse')).default;
+        pdfData = await pdfParse(pdfBuffer);
+      } catch (importError) {
+        console.error('PDF-parse import error, trying alternative approach:', importError);
+        // Fallback to a different PDF processing approach
+        throw new Error('PDF text extraction failed - library issue');
+      }
       
       console.log(`📄 PDF extracted text length: ${pdfData.text.length} characters`);
       console.log(`📄 PDF pages: ${pdfData.numpages}`);

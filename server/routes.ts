@@ -143,12 +143,12 @@ async function processFileWithFallback(filePath: string, document: any, document
       // Update progress: Converting
       ocrProgressTracker.updateProgress(progressId, 'converting', 2, 'Converting PDF for processing...');
 
-      console.log('🤖 Processing PDF with DeepSeek API...');
+      console.log('🤖 Processing PDF with Reliable OCR...');
 
       // Update progress: Extracting
       ocrProgressTracker.updateProgress(progressId, 'extracting', 3, 'Extracting text with Tesseract...');
 
-      const deepSeekResult = await deepSeekService.processPDFDocument(filePath, document.originalName);
+      const reliableOCRResult = await reliableOCRProcessor.processDocument(filePath);
 
       // Update progress: Reconstructing
       ocrProgressTracker.updateProgress(progressId, 'reconstructing', 4, 'Enhancing text with DeepSeek AI...');
@@ -156,21 +156,20 @@ async function processFileWithFallback(filePath: string, document: any, document
       ocrResult = {
         success: true,
         file_id: document.originalName,
-        text: deepSeekResult.extractedText,
-        confidence: deepSeekResult.confidence,
-        page_count: deepSeekResult.pageCount || 1,
-        processing_time: deepSeekResult.processingTime / 1000,
+        text: reliableOCRResult.extractedText,
+        confidence: reliableOCRResult.confidence,
+        page_count: reliableOCRResult.pageCount || 1,
+        processing_time: reliableOCRResult.processingTime / 1000,
         metadata: {
-          character_count: deepSeekResult.extractedText.length,
-          word_count: deepSeekResult.extractedText.split(/\s+/).filter(word => word.length > 0).length,
+          character_count: reliableOCRResult.extractedText.length,
+          word_count: reliableOCRResult.extractedText.split(/\s+/).filter(word => word.length > 0).length,
           language: 'vie',
           confidence_threshold: 60.0,
           processing_timestamp: new Date(),
           file_size_bytes: document.fileSize,
-          processing_mode: 'deepseek-pdf-enhanced',
-          deepseek_improvements: deepSeekResult.improvements || [],
-          deepseek_analysis: deepSeekResult.structuredData || {},
-          note: 'Enhanced PDF processing with DeepSeek API'
+          processing_mode: 'reliable-pdf-ocr',
+          ocr_method: reliableOCRResult.method || 'reliable-ocr',
+          note: 'Reliable PDF processing with ImageMagick and Tesseract OCR'
         }
       };
 
@@ -213,35 +212,35 @@ async function processFileWithFallback(filePath: string, document: any, document
     console.error('DeepSeek error:', deepseekError instanceof Error ? deepseekError.message : deepseekError);
 
     // Update progress: Fallback
-    ocrProgressTracker.updateProgress(progressId, 'extracting', 3, 'DeepSeek failed, using direct OCR...');
+    ocrProgressTracker.updateProgress(progressId, 'extracting', 3, 'Reliable OCR failed, using optimized OCR...');
 
-    // Direct OCR fallback
+    // Optimized OCR fallback
     try {
-      const directResult = await directOCRProcessor.processDocument(filePath);
+      const optimizedResult = await optimizedOCRProcessor.processDocument(filePath);
 
       ocrResult = {
         success: true,
         file_id: document.originalName,
-        text: directResult.extractedText,
-        confidence: directResult.confidence,
-        page_count: directResult.pageCount,
-        processing_time: directResult.processingTime / 1000,
+        text: optimizedResult.extractedText,
+        confidence: optimizedResult.confidence,
+        page_count: optimizedResult.pageCount,
+        processing_time: optimizedResult.processingTime / 1000,
         metadata: {
-          character_count: directResult.extractedText.length,
-          word_count: directResult.extractedText.split(/\s+/).filter(word => word.length > 0).length,
+          character_count: optimizedResult.extractedText.length,
+          word_count: optimizedResult.extractedText.split(/\s+/).filter(word => word.length > 0).length,
           language: 'vie',
           confidence_threshold: 60.0,
           processing_timestamp: new Date(),
           file_size_bytes: document.fileSize,
-          processing_mode: 'direct-fallback',
-          note: 'Processed with direct OCR (DeepSeek unavailable)'
+          processing_mode: 'optimized-fallback',
+          note: 'Processed with optimized OCR (Reliable OCR unavailable)'
         }
       };
 
-      ocrProgressTracker.updateProgress(progressId, 'completing', 5, 'Direct OCR completed');
-    } catch (directError: any) {
-      ocrProgressTracker.completeTracking(progressId, false, { error: directError.message });
-      throw new Error('OCR processing failed: ' + (directError.message || 'Unknown error'));
+      ocrProgressTracker.updateProgress(progressId, 'completing', 5, 'Optimized OCR completed');
+    } catch (optimizedError: any) {
+      ocrProgressTracker.completeTracking(progressId, false, { error: optimizedError.message });
+      throw new Error('OCR processing failed: ' + (optimizedError.message || 'Unknown error'));
     }
   }
 

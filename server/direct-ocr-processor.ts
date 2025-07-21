@@ -1,5 +1,6 @@
 import { createWorker } from 'tesseract.js';
 import { promises as fs } from 'fs';
+import * as fsSync from 'fs';
 import * as path from 'path';
 import sharp from 'sharp';
 import { spawn } from 'child_process';
@@ -114,7 +115,7 @@ export class DirectOCRProcessor {
   private async convertPDFToImages(pdfPath: string, outputPattern: string): Promise<void> {
     return new Promise((resolve, reject) => {
       // Check if input file exists and is readable
-      if (!require('fs').existsSync(pdfPath)) {
+      if (!fsSync.existsSync(pdfPath)) {
         reject(new Error(`PDF file not found: ${pdfPath}`));
         return;
       }
@@ -136,7 +137,7 @@ export class DirectOCRProcessor {
         outputPattern
       ];
       
-      console.log(`🔄 Converting PDF to images: ${require('path').basename(pdfPath)}`);
+      console.log(`🔄 Converting PDF to images: ${path.basename(pdfPath)}`);
       console.log(`📝 Command: convert ${args.join(' ')}`);
       
       const process = spawn('convert', args, {
