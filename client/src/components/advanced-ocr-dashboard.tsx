@@ -740,6 +740,7 @@ export function AdvancedOCRDashboard() {
             <>
               <div className="space-y-4">
                 {documents
+                  .sort((a: any, b: any) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime())
                   .slice((currentPage - 1) * pageSize, currentPage * pageSize)
                   .map((doc: any) => (
                   <Card key={doc.id} className="border border-gray-200 hover:border-blue-300 transition-colors">
@@ -749,14 +750,14 @@ export function AdvancedOCRDashboard() {
                           <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-2 mb-2">
                             <div className="flex items-center space-x-2">
                               <FileText className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600" />
-                              <h3 className="font-semibold text-gray-900 text-sm sm:text-base truncate">{doc.filename}</h3>
+                              <h3 className="font-semibold text-gray-900 text-sm sm:text-base truncate">{doc.originalName || doc.filename}</h3>
                             </div>
                             <Badge 
-                              variant={doc.status === 'completed' ? 'default' : 
-                                     doc.status === 'processing' ? 'secondary' : 'destructive'}
+                              variant={doc.processingStatus === 'completed' ? 'default' : 
+                                     doc.processingStatus === 'processing' ? 'secondary' : 'destructive'}
                               className="text-xs w-fit"
                             >
-                              {doc.status}
+                              {doc.processingStatus || 'pending'}
                             </Badge>
                           </div>
 
@@ -773,7 +774,7 @@ export function AdvancedOCRDashboard() {
                             )}
                             <div>
                               <span className="font-medium">Type:</span>
-                              <div className="capitalize">{doc.type}</div>
+                              <div className="capitalize">{doc.mimeType?.includes('pdf') ? 'PDF' : 'Image'}</div>
                             </div>
                             {doc.confidence && (
                               <div>
@@ -800,13 +801,28 @@ export function AdvancedOCRDashboard() {
                             size="sm"
                             className="text-xs sm:text-sm w-full sm:w-auto"
                             onClick={() => {
+                              console.log('🔍 Opening viewer for document:', {
+                                id: doc.id,
+                                originalName: doc.originalName,
+                                filename: doc.filename,
+                                mimeType: doc.mimeType,
+                                processingStatus: doc.processingStatus,
+                                hasExtractedText: !!doc.extractedText
+                              });
                               setSelectedResult({
                                 id: doc.id.toString(),
-                                fileName: doc.filename,
-                                fileType: doc.type === 'pdf' ? 'pdf' : 'image',
+                                fileName: doc.originalName || doc.filename,
+                                fileType: doc.mimeType?.includes('pdf') ? 'pdf' : 'image',
                                 extractedText: doc.extractedText || '',
                                 confidence: (doc.confidence || 0), // Keep as decimal for EnhancedOCRViewer
-                                pageCount: doc.structuredData?.pageCount || 1,
+                                pageCount: (() => {
+                                  try {
+                                    const structured = doc.structuredData ? JSON.parse(doc.structuredData) : {};
+                                    return structured.pageCount || 1;
+                                  } catch {
+                                    return 1;
+                                  }
+                                })(),
                                 imageUrl: `/api/documents/${doc.id}/thumbnail`,
                                 lowConfidenceWords: []
                               });
@@ -816,18 +832,30 @@ export function AdvancedOCRDashboard() {
                             <FileText className="h-4 w-4 mr-2" />
                             View Details
                           </Button>
-                            {doc.type === 'pdf' && (
+                            {doc.mimeType?.includes('pdf') && (
                             <Button
                               variant="outline"
                               size="sm"
                               onClick={() => {
+                                console.log('📄 Opening PDF viewer for document:', {
+                                  id: doc.id,
+                                  originalName: doc.originalName,
+                                  mimeType: doc.mimeType
+                                });
                                 setSelectedDocument({
                                   id: doc.id.toString(),
-                                  fileName: doc.filename,
+                                  fileName: doc.originalName || doc.filename,
                                   fileType: 'pdf',
                                   extractedText: doc.extractedText || '',
                                   confidence: (doc.confidence || 0),
-                                  pageCount: doc.structuredData?.pageCount || 1,
+                                  pageCount: (() => {
+                                    try {
+                                      const structured = doc.structuredData ? JSON.parse(doc.structuredData) : {};
+                                      return structured.pageCount || 1;
+                                    } catch {
+                                      return 1;
+                                    }
+                                  })(),
                                   documentId: doc.id,
                                   imageUrl: `/api/documents/${doc.id}/thumbnail`
                                 });
