@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FileText, Clock, CheckCircle, AlertCircle, Loader2, Eye } from "lucide-react";
 import { useLanguage } from "@/hooks/use-language";
-import { DocumentViewerModal } from "@/components/document-viewer-modal";
+
 import { useState } from "react";
 import type { Document, AuditLog } from "@shared/schema";
 
@@ -202,14 +202,7 @@ export function EnhancedDashboard() {
         </CardContent>
       </Card>
 
-      <DocumentViewerModal
-        document={selectedDocument}
-        isOpen={isModalOpen}
-        onClose={() => {
-          setIsModalOpen(false);
-          setSelectedDocument(null);
-        }}
-      />
+      {/* Document viewer modal - temporarily disabled */}
     </div>
   );
 }

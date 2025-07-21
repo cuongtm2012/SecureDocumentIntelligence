@@ -327,7 +327,7 @@ export function AdvancedOCRDashboard() {
         extractedText: file.result.extractedText,
         confidence: file.result.confidence,
         pageCount: file.result.pageCount || 1,
-        documentId: correspondingDocument.id,
+
         imageUrl: `/api/documents/${correspondingDocument.id}/thumbnail`,
         lowConfidenceWords: []
       };
@@ -440,27 +440,6 @@ export function AdvancedOCRDashboard() {
       }
     }
 
-    return searchMatch && dateMatch;h = true;
-
-    switch (dateFilter) {
-      case 'today':
-        // Create start and end of today
-        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-        dateMatch = docDate >= todayStart && docDate < todayEnd;
-        break;
-      case 'week':
-        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        dateMatch = docDate >= weekAgo;
-        break;
-      case 'month':
-        const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-        dateMatch = docDate >= monthAgo;
-        break;
-      default:
-        dateMatch = true;
-    }
-
     return searchMatch && dateMatch;
   });
 
@@ -494,7 +473,6 @@ export function AdvancedOCRDashboard() {
       extractedText: file.result?.extractedText || '',
       confidence: file.result?.confidence || 0,
       pageCount: file.result?.pageCount || 1,
-      documentId: correspondingDocument.id,
       imageUrl: `/api/documents/${correspondingDocument.id}/thumbnail`,
       lowConfidenceWords: []
     };
@@ -785,49 +763,6 @@ export function AdvancedOCRDashboard() {
                 <p className="text-sm sm:text-base text-gray-600">
                   View and manage processed documents ({filteredDocuments?.length || 0} of {documents?.length || 0} total)
                 </p>
-                {console.log('🎯 Results Tab - Documents state:', {
-                documentsLength: documents?.length,
-                filteredLength: filteredDocuments?.length,
-                isLoading,
-                searchQuery,
-                dateFilter,
-                recentDocuments: documents?.slice(0, 10).map((doc: any) => {
-                  const docDate = new Date(doc.processingCompletedAt || doc.processedAt || doc.uploadedAt || doc.createdAt);
-                  const now = new Date();
-                  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-                  const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-                  return {
-                    id: doc.id,
-                    name: doc.originalName || doc.filename,
-                    uploadedAt: doc.uploadedAt,
-                    processedAt: doc.processedAt,
-                    processingCompletedAt: doc.processingCompletedAt,
-                    docDateUsedForFilter: docDate.toISOString(),
-                    todayStart: todayStart.toISOString(),
-                    todayEnd: todayEnd.toISOString(),
-                    isToday: docDate >= todayStart && docDate < todayEnd,
-                    processingStatus: doc.processingStatus,
-                    hasExtractedText: !!doc.extractedText
-                  };
-                })?.slice(0, 5) // Limit to 5 items for cleaner debug output
-              })}processedAt,
-                    docDateUsedForFilter: docDate.toISOString(),
-                    todayStart: todayStart.toISOString(),
-                    todayEnd: todayEnd.toISOString(),
-                    isToday: docDate >= todayStart && docDate < todayEnd,
-                    processingStatus: doc.processingStatus,
-                    hasExtractedText: !!doc.extractedText
-                  };
-                }),
-                sampleDoc: documents?.[0] ? {
-                  id: documents[0].id,
-                  originalName: documents[0].originalName,
-                  processingStatus: documents[0].processingStatus,
-                  uploadedAt: documents[0].uploadedAt,
-                  processedAt: documents[0].processedAt,
-                  hasExtractedText: !!documents[0].extractedText
-                } : null
-              })}
               </div>
               <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
                 <Button onClick={() => fetchDocuments()} variant="outline" size="sm">
