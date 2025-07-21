@@ -214,14 +214,13 @@ export class OptimizedOCRProcessor {
       
       console.log('⚡ Converting PDF to images with optimized settings...');
       
-      // Optimized ImageMagick settings for speed vs quality balance
+      // ImageMagick settings optimized for accuracy (matching reliable processor)
       const args = [
-        '-density', '150',      // Reduced from 200 for faster processing
-        '-quality', '85',       // Slightly reduced quality for speed
-        '-colorspace', 'Gray',  // Grayscale for faster OCR
+        '-density', '200',      // Higher density for better OCR accuracy
+        '-quality', '90',       // Higher quality for better text recognition
+        '-colorspace', 'sRGB',  // Better color space for text clarity
         '-alpha', 'remove',
         '-background', 'white',
-        '-compress', 'None',    // No compression for speed
         pdfPath,
         outputPattern
       ];
@@ -341,17 +340,15 @@ export class OptimizedOCRProcessor {
     return new Promise((resolve) => {
       const fileName = path.basename(imagePath);
       
-      // Optimized Tesseract arguments for speed and Vietnamese text
+      // Optimized Tesseract arguments using reliable processor settings
       const args = [
         imagePath,
         'stdout',
         '-l', 'vie+eng',          // Vietnamese + English
-        '--psm', '1',             // Automatic page segmentation with OSD
+        '--psm', '3',             // Fully automatic page segmentation (more reliable)
         '--oem', '1',             // LSTM OCR Engine Mode
         '-c', 'preserve_interword_spaces=1',
-        '-c', 'load_system_dawg=0',         // Faster processing
-        '-c', 'load_freq_dawg=0',           // Faster processing
-        '--dpi', '150'            // Match our conversion DPI
+        '--dpi', '200'            // Match ImageMagick conversion DPI
       ];
       
       console.log(`⚡ Running optimized Tesseract on ${fileName}...`);
@@ -371,12 +368,12 @@ export class OptimizedOCRProcessor {
         stderr += data.toString();
       });
       
-      // Reduced timeout for faster processing
+      // Adequate timeout for reliable processing
       const timeout = setTimeout(() => {
         tesseract.kill('SIGTERM');
         console.log(`⏰ OCR timeout for page ${pageNumber}`);
         resolve({ text: '', confidence: 0 });
-      }, 45000); // 45 second timeout
+      }, 60000); // 60 second timeout (matches reliable processor)
       
       tesseract.on('close', (code: number | null) => {
         clearTimeout(timeout);
@@ -409,19 +406,24 @@ export class OptimizedOCRProcessor {
   private calculateOptimizedConfidence(text: string): number {
     if (!text || text.length === 0) return 0;
     
-    let confidence = 75; // Base confidence for optimized processing
+    // Use the same confidence calculation as reliable processor
+    let confidence = 70; // Base confidence
     
-    // Text length bonus
+    // Increase confidence based on text length
     if (text.length > 100) confidence += 10;
     if (text.length > 500) confidence += 10;
-    if (text.length > 1000) confidence += 5;
     
-    // Vietnamese character detection
+    // Increase confidence if Vietnamese diacritics are present
     const vietnameseDiacritics = /[àáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđ]/gi;
     const diacriticMatches = text.match(vietnameseDiacritics);
     if (diacriticMatches && diacriticMatches.length > 0) {
-      const diacriticRatio = diacriticMatches.length / text.length;
-      confidence += Math.min(10, diacriticRatio * 100);
+      confidence += Math.min(15, diacriticMatches.length);
+    }
+    
+    // Decrease confidence for too many special characters
+    const specialChars = text.match(/[^a-zA-Zàáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđ\s\d.,;:!?()-]/g);
+    if (specialChars && specialChars.length > text.length * 0.1) {
+      confidence -= 20;
     }
     
     // Word structure analysis
@@ -430,11 +432,7 @@ export class OptimizedOCRProcessor {
     const wordRatio = validWords.length / Math.max(words.length, 1);
     if (wordRatio > 0.8) confidence += 10;
     
-    // Penalty for too many special characters
-    const specialChars = text.match(/[^a-zA-Zàáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđ\s\d.,;:!?()\-]/g);
-    if (specialChars && specialChars.length > text.length * 0.1) {
-      confidence -= 15;
-    }
+    // Additional penalty is already applied above
     
     return Math.max(0, Math.min(100, Math.round(confidence)));
   }

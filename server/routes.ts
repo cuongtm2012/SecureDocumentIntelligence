@@ -163,7 +163,7 @@ async function processFileWithFallback(filePath: string, document: any, document
         }
         
       } catch (primaryError) {
-        console.log('🔄 Using optimized Tesseract OCR processor...');
+        console.log('🔄 Using reliable Tesseract OCR processor for better accuracy...');
         
         try {
           if (isIdCard) {
@@ -175,33 +175,34 @@ async function processFileWithFallback(filePath: string, document: any, document
             ocrResult = await vietnameseReceiptOCRProcessor.processDocument(filePath);
             console.log('✅ Vietnamese receipt processor succeeded');
           } else {
+            // Use reliable processor first for better accuracy while investigating optimized issues
             try {
-              console.log('⚡ Using optimized OCR processor with progress tracking...');
-              const optimizedResult = await optimizedOCRProcessor.processDocument(filePath, document.id.toString());
+              console.log('🔧 Using reliable OCR processor with proven accuracy...');
+              const reliableResult = await reliableOCRProcessor.processDocument(filePath);
               ocrResult = {
-                extractedText: optimizedResult.extractedText,
-                confidence: optimizedResult.confidence,
-                pageCount: optimizedResult.pageCount,
-                processingTime: optimizedResult.processingTime,
-                processingMethod: optimizedResult.method,
-                performanceMetrics: optimizedResult.performanceMetrics
+                extractedText: reliableResult.extractedText,
+                confidence: reliableResult.confidence,
+                pageCount: reliableResult.pageCount,
+                processingTime: reliableResult.processingTime,
+                processingMethod: reliableResult.method
               };
-              console.log(`⚡ Optimized OCR completed: ${optimizedResult.performanceMetrics.pagesPerSecond} pages/sec`);
-            } catch (optimizedError) {
-              console.warn('⚠️ Optimized processor failed, using reliable fallback...');
+              console.log('✅ Reliable OCR processor succeeded');
+            } catch (reliableError) {
+              console.warn('⚠️ Reliable processor failed, trying optimized fallback...');
               try {
-                console.log('🔧 Using reliable OCR processor...');
-                const reliableResult = await reliableOCRProcessor.processDocument(filePath);
+                console.log('⚡ Falling back to optimized OCR processor with progress tracking...');
+                const optimizedResult = await optimizedOCRProcessor.processDocument(filePath, document.id.toString());
                 ocrResult = {
-                  extractedText: reliableResult.extractedText,
-                  confidence: reliableResult.confidence,
-                  pageCount: reliableResult.pageCount,
-                  processingTime: reliableResult.processingTime,
-                  processingMethod: reliableResult.method
+                  extractedText: optimizedResult.extractedText,
+                  confidence: optimizedResult.confidence,
+                  pageCount: optimizedResult.pageCount,
+                  processingTime: optimizedResult.processingTime,
+                  processingMethod: optimizedResult.method,
+                  performanceMetrics: optimizedResult.performanceMetrics
                 };
-                console.log('✅ Reliable OCR processor succeeded');
-              } catch (reliableError) {
-                console.warn('⚠️ Reliable processor failed, using standard fallback...');
+                console.log(`⚡ Optimized OCR completed: ${optimizedResult.performanceMetrics.pagesPerSecond} pages/sec`);
+              } catch (optimizedError) {
+                console.warn('⚠️ Both processors failed, using standard fallback...');
                 console.log('📄 Using standard Tesseract processor...');
                 ocrResult = await simpleTesseractProcessor.processDocument(filePath);
                 console.log('✅ Standard Tesseract processor succeeded');
