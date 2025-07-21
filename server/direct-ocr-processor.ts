@@ -113,14 +113,16 @@ export class DirectOCRProcessor {
 
   private async convertPDFToImages(pdfPath: string, outputPattern: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      // Use ImageMagick convert to convert PDF to PNG with ultra-fast settings
+      // Use ImageMagick convert with settings optimized for Vietnamese text OCR
       const args = [
-        '-density', '150',  // Much lower density for speed (still good for OCR)
-        '-quality', '75',   // Lower quality for faster processing
-        '-colorspace', 'Gray',  // Convert to grayscale for faster OCR
-        '-compress', 'None',    // No compression for faster processing
-        '-depth', '8',      // 8-bit depth for faster processing
-        '-strip',           // Remove all metadata for faster processing
+        '-density', '300',      // Higher density for better text clarity
+        '-quality', '90',       // Higher quality for better OCR results
+        '-colorspace', 'Gray',  // Convert to grayscale
+        '-background', 'white', // Ensure white background
+        '-alpha', 'remove',     // Remove transparency
+        '-contrast-stretch', '0.15x0.05%', // Enhance contrast for better text recognition
+        '-sharpen', '0x1',      // Slightly sharpen for better character recognition
+        '-strip',               // Remove metadata
         pdfPath,
         outputPattern
       ];
@@ -153,25 +155,21 @@ export class DirectOCRProcessor {
 
   private async processImageWithTesseract(imagePath: string): Promise<{ text: string; confidence: number }> {
     return new Promise((resolve, reject) => {
-      // Set timeout for individual page processing (15 seconds max for speed)
+      // Increase timeout to 60 seconds for complex Vietnamese documents
       const timeout = setTimeout(() => {
         console.warn(`⏰ Tesseract timeout for ${path.basename(imagePath)}`);
-        process.kill();
         reject(new Error(`Tesseract timeout for ${path.basename(imagePath)}`));
-      }, 15000);
+      }, 60000);
 
-      // Use command-line Tesseract with ultra-fast settings
+      // Use command-line Tesseract with optimized settings for Vietnamese
       const args = [
         imagePath,
         'stdout',
-        '-l', 'vie',  // Use only Vietnamese for faster processing
-        '--psm', '6',  // PSM 6 for single uniform block - faster than PSM 3
+        '-l', 'vie+eng',  // Use Vietnamese + English for better recognition
+        '--psm', '3',  // PSM 3 for automatic page segmentation - better for documents
         '-c', 'preserve_interword_spaces=1',
-        '-c', 'tessedit_do_invert=0',  // Skip image inversion check
-        '-c', 'tessedit_pageseg_mode=6',  // Explicit PSM setting
-        '-c', 'load_system_dawg=0',      // Skip system dictionary for speed
-        '-c', 'load_freq_dawg=0',        // Skip frequency dictionary for speed
-        '-c', 'tessedit_enable_dict_correction=0'  // Skip dictionary correction for speed
+        '-c', 'tessedit_char_whitelist=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚĂĐĨŨƠàáâãèéêìíòóôõùúăđĩũơƯĂẠẢẤẦẨẪẬẮẰẲẴẶẸẺẼỀỀỂưăạảấầẩẫậắằẳẵặẹẻẽềềểỄỆỈỊỌỎỐỒỔỖỘỚỜỞỠỢỤỦỨỪễệỉịọỏốồổỗộớờởỡợụủứừỬỮỰỲỴÝỶỸửữựỳỵýỷỹ .,;:!?()-',
+        '-c', 'tessedit_pageseg_mode=3'  // Explicit PSM setting for documents
       ];
       
       console.log(`🤖 Running: tesseract ${args.join(' ')}`);

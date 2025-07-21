@@ -406,12 +406,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       // Automatically start OCR processing after upload (background)
-      console.log(`🚀 Auto-starting OCR processing for document ${document.id}...`);
+      console.log(`🚀 Auto-starting OCR processing for document ${document.id}: ${document.originalName}...`);
 
       // Process in background without blocking the response
       setImmediate(async () => {
         try {
           const filePath = path.join(process.cwd(), 'uploads', document.filename);
+          
+          // Check if file actually exists
+          try {
+            await fs.access(filePath);
+            console.log(`📂 File exists: ${filePath}`);
+          } catch (fileError) {
+            console.error(`❌ File not found for auto-processing: ${filePath}`);
+            await storage.updateDocument(document.id, { processingStatus: 'failed', errorMessage: 'File not found' });
+            return;
+          }
 
           // Update status to processing
           await storage.updateDocument(document.id, { processingStatus: 'processing' });
@@ -419,11 +429,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Process the document
           await processFileWithFallback(filePath, document, document.id, userId, undefined, undefined);
 
-          console.log(`✅ Auto-processing completed for document ${document.id}`);
+          console.log(`✅ Auto-processing completed for document ${document.id}: ${document.originalName}`);
         } catch (error) {
           console.error(`❌ Auto-processing failed for document ${document.id}:`, error);
-          // Update status to failed
-          await storage.updateDocument(document.id, { processingStatus: 'failed' });
+          // Update status to failed with error details
+          await storage.updateDocument(document.id, { 
+            processingStatus: 'failed', 
+            errorMessage: error instanceof Error ? error.message : 'Unknown error'
+          });
         }
       });
 
@@ -584,6 +597,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       // Log successful processing
+
+
+  // Debug PDF content endpoint
+  app.get("/api/documents/:id/debug", async (req, res) => {
+    try {
+      const documentId = parseInt(req.params.id);
+      const document = await storage.getDocument(documentId);
+
+      if (!document) {
+        return res.status(404).json({ message: "Document not found" });
+      }
+
+      const filePath = path.join(uploadsDir, document.filename);
+
+      if (!fsSync.existsSync(filePath)) {
+        return res.status(404).json({ message: "File not found" });
+      }
+
+      // Try to extract basic PDF information
+      try {
+        const dataBuffer = await fs.readFile(filePath);
+        const pdfData = await pdf(dataBuffer);
+        
+        const debugInfo = {
+          filename: document.originalName,
+          fileSize: document.fileSize,
+          mimeType: document.mimeType,
+          pdfInfo: {
+            numPages: pdfData.numpages,
+            textLength: pdfData.text.length,
+            hasText: pdfData.text.length > 50,
+            firstChars: pdfData.text.substring(0, 500),
+            metadata: pdfData.metadata || {}
+          },
+          processingStatus: document.processingStatus,
+          lastError: document.errorMessage
+        };
+
+        res.json({
+          success: true,
+          debugInfo
+        });
+
+      } catch (pdfError) {
+        res.json({
+          success: false,
+          error: `PDF parsing failed: ${pdfError instanceof Error ? pdfError.message : 'Unknown error'}`,
+          fileInfo: {
+            filename: document.originalName,
+            fileSize: document.fileSize,
+            mimeType: document.mimeType,
+            processingStatus: document.processingStatus,
+            lastError: document.errorMessage
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Debug endpoint error:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Failed to debug document" 
+      });
+    }
+  });
+
       await storage.createAuditLog({
         userId,
         action: `Vietnamese receipt processed: ${document.originalName} (${structuredData.itemCount} items, ${Math.round(confidence * 100)}% confidence)`,
