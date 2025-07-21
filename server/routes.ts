@@ -178,7 +178,9 @@ async function processFileWithFallback(filePath: string, document: any, document
           }
         } catch (tesseractError) {
           console.error('❌ Tesseract OCR also failed');
-          throw new Error(`OCR processing failed. Primary: ${primaryError.message}, Tesseract: ${tesseractError.message}`);
+          const primaryMsg = primaryError instanceof Error ? primaryError.message : String(primaryError);
+          const tesseractMsg = tesseractError instanceof Error ? tesseractError.message : String(tesseractError);
+          throw new Error(`OCR processing failed. Primary: ${primaryMsg}, Tesseract: ${tesseractMsg}`);
         }
       }
 
@@ -526,8 +528,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const alternativeFilePath = path.join(uploadsDir, alternativeFile);
           console.log(`🔄 Using alternative file: ${alternativeFile}`);
           
-          // Update document with correct filename
-          await storage.updateDocument(documentId, { filename: alternativeFile });
+          // Use the alternative file (no need to update document as filename is not in schema)
           
           // Process the alternative file
           await processFileWithFallback(alternativeFilePath, document, documentId, userId, req, res);
@@ -708,9 +709,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const alternativeFilePath = path.join(uploadsDir, alternativeFile);
           console.log(`🔄 Using alternative file: ${alternativeFile}`);
           
-          // Update document with correct filename
-          await storage.updateDocument(documentId, { filename: alternativeFile });
-          filePath = alternativeFilePath;
+          // Use the alternative file path (no need to update document as filename is not in schema)
+          const filePath = alternativeFilePath;
         } else {
           return res.status(400).json({ 
             success: false, 
@@ -731,7 +731,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (result.combinedText && result.combinedText.length > 0) {
         try {
-          const enhancement = await deepSeekService.enhanceText(result.combinedText);
+          const enhancement = await deepSeekService.analyzeDocument(result.combinedText, "Text enhancement analysis");
           if (enhancement.success) {
             enhancedText = enhancement.enhancedText || result.combinedText;
             deepseekAnalysis = enhancement.analysis || deepseekAnalysis;
@@ -832,7 +832,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Try to extract basic PDF information
       try {
         const dataBuffer = await fs.readFile(filePath);
-        const pdfData = await pdf(dataBuffer);
+        // Import pdf-parse dynamically  
+        const pdfParse = (await import('pdf-parse')).default as any;
+        const pdfData = await pdfParse(dataBuffer);
         
         const debugInfo = {
           filename: document.originalName,
@@ -940,7 +942,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         processingStatus: 'completed',
         processingCompletedAt: new Date(),
         structuredData: JSON.stringify(structuredData),
-        errorMessage: null
+        errorMessage: undefined
       });
 
       const updatedDocument = await storage.getDocument(documentId);
