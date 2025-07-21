@@ -445,88 +445,80 @@ Provide analysis in JSON format with:
     try {
       console.log(`Processing PDF document with DeepSeek AI: ${pdfPath}`);
       
-      // Read PDF file
+      // First, extract text from PDF using pdf-parse
       const pdfBuffer = fs.readFileSync(pdfPath);
+      const pdfParse = (await import('pdf-parse')).default;
+      const pdfData = await pdfParse(pdfBuffer);
       
-      // Create enhanced system prompt for Vietnamese PDF processing
-      const systemPrompt = `You are an expert Vietnamese document processing AI specializing in PDF text extraction and analysis. Your expertise includes:
-
-VIETNAMESE PDF TEXT EXTRACTION:
-- Extract all text content from PDF documents with Vietnamese text
-- Maintain proper Vietnamese diacritics: á, à, ả, ã, ạ, ă, ắ, ằ, ẳ, ẵ, ặ, â, ấ, ầ, ẩ, ẫ, ậ, é, è, ẻ, ẽ, ẹ, ê, ế, ề, ể, ễ, ệ, í, ì, ỉ, ĩ, ị, ó, ò, ỏ, õ, ọ, ô, ố, ồ, ổ, ỗ, ộ, ơ, ớ, ờ, ở, ỡ, ợ, ú, ù, ủ, ũ, ụ, ư, ứ, ừ, ử, ữ, ự, ý, ỳ, ỷ, ỹ, ỵ, đ
-- Handle government terminology and administrative divisions
-- Preserve document structure and formatting
-- Correct common PDF extraction errors
-
-POST-PROCESSING FOR VIETNAMESE:
-- Fix character encoding issues
-- Reconstruct broken Vietnamese words
-- Standardize spacing and punctuation
-- Normalize name capitalization
-- Correct date formats to DD/MM/YYYY
-
-STRUCTURED DATA EXTRACTION for ${documentType}:
-Extract key Vietnamese document fields:
-- hoVaTen: Full name with proper capitalization
-- ngaySinh: Birth date (DD/MM/YYYY format)
-- gioiTinh: Gender (Nam/Nữ)
-- soCCCD: 12-digit citizen ID number
-- queQuan: Place of origin
-- thuongTru: Permanent residence
-- ngayCap: Issue date
-- noiCap: Issuing authority
-
-Return in JSON format:
-{
-  "extractedText": "properly formatted Vietnamese text",
-  "confidence": 0.95,
-  "structuredData": {...extracted fields...},
-  "improvements": ["list of corrections applied"]
-}`;
-
-      // Process with DeepSeek
-      const completion = await openai.chat.completions.create({
-        model: "deepseek-chat",
-        messages: [
-          {
-            role: "system",
-            content: systemPrompt
-          },
-          {
-            role: "user",
-            content: `Extract all text content from this PDF document with focus on Vietnamese text accuracy and structured data extraction.
-
-Document Type: ${documentType}
-File Size: ${pdfBuffer.length} bytes
-
-Please analyze the PDF and extract text with high accuracy, paying special attention to Vietnamese diacritics and government document structure.`
-          }
-        ],
-        temperature: 0.05,
-        max_tokens: 8000
-      });
-
-      const response = completion.choices[0]?.message?.content;
-      if (!response) {
-        throw new Error('No response from DeepSeek AI for PDF processing');
+      console.log(`📄 PDF extracted text length: ${pdfData.text.length} characters`);
+      console.log(`📄 PDF pages: ${pdfData.numpages}`);
+      
+      if (!pdfData.text || pdfData.text.trim().length < 10) {
+        throw new Error('PDF contains no readable text or text is too short');
       }
 
-      const result = this.parseDeepSeekResponse(response);
+      // Now use DeepSeek to reconstruct and enhance the extracted text
+      const reconstruction = await this.reconstructVietnameseText(pdfData.text);
+      
+      // Also perform document analysis
+      const analysis = await this.analyzeDocument(
+        reconstruction.reconstructedText, 
+        `Vietnamese PDF document analysis: ${documentType}`
+      );
+
       const processingTime = Date.now() - startTime;
 
       return {
-        extractedText: result.extractedText || "Could not extract text from PDF",
-        confidence: result.confidence || 0.75,
-        structuredData: result.structuredData || {},
+        extractedText: reconstruction.reconstructedText,
+        confidence: Math.max(0.8, reconstruction.confidence), // PDF text extraction usually reliable
+        structuredData: {
+          documentType: documentType || 'Vietnamese PDF Document',
+          pageCount: pdfData.numpages,
+          originalTextLength: pdfData.text.length,
+          reconstructedTextLength: reconstruction.reconstructedText.length,
+          improvements: reconstruction.improvements,
+          analysis: analysis,
+          pdfMetadata: pdfData.metadata || {}
+        },
         processingTime,
-        improvements: ["PDF processed with DeepSeek Vietnamese OCR"],
-        pageCount: this.estimatePageCount(result.extractedText || ""),
-        processingMethod: 'deepseek-pdf-vietnamese'
+        improvements: [
+          "PDF text extracted using pdf-parse",
+          "Vietnamese text reconstruction applied",
+          ...reconstruction.improvements
+        ],
+        pageCount: pdfData.numpages,
+        processingMethod: 'pdf-parse-deepseek-reconstruction'
       };
 
     } catch (error: any) {
       console.error('DeepSeek PDF processing error:', error);
-      throw new Error(`PDF processing failed: ${error.message}`);
+      
+      // If DeepSeek fails, still try to extract basic PDF text
+      try {
+        const pdfBuffer = fs.readFileSync(pdfPath);
+        const pdfParse = (await import('pdf-parse')).default;
+        const pdfData = await pdfParse(pdfBuffer);
+        
+        console.log('⚠️ DeepSeek failed, returning basic PDF text extraction');
+        
+        return {
+          extractedText: pdfData.text || "Could not extract text from PDF",
+          confidence: 0.7,
+          structuredData: {
+            documentType: documentType || 'Vietnamese PDF Document',
+            pageCount: pdfData.numpages,
+            error: 'DeepSeek enhancement failed, basic extraction only',
+            pdfMetadata: pdfData.metadata || {}
+          },
+          processingTime: Date.now() - startTime,
+          improvements: ["Basic PDF text extraction only (DeepSeek failed)"],
+          pageCount: pdfData.numpages,
+          processingMethod: 'pdf-parse-fallback'
+        };
+        
+      } catch (fallbackError) {
+        throw new Error(`PDF processing completely failed: ${error.message}. Fallback also failed: ${fallbackError instanceof Error ? fallbackError.message : 'Unknown error'}`);
+      }
     }
   }
 
