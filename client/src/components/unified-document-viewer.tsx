@@ -286,11 +286,11 @@ export function UnifiedDocumentViewer({
 
     if (isPdfFile) {
       return (
-        <div className="h-full w-full">
+        <div className="h-full w-full min-h-[500px]">
           <iframe
             src={imageUrl}
-            className="w-full h-full border-0"
-            style={{ minHeight: '600px' }}
+            className="w-full h-full border-0 rounded-lg"
+            style={{ minHeight: '500px' }}
             title={`PDF Document - ${document.fileName}`}
             allow="autoplay; clipboard-read; clipboard-write"
           />
@@ -299,7 +299,7 @@ export function UnifiedDocumentViewer({
     }
 
     return (
-      <div className="flex justify-center items-center min-h-full p-4">
+      <div className="flex justify-center items-center min-h-[500px] p-4 bg-gray-50 dark:bg-gray-800">
         <div 
           className="relative inline-block"
           style={{
@@ -312,12 +312,13 @@ export function UnifiedDocumentViewer({
             ref={imageRef}
             src={imageUrl}
             alt={`${document.fileName} - Page ${currentPage}`}
-            className="max-w-full max-h-full w-auto h-auto border rounded-lg shadow-lg"
+            className="max-w-full max-h-full w-auto h-auto border rounded-lg shadow-lg bg-white"
             style={{
               maxWidth: zoom > 100 ? 'none' : '100%',
-              maxHeight: zoom > 100 ? 'none' : '100%'
+              maxHeight: zoom > 100 ? 'none' : '75vh'
             }}
             onLoad={() => {
+              console.log('✅ Image loaded successfully:', imageUrl);
               if (imageRef.current && zoom === 100) {
                 const container = imageContainerRef.current;
                 if (container) {
@@ -335,6 +336,10 @@ export function UnifiedDocumentViewer({
                   }
                 }
               }
+            }}
+            onError={(e) => {
+              console.error('❌ Image failed to load:', imageUrl);
+              setError('Failed to load document image');
             }}
           />
           
@@ -357,10 +362,11 @@ export function UnifiedDocumentViewer({
     );
   };
 
-  const layoutClass = mode === 'fullscreen' ? 'fixed inset-0 z-50 bg-white' : 'h-full';
+  const layoutClass = mode === 'fullscreen' ? 'fixed inset-0 z-50 bg-white' : 
+                      mode === 'modal' ? 'h-full min-h-[600px]' : 'h-full';
 
   return (
-    <div className={cn(layoutClass, "flex flex-col max-h-screen")}>
+    <div className={cn(layoutClass, "flex flex-col", mode === 'modal' ? 'max-h-[85vh]' : 'max-h-screen')}>
       {/* Header */}
       <div className="border-b p-4 flex-shrink-0">
         <div className="flex items-center justify-between">
@@ -498,13 +504,14 @@ export function UnifiedDocumentViewer({
                   </div>
                 </div>
                 
-                <ScrollArea 
+                <div 
                   className="flex-1 overflow-auto bg-gray-50 dark:bg-gray-800"
                   ref={imageContainerRef}
                   onScroll={handleImageScroll}
+                  style={{ minHeight: '500px', maxHeight: '75vh' }}
                 >
                   {renderDocumentContent()}
-                </ScrollArea>
+                </div>
               </div>
 
               {/* Text Panel */}
