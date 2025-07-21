@@ -17,6 +17,7 @@ import { simpleTesseractProcessor } from "./simple-tesseract-processor";
 import { simplePDFOCRProcessor } from "./simple-pdf-ocr";
 import { vietnameseReceiptOCRProcessor } from "./vietnamese-receipt-ocr-processor";
 import { enhancedTesseractProcessor } from "./enhanced-tesseract-processor";
+import { reliableOCRProcessor } from "./reliable-ocr-processor";
 import { trainingPipeline } from "./training-pipeline";
 import helmet from "helmet";
 import { insertDocumentSchema, insertAuditLogSchema } from "@shared/schema";
@@ -172,9 +173,23 @@ async function processFileWithFallback(filePath: string, document: any, document
             ocrResult = await vietnameseReceiptOCRProcessor.processDocument(filePath);
             console.log('✅ Vietnamese receipt processor succeeded');
           } else {
-            console.log('📄 Using standard Tesseract processor...');
-            ocrResult = await simpleTesseractProcessor.processDocument(filePath);
-            console.log('✅ Standard Tesseract processor succeeded');
+            try {
+              console.log('🔧 Using reliable OCR processor...');
+              const reliableResult = await reliableOCRProcessor.processDocument(filePath);
+              ocrResult = {
+                extractedText: reliableResult.extractedText,
+                confidence: reliableResult.confidence,
+                pageCount: reliableResult.pageCount,
+                processingTime: reliableResult.processingTime,
+                processingMethod: reliableResult.method
+              };
+              console.log('✅ Reliable OCR processor succeeded');
+            } catch (reliableError) {
+              console.warn('⚠️ Reliable processor failed, using standard fallback...');
+              console.log('📄 Using standard Tesseract processor...');
+              ocrResult = await simpleTesseractProcessor.processDocument(filePath);
+              console.log('✅ Standard Tesseract processor succeeded');
+            }
           }
         } catch (tesseractError) {
           console.error('❌ Tesseract OCR also failed');

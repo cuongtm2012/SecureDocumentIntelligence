@@ -116,28 +116,42 @@ export function AdvancedOCRDashboard() {
   const uploadMutation = useMutation({
     mutationFn: async ({ files, forceReprocess = false }: { files: File[]; forceReprocess?: boolean }) => {
       const promises = files.map(async (file) => {
-        const formData = new FormData();
-        formData.append('file', file);
-        if (forceReprocess) {
-          formData.append('forceReprocess', 'true');
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+          if (forceReprocess) {
+            formData.append('forceReprocess', 'true');
+          }
+
+          const response = await fetch('/api/documents/upload', {
+            method: 'POST',
+            body: formData,
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Upload failed for ${file.name}: ${errorText}`);
+          }
+          
+          const result = await response.json();
+          
+          // Return both the result and the original file for mapping
+          return {
+            ...result,
+            originalFile: file
+          };
+        } catch (error: any) {
+          console.error(`Upload error for ${file.name}:`, error);
+          throw new Error(`Failed to upload ${file.name}: ${error.message}`);
         }
-
-        const response = await fetch('/api/documents/upload', {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (!response.ok) throw new Error(`Upload failed for ${file.name}`);
-        const result = await response.json();
-        
-        // Return both the result and the original file for mapping
-        return {
-          ...result,
-          originalFile: file
-        };
       });
 
-      return Promise.all(promises);
+      try {
+        return await Promise.all(promises);
+      } catch (error: any) {
+        console.error('Batch upload error:', error);
+        throw error;
+      }
     },
     onSuccess: (results) => {
       queryClient.invalidateQueries({ queryKey: ['documents'] });
