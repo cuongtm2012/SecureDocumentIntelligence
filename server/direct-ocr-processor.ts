@@ -113,68 +113,36 @@ export class DirectOCRProcessor {
 
   private async convertPDFToImages(pdfPath: string, outputPattern: string): Promise<void> {
     return new Promise((resolve, reject) => {
+      // Check if input file exists and is readable
+      if (!require('fs').existsSync(pdfPath)) {
+        reject(new Error(`PDF file not found: ${pdfPath}`));
+        return;
+      }
+
       // Use ImageMagick convert with settings optimized for Vietnamese text OCR
       const args = [
         '-density', '300',      // Higher density for better text clarity
-        '-quality', '90',       // Higher quality for better OCR results
+        '-quality', '95',       // Highest quality for OCR
         '-colorspace', 'Gray',  // Convert to grayscale
         '-background', 'white', // Ensure white background
         '-alpha', 'remove',     // Remove transparency
-        '-contrast-stretch', '0.15x0.05%', // Enhance contrast for better text recognition
-        '-sharpen', '0x1',      // Slightly sharpen for better character recognition
+        '-enhance',             // Enhance image for better text recognition
+        '-sharpen', '0x0.5',    // Light sharpening
+        '-normalize',           // Normalize contrast and brightness
         '-strip',               // Remove metadata
+        '-limit', 'memory', '2GB',  // Limit memory usage
+        '-limit', 'map', '2GB',
         pdfPath,
         outputPattern
       ];
       
-      console.log(`🔄 Running: convert ${args.join(' ')}`);
+      console.log(`🔄 Converting PDF to images: ${require('path').basename(pdfPath)}`);
+      console.log(`📝 Command: convert ${args.join(' ')}`);
       
-      const process = spawn('convert', args);
-      let stderr = '';
-      
-      process.stderr.on('data', (data) => {
-        stderr += data.toString();
+      const process = spawn('convert', args, {
+        stdio: ['pipe', 'pipe', 'pipe']
       });
       
-      process.on('close', (code) => {
-        if (code === 0) {
-          console.log('✅ PDF to images conversion completed');
-          resolve();
-        } else {
-          console.error('❌ PDF conversion failed:', stderr);
-          reject(new Error(`PDF conversion failed with code ${code}: ${stderr}`));
-        }
-      });
-      
-      process.on('error', (error) => {
-        console.error('❌ PDF conversion process error:', error);
-        reject(error);
-      });
-    });
-  }
-
-  private async processImageWithTesseract(imagePath: string): Promise<{ text: string; confidence: number }> {
-    return new Promise((resolve, reject) => {
-      // Increase timeout to 60 seconds for complex Vietnamese documents
-      const timeout = setTimeout(() => {
-        console.warn(`⏰ Tesseract timeout for ${path.basename(imagePath)}`);
-        reject(new Error(`Tesseract timeout for ${path.basename(imagePath)}`));
-      }, 60000);
-
-      // Use command-line Tesseract with optimized settings for Vietnamese
-      const args = [
-        imagePath,
-        'stdout',
-        '-l', 'vie+eng',  // Use Vietnamese + English for better recognition
-        '--psm', '3',  // PSM 3 for automatic page segmentation - better for documents
-        '-c', 'preserve_interword_spaces=1',
-        '-c', 'tessedit_char_whitelist=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚĂĐĨŨƠàáâãèéêìíòóôõùúăđĩũơƯĂẠẢẤẦẨẪẬẮẰẲẴẶẸẺẼỀỀỂưăạảấầẩẫậắằẳẵặẹẻẽềềểỄỆỈỊỌỎỐỒỔỖỘỚỜỞỠỢỤỦỨỪễệỉịọỏốồổỗộớờởỡợụủứừỬỮỰỲỴÝỶỸửữựỳỵýỷỹ .,;:!?()-',
-        '-c', 'tessedit_pageseg_mode=3'  // Explicit PSM setting for documents
-      ];
-      
-      console.log(`🤖 Running: tesseract ${args.join(' ')}`);
-      
-      const process = spawn('tesseract', args);
       let stdout = '';
       let stderr = '';
       
@@ -186,29 +154,150 @@ export class DirectOCRProcessor {
         stderr += data.toString();
       });
       
+      const timeout = setTimeout(() => {
+        process.kill('SIGTERM');
+        reject(new Error('PDF conversion timeout (45s limit)'));
+      }, 45000);
+      
       process.on('close', (code) => {
         clearTimeout(timeout);
+        
         if (code === 0) {
-          // Extract confidence from stderr if available
-          const confidenceMatch = stderr.match(/Mean confidence: (\d+)/);
-          const confidence = confidenceMatch ? parseInt(confidenceMatch[1]) : 85;
-          
-          console.log(`✅ Tesseract OCR completed for ${path.basename(imagePath)}`);
-          resolve({
-            text: stdout.trim(),
-            confidence: confidence
-          });
+          console.log('✅ PDF to images conversion completed successfully');
+          // Check if any images were actually created
+          const dir = require('path').dirname(outputPattern);
+          const files = require('fs').readdirSync(dir).filter(f => f.endsWith('.png'));
+          if (files.length === 0) {
+            reject(new Error('PDF conversion completed but no images were generated'));
+          } else {
+            console.log(`📄 Generated ${files.length} page image(s)`);
+            resolve();
+          }
         } else {
-          console.error('❌ Tesseract OCR failed:', stderr);
-          reject(new Error(`Tesseract failed with code ${code}: ${stderr}`));
+          console.error('❌ PDF conversion failed with code:', code);
+          console.error('❌ Error output:', stderr);
+          
+          // Provide more specific error messages
+          if (stderr.includes('not authorized')) {
+            reject(new Error('ImageMagick PDF processing not authorized. PDF may be protected or corrupted.'));
+          } else if (stderr.includes('no decode delegate')) {
+            reject(new Error('ImageMagick cannot process this PDF format. File may be corrupted.'));
+          } else {
+            reject(new Error(`PDF conversion failed (code ${code}): ${stderr.substring(0, 200)}`));
+          }
         }
       });
       
       process.on('error', (error) => {
         clearTimeout(timeout);
-        console.error('❌ Tesseract process error:', error);
-        reject(error);
+        console.error('❌ PDF conversion process error:', error);
+        if (error.message.includes('ENOENT')) {
+          reject(new Error('ImageMagick "convert" command not found. Please install ImageMagick.'));
+        } else {
+          reject(error);
+        }
       });
+    });
+  }
+
+  private async processImageWithTesseract(imagePath: string): Promise<{ text: string; confidence: number }> {
+    return new Promise((resolve, reject) => {
+      // Increase timeout to 120 seconds for complex Vietnamese documents
+      const timeout = setTimeout(() => {
+        console.warn(`⏰ Tesseract timeout for ${path.basename(imagePath)} (120s limit reached)`);
+        // Try to kill the process if it's still running
+        if (process && !process.killed) {
+          process.kill('SIGTERM');
+        }
+        // Return partial results instead of complete failure
+        resolve({
+          text: '[OCR timeout - document may be too complex or corrupted]',
+          confidence: 0
+        });
+      }, 120000);
+
+      // Try multiple PSM modes for better text detection
+      const psmModes = [3, 6, 4]; // Document modes in order of preference
+      let currentModeIndex = 0;
+
+      const tryOCRWithMode = (psm: number) => {
+        console.log(`🤖 Trying Tesseract with PSM ${psm} for ${path.basename(imagePath)}`);
+        
+        const args = [
+          imagePath,
+          'stdout',
+          '-l', 'vie+eng',
+          '--psm', psm.toString(),
+          '-c', 'preserve_interword_spaces=1',
+          '--dpi', '300',
+          '-c', 'tessedit_create_hocr=0',
+          '-c', 'tessedit_create_tsv=0'
+        ];
+        
+        const process = spawn('tesseract', args, {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          timeout: 90000 // 90 second timeout per attempt
+        });
+        
+        let stdout = '';
+        let stderr = '';
+        
+        process.stdout.on('data', (data) => {
+          stdout += data.toString();
+        });
+        
+        process.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+        
+        process.on('close', (code) => {
+          const extractedText = stdout.trim();
+          
+          if (code === 0 && extractedText.length > 10) {
+            // Success with meaningful text
+            clearTimeout(timeout);
+            const confidenceMatch = stderr.match(/Mean confidence: (\d+)/);
+            const confidence = confidenceMatch ? parseInt(confidenceMatch[1]) : 75;
+            
+            console.log(`✅ Tesseract OCR completed with PSM ${psm}: ${extractedText.length} chars, ${confidence}% confidence`);
+            resolve({
+              text: extractedText,
+              confidence: confidence
+            });
+          } else if (currentModeIndex < psmModes.length - 1) {
+            // Try next PSM mode
+            console.log(`⚠️ PSM ${psm} yielded minimal text (${extractedText.length} chars), trying next mode...`);
+            currentModeIndex++;
+            tryOCRWithMode(psmModes[currentModeIndex]);
+          } else {
+            // All modes failed, return what we got
+            clearTimeout(timeout);
+            console.warn(`⚠️ All PSM modes completed, best result: ${extractedText.length} characters`);
+            resolve({
+              text: extractedText || '[No readable text detected in document]',
+              confidence: extractedText.length > 0 ? 30 : 0
+            });
+          }
+        });
+        
+        process.on('error', (error) => {
+          if (currentModeIndex < psmModes.length - 1) {
+            console.log(`❌ PSM ${psm} failed with error: ${error.message}, trying next mode...`);
+            currentModeIndex++;
+            tryOCRWithMode(psmModes[currentModeIndex]);
+          } else {
+            clearTimeout(timeout);
+            console.error('❌ All Tesseract modes failed:', error);
+            resolve({
+              text: `[OCR processing failed: ${error.message}]`,
+              confidence: 0
+            });
+          }
+        });
+      };
+
+      // Start with the first PSM mode
+      tryOCRWithMode(psmModes[currentModeIndex]);
     });
   }
 

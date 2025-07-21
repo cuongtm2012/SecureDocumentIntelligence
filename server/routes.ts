@@ -133,14 +133,40 @@ async function processFileWithFallback(filePath: string, document: any, document
     console.log('🤖 Starting DeepSeek API document processing...');
 
     try {
-      // Choose OCR processor based on document type
+      // Choose OCR processor with fallback chain
       let ocrResult;
-      if (isReceiptDocument) {
-        console.log('🧾 Using optimized Vietnamese receipt OCR processor...');
-        ocrResult = await vietnameseReceiptOCRProcessor.processDocument(filePath);
-      } else {
-        console.log('📄 Using simple PDF OCR processor...');
-        ocrResult = await simplePDFOCRProcessor.processDocument(filePath);
+      try {
+        if (isReceiptDocument) {
+          console.log('🧾 Using optimized Vietnamese receipt OCR processor...');
+          ocrResult = await vietnameseReceiptOCRProcessor.processDocument(filePath);
+        } else {
+          console.log('📄 Using direct OCR processor for better reliability...');
+          ocrResult = await directOCRProcessor.processDocument(filePath);
+        }
+        
+        // Validate OCR result quality
+        if (!ocrResult.extractedText || ocrResult.extractedText.length < 10) {
+          console.warn('⚠️ Primary OCR yielded minimal text, trying fallback processor...');
+          
+          // Fallback to alternative processor
+          const fallbackResult = await simpleTesseractProcessor.processDocument(filePath);
+          if (fallbackResult.extractedText && fallbackResult.extractedText.length > ocrResult.extractedText.length) {
+            console.log('✅ Fallback processor provided better results');
+            ocrResult = fallbackResult;
+          }
+        }
+        
+      } catch (primaryError) {
+        console.error('❌ Primary OCR processor failed:', primaryError);
+        console.log('🔄 Attempting fallback OCR processing...');
+        
+        try {
+          ocrResult = await simpleTesseractProcessor.processDocument(filePath);
+          console.log('✅ Fallback OCR processor succeeded');
+        } catch (fallbackError) {
+          console.error('❌ Fallback OCR processor also failed:', fallbackError);
+          throw new Error(`All OCR processors failed. Primary: ${primaryError.message}, Fallback: ${fallbackError.message}`);
+        }
       }
 
       // Then enhance with DeepSeek analysis for Vietnamese text improvement
@@ -338,8 +364,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Check for duplicate files (unless force reprocess is enabled)
       if (!forceReprocess) {
+        // Fix encoding issues for Vietnamese filenames
+        const originalNameUtf8 = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+        
         const existingDocument = await storage.findDuplicateDocument(
-          req.file.originalname,
+          originalNameUtf8,
           req.file.size,
           req.file.mimetype,
           userId
@@ -353,8 +382,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
             console.warn('Failed to delete duplicate file:', unlinkError);
           }
 
-          // Log duplicate detection with proper encoding handling
-          const originalNameUtf8 = req.file.originalname; // Use as-is since multer should handle encoding properly
           await storage.createAuditLog({
             userId,
             action: `Duplicate file detected: ${originalNameUtf8} (${req.file.size} bytes) - using existing document`,
@@ -385,9 +412,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`🔄 Force reprocessing enabled for: ${originalNameUtf8}`);
       }
 
+      // Fix encoding for Vietnamese filenames
+      const originalNameUtf8 = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+      
       const documentData = {
         filename: req.file.filename,
-        originalName: req.file.originalname,
+        originalName: originalNameUtf8,
         fileSize: req.file.size,
         mimeType: req.file.mimetype,
         userId,
