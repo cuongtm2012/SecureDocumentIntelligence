@@ -18,6 +18,8 @@ import { simplePDFOCRProcessor } from "./simple-pdf-ocr";
 import { vietnameseReceiptOCRProcessor } from "./vietnamese-receipt-ocr-processor";
 import { enhancedTesseractProcessor } from "./enhanced-tesseract-processor";
 import { reliableOCRProcessor } from "./reliable-ocr-processor";
+import { optimizedOCRProcessor } from "./optimized-ocr-processor";
+import { ocrProgressTracker } from "./ocr-progress-tracker";
 import { trainingPipeline } from "./training-pipeline";
 import helmet from "helmet";
 import { insertDocumentSchema, insertAuditLogSchema } from "@shared/schema";
@@ -174,21 +176,36 @@ async function processFileWithFallback(filePath: string, document: any, document
             console.log('✅ Vietnamese receipt processor succeeded');
           } else {
             try {
-              console.log('🔧 Using reliable OCR processor...');
-              const reliableResult = await reliableOCRProcessor.processDocument(filePath);
+              console.log('⚡ Using optimized OCR processor with progress tracking...');
+              const optimizedResult = await optimizedOCRProcessor.processDocument(filePath, document.id.toString());
               ocrResult = {
-                extractedText: reliableResult.extractedText,
-                confidence: reliableResult.confidence,
-                pageCount: reliableResult.pageCount,
-                processingTime: reliableResult.processingTime,
-                processingMethod: reliableResult.method
+                extractedText: optimizedResult.extractedText,
+                confidence: optimizedResult.confidence,
+                pageCount: optimizedResult.pageCount,
+                processingTime: optimizedResult.processingTime,
+                processingMethod: optimizedResult.method,
+                performanceMetrics: optimizedResult.performanceMetrics
               };
-              console.log('✅ Reliable OCR processor succeeded');
-            } catch (reliableError) {
-              console.warn('⚠️ Reliable processor failed, using standard fallback...');
-              console.log('📄 Using standard Tesseract processor...');
-              ocrResult = await simpleTesseractProcessor.processDocument(filePath);
-              console.log('✅ Standard Tesseract processor succeeded');
+              console.log(`⚡ Optimized OCR completed: ${optimizedResult.performanceMetrics.pagesPerSecond} pages/sec`);
+            } catch (optimizedError) {
+              console.warn('⚠️ Optimized processor failed, using reliable fallback...');
+              try {
+                console.log('🔧 Using reliable OCR processor...');
+                const reliableResult = await reliableOCRProcessor.processDocument(filePath);
+                ocrResult = {
+                  extractedText: reliableResult.extractedText,
+                  confidence: reliableResult.confidence,
+                  pageCount: reliableResult.pageCount,
+                  processingTime: reliableResult.processingTime,
+                  processingMethod: reliableResult.method
+                };
+                console.log('✅ Reliable OCR processor succeeded');
+              } catch (reliableError) {
+                console.warn('⚠️ Reliable processor failed, using standard fallback...');
+                console.log('📄 Using standard Tesseract processor...');
+                ocrResult = await simpleTesseractProcessor.processDocument(filePath);
+                console.log('✅ Standard Tesseract processor succeeded');
+              }
             }
           }
         } catch (tesseractError) {
@@ -1508,7 +1525,88 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Progress tracking endpoints
+  app.get('/api/documents/:id/progress', async (req, res) => {
+    try {
+      const documentId = req.params.id;
+      const progress = ocrProgressTracker.getProgress(documentId);
+      
+      if (!progress) {
+        return res.json({ 
+          documentId, 
+          progress: 0, 
+          stage: 'not_started',
+          currentStep: 'Processing not started',
+          message: 'No active processing found' 
+        });
+      }
+      
+      res.json(progress);
+    } catch (error: any) {
+      console.error('Progress tracking error:', error);
+      res.status(500).json({ error: 'Failed to get progress' });
+    }
+  });
 
+  // Server-Sent Events for real-time progress
+  app.get('/api/documents/:id/progress-stream', (req, res) => {
+    const documentId = req.params.id;
+    
+    // Set up SSE headers
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Cache-Control'
+    });
+
+    // Send initial progress
+    const initialProgress = ocrProgressTracker.getProgress(documentId);
+    if (initialProgress) {
+      res.write(`data: ${JSON.stringify(initialProgress)}\n\n`);
+    } else {
+      res.write(`data: ${JSON.stringify({
+        documentId,
+        progress: 0,
+        stage: 'not_started',
+        currentStep: 'Waiting for processing to start...',
+        totalSteps: 6,
+        currentStepIndex: 0
+      })}\n\n`);
+    }
+
+    // Listen for progress updates
+    const progressHandler = (progress: any) => {
+      if (progress.documentId === documentId) {
+        res.write(`data: ${JSON.stringify(progress)}\n\n`);
+        
+        // Close connection when completed
+        if (progress.stage === 'completing' && progress.progress >= 100) {
+          setTimeout(() => {
+            res.end();
+          }, 2000); // Keep connection open for 2 more seconds
+        }
+      }
+    };
+
+    ocrProgressTracker.on('progress', progressHandler);
+
+    // Handle client disconnect
+    req.on('close', () => {
+      ocrProgressTracker.removeListener('progress', progressHandler);
+      res.end();
+    });
+
+    // Keep-alive ping every 30 seconds
+    const keepAlive = setInterval(() => {
+      res.write(`: keep-alive\n\n`);
+    }, 30000);
+
+    req.on('close', () => {
+      clearInterval(keepAlive);
+    });
+  });
 
   const httpServer = createServer(app);
   return httpServer;

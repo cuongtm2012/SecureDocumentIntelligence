@@ -18,6 +18,7 @@ import { MultiLanguageOCR } from './multi-language-ocr';
 import { BatchOCRProcessor } from './batch-ocr-processor';
 import { TesseractTrainingInterface } from './tesseract-training-interface';
 import { UnifiedDocumentViewer, DocumentData } from './main-document-viewer';
+import { OCRProgressTracker } from './ocr-progress-tracker';
 
 import { 
   Upload, 
@@ -77,6 +78,10 @@ export function AdvancedOCRDashboard() {
   const [currentDocument, setCurrentDocument] = useState<any>(null);
   const [showPDFViewer, setShowPDFViewer] = useState(false);
   const [selectedFileForViewer, setSelectedFileForViewer] = useState<UploadedFile | null>(null);
+  
+  // Progress tracking state
+  const [processingDocuments, setProcessingDocuments] = useState<Set<string>>(new Set());
+  const [completedDocuments, setCompletedDocuments] = useState<Set<string>>(new Set());
 
 
   // Pagination state
@@ -186,23 +191,47 @@ export function AdvancedOCRDashboard() {
     },
   });
 
-  // Process document mutation
+  // Process document mutation with progress tracking
   const processMutation = useMutation({
     mutationFn: async (documentId: string) => {
+      // Mark as processing
+      setProcessingDocuments(prev => new Set(prev.add(documentId)));
+      setCompletedDocuments(prev => {
+        const updated = new Set(prev);
+        updated.delete(documentId);
+        return updated;
+      });
+      
       const response = await fetch(`/api/documents/${documentId}/process`, {
         method: 'POST',
       });
       if (!response.ok) throw new Error('Processing failed');
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data, documentId) => {
       queryClient.invalidateQueries({ queryKey: ['documents'] });
+      
+      // Mark as completed
+      setProcessingDocuments(prev => {
+        const updated = new Set(prev);
+        updated.delete(documentId);
+        return updated;
+      });
+      setCompletedDocuments(prev => new Set(prev.add(documentId)));
+      
       toast({
         title: "Processing completed",
-        description: "OCR processing completed successfully.",
+        description: "Optimized OCR processing completed successfully.",
       });
     },
-    onError: (error) => {
+    onError: (error, documentId) => {
+      // Remove from processing
+      setProcessingDocuments(prev => {
+        const updated = new Set(prev);
+        updated.delete(documentId);
+        return updated;
+      });
+      
       toast({
         title: "Processing failed",
         description: error.message,
@@ -1153,6 +1182,27 @@ export function AdvancedOCRDashboard() {
                               </p>
                             </div>
                           )}
+
+                          {/* Progress Tracker */}
+                          {processingDocuments.has(doc.id.toString()) && (
+                            <OCRProgressTracker
+                              documentId={doc.id.toString()}
+                              isProcessing={true}
+                              onComplete={(success, details) => {
+                                console.log(`📊 Progress completed for document ${doc.id}:`, { success, details });
+                                setProcessingDocuments(prev => {
+                                  const updated = new Set(prev);
+                                  updated.delete(doc.id.toString());
+                                  return updated;
+                                });
+                                if (success) {
+                                  setCompletedDocuments(prev => new Set(prev.add(doc.id.toString())));
+                                  queryClient.invalidateQueries({ queryKey: ['documents'] });
+                                }
+                              }}
+                              className="mb-4"
+                            />
+                          )}
                         </div>
 
                         <div className="flex flex-col sm:flex-row sm:space-x-2 sm:space-y-0 space-y-2 sm:ml-4 mt-4 sm:mt-0">
@@ -1225,6 +1275,27 @@ export function AdvancedOCRDashboard() {
                             >
                               <FileText className="h-4 w-4 mr-2" />
                               PDF Viewer
+                            </Button>
+                          )}
+
+                          {/* Optimized OCR Processing Button */}
+                          {!processingDocuments.has(doc.id.toString()) && doc.processingStatus !== 'processing' && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="bg-blue-50 hover:bg-blue-100 border-blue-300 text-blue-700"
+                              onClick={async () => {
+                                console.log(`🚀 Starting optimized OCR processing for document ${doc.id}`);
+                                try {
+                                  await processMutation.mutateAsync(doc.id.toString());
+                                } catch (error) {
+                                  console.error('Optimized processing failed:', error);
+                                }
+                              }}
+                              disabled={processMutation.isPending}
+                            >
+                              <Zap className="h-4 w-4 mr-2" />
+                              {processMutation.isPending ? 'Processing...' : 'Process OCR'}
                             </Button>
                           )}
 
