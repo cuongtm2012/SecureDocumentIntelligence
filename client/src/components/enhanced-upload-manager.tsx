@@ -17,7 +17,10 @@ export interface UploadedFile {
   status: 'queued' | 'uploading' | 'processing' | 'completed' | 'error';
   uploadProgress: number;
   processingProgress: number;
-  error?: string;  result?: {
+  documentId?: number; // The actual document ID from server response
+  isDuplicate?: boolean; // Whether this file was detected as a duplicate
+  error?: string;
+  result?: {
     extractedText: string;
     confidence: number;
     pageCount?: number;

@@ -127,7 +127,13 @@ export function AdvancedOCRDashboard() {
         });
 
         if (!response.ok) throw new Error(`Upload failed for ${file.name}`);
-        return response.json();
+        const result = await response.json();
+        
+        // Return both the result and the original file for mapping
+        return {
+          ...result,
+          originalFile: file
+        };
       });
 
       return Promise.all(promises);
@@ -208,14 +214,26 @@ export function AdvancedOCRDashboard() {
     console.log(`📤 Uploading ${files.length} files${forceReprocess ? ' (force reprocess)' : ''}`);
 
     try {
-      await uploadMutation.mutateAsync({ files, forceReprocess });
+      const uploadResults = await uploadMutation.mutateAsync({ files, forceReprocess });
 
-      // Update files to queued status
-      setUploadedFiles(prev => prev.map(f => 
-        newFiles.some(nf => nf.id === f.id) 
-          ? { ...f, status: 'queued', uploadProgress: 100 }
-          : f
-      ));
+      // Update files with actual document IDs from server response
+      setUploadedFiles(prev => prev.map(f => {
+        const matchingResult = uploadResults.find((result: any) => 
+          result.originalFile.name === f.name && result.originalFile.size === f.size
+        );
+        
+        if (matchingResult) {
+          console.log(`📄 Mapping file "${f.name}" to document ID ${matchingResult.id}${matchingResult.isDuplicate ? ' (duplicate)' : ''}`);
+          return {
+            ...f,
+            documentId: matchingResult.id, // Store the actual document ID from server
+            status: 'queued',
+            uploadProgress: 100,
+            isDuplicate: matchingResult.isDuplicate
+          };
+        }
+        return f;
+      }));
     } catch (error) {
       console.error('Upload error:', error);
       // Update files to error status
@@ -230,7 +248,12 @@ export function AdvancedOCRDashboard() {
   // Process uploaded file
   const handleFileProcess = async (fileId: string) => {
     const file = uploadedFiles.find(f => f.id === fileId);
-    if (!file) return;
+    if (!file || !file.documentId) {
+      console.error('❌ Cannot process file: missing document ID', file);
+      return;
+    }
+
+    console.log(`🔄 Processing document ID ${file.documentId} for file "${file.name}"`);
 
     setUploadedFiles(prev => prev.map(f => 
       f.id === fileId 
@@ -239,29 +262,27 @@ export function AdvancedOCRDashboard() {
     ));
 
     try {
-      // Find corresponding document and process it
-      const document = documents.find((d: any) => d.originalName === file.name);
-      if (document) {
-        const result = await processMutation.mutateAsync(document.id.toString());
+      // Use the stored document ID directly (this is the correct ID from server)
+      const result = await processMutation.mutateAsync(file.documentId.toString());
 
-        setUploadedFiles(prev => prev.map(f => 
-          f.id === fileId 
-            ? { 
-                ...f, 
-                status: 'completed', 
-                processingProgress: 100,
-                result: {
-                  extractedText: result.extractedText || '',
-                  confidence: result.confidence || 0,
-                  pageCount: result.pageCount,
-                  wordCount: result.extractedText ? result.extractedText.split(/\s+/).filter((word: string) => word.length > 0).length : 0,
-                  characterCount: result.extractedText ? result.extractedText.length : 0,
-                }
+      setUploadedFiles(prev => prev.map(f => 
+        f.id === fileId 
+          ? { 
+              ...f, 
+              status: 'completed', 
+              processingProgress: 100,
+              result: {
+                extractedText: result.extractedText || '',
+                confidence: result.confidence || 0,
+                pageCount: result.pageCount,
+                wordCount: result.extractedText ? result.extractedText.split(/\s+/).filter((word: string) => word.length > 0).length : 0,
+                characterCount: result.extractedText ? result.extractedText.length : 0,
               }
-            : f
-        ));
-      }
+            }
+          : f
+      ));
     } catch (error) {
+      console.error('❌ Processing failed for document ID', file.documentId, error);
       setUploadedFiles(prev => prev.map(f => 
         f.id === fileId 
           ? { ...f, status: 'error', error: 'Processing failed' }
