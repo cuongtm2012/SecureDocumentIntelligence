@@ -454,10 +454,35 @@ export class ABBYYOCRProcessor {
       const abbyyExecutable = path.join(this.config.enginePath!, 'FREngine12');
       
       // Check if ABBYY executable exists
-      await fs.access(abbyyExecutable);
+      try {
+        await fs.access(abbyyExecutable);
+      } catch (execError) {
+        return {
+          status: 'unhealthy',
+          details: {
+            engine_available: false,
+            license_file_exists: false,
+            error: 'ABBYY FineReader Engine not installed',
+            installation_guide: 'Run: sudo ./install-abbyy.sh to install ABBYY FineReader Engine'
+          }
+        };
+      }
       
       // Check if license file exists
-      await fs.access(this.config.licenseFile!);
+      try {
+        await fs.access(this.config.licenseFile!);
+      } catch (licenseError) {
+        return {
+          status: 'unhealthy',
+          details: {
+            engine_available: true,
+            license_file_exists: false,
+            error: 'ABBYY license file missing',
+            license_path: this.config.licenseFile,
+            installation_guide: 'Copy your license.xml file to the license directory'
+          }
+        };
+      }
       
       // Test with a simple command
       return new Promise((resolve) => {
@@ -506,7 +531,8 @@ export class ABBYYOCRProcessor {
         details: {
           engine_available: false,
           license_file_exists: false,
-          error: `ABBYY setup error: ${error.message}`
+          error: `ABBYY setup error: ${error.message}`,
+          installation_guide: 'ABBYY FineReader Engine requires manual installation and licensing'
         }
       };
     }

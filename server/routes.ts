@@ -134,50 +134,51 @@ async function processFileWithFallback(filePath: string, document: any, document
     console.log('🤖 Starting DeepSeek API document processing...');
 
     try {
-      // Choose OCR processor with ABBYY as primary
+      // Smart OCR processor selection based on document type and availability
       let ocrResult;
+      const isIdCard = document.originalName.toLowerCase().includes('cmt') || 
+                      document.originalName.toLowerCase().includes('id') ||
+                      document.originalName.toLowerCase().includes('card');
+      
       try {
-        console.log('📄 Using ABBYY FineReader for superior OCR quality...');
-        ocrResult = await abbyyOCRProcessor.processDocument(filePath);
+        // Check if ABBYY is available first
+        const abbyyHealth = await abbyyOCRProcessor.healthCheck();
+        const abbyyAvailable = abbyyHealth.status === 'healthy';
         
-        // Validate OCR result quality
-        if (!ocrResult.extractedText || ocrResult.extractedText.length < 10) {
-          console.warn('⚠️ ABBYY OCR yielded minimal text, trying fallback processor...');
+        if (abbyyAvailable) {
+          console.log('📄 Using ABBYY FineReader for superior OCR quality...');
+          ocrResult = await abbyyOCRProcessor.processDocument(filePath);
           
-          // Fallback to Tesseract-based processors
-          if (isReceiptDocument) {
-            console.log('🧾 Fallback: Using Vietnamese receipt OCR processor...');
-            const fallbackResult = await vietnameseReceiptOCRProcessor.processDocument(filePath);
-            if (fallbackResult.extractedText && fallbackResult.extractedText.length > ocrResult.extractedText.length) {
-              console.log('✅ Fallback processor provided better results');
-              ocrResult = fallbackResult;
-            }
-          } else {
-            const fallbackResult = await directOCRProcessor.processDocument(filePath);
-            if (fallbackResult.extractedText && fallbackResult.extractedText.length > ocrResult.extractedText.length) {
-              console.log('✅ Fallback processor provided better results');
-              ocrResult = fallbackResult;
-            }
+          // Validate OCR result quality
+          if (!ocrResult.extractedText || ocrResult.extractedText.length < 10) {
+            console.warn('⚠️ ABBYY OCR yielded minimal text, trying optimized Tesseract...');
+            throw new Error('ABBYY result insufficient, trying fallback');
           }
+        } else {
+          console.warn('⚠️ ABBYY FineReader not available, using optimized Tesseract directly...');
+          throw new Error('ABBYY not available, using fallback');
         }
         
       } catch (primaryError) {
-        console.error('❌ Primary OCR processor failed:', primaryError);
-        console.log('🔄 Attempting fallback OCR processing...');
+        console.log('🔄 Using optimized Tesseract OCR processor...');
         
         try {
-          console.log('🔄 Attempting ABBYY fallback OCR processing...');
-          ocrResult = await abbyyOCRProcessor.processDocument(filePath);
-          console.log('✅ ABBYY fallback OCR processor succeeded');
-        } catch (abbyyFallbackError) {
-          console.warn('⚠️ ABBYY fallback also failed, trying Tesseract...');
-          try {
+          if (isIdCard) {
+            console.log('🆔 Detected ID card document - using optimized Tesseract configuration...');
             ocrResult = await simpleTesseractProcessor.processDocument(filePath);
-            console.log('✅ Tesseract fallback processor succeeded');
-          } catch (tesseractError) {
-            console.error('❌ All OCR processors failed');
-            throw new Error(`All OCR processors failed. ABBYY: ${primaryError.message}, Tesseract: ${tesseractError.message}`);
+            console.log('✅ Tesseract ID card processor succeeded');
+          } else if (isReceiptDocument) {
+            console.log('🧾 Using Vietnamese receipt OCR processor...');
+            ocrResult = await vietnameseReceiptOCRProcessor.processDocument(filePath);
+            console.log('✅ Vietnamese receipt processor succeeded');
+          } else {
+            console.log('📄 Using standard Tesseract processor...');
+            ocrResult = await simpleTesseractProcessor.processDocument(filePath);
+            console.log('✅ Standard Tesseract processor succeeded');
           }
+        } catch (tesseractError) {
+          console.error('❌ Tesseract OCR also failed');
+          throw new Error(`OCR processing failed. Primary: ${primaryError.message}, Tesseract: ${tesseractError.message}`);
         }
       }
 
@@ -720,7 +721,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`🔄 Processing document with parallel OCR: ${document.originalName}`);
 
-      // Process with parallel OCR (ABBYY + Tesseract)
+      // Process with parallel OCR (ABBYY + Tesseract) 
+      console.log(`🔄 Processing with parallel OCR engines...`);
       const result = await parallelOCRProcessor.processDocument(filePath);
       
       // Process with DeepSeek enhancement if available
@@ -905,14 +907,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`🔄 Processing document with ABBYY OCR: ${document.originalName}`);
 
+      // Check ABBYY availability first
+      const abbyyHealth = await abbyyOCRProcessor.healthCheck();
+      if (abbyyHealth.status !== 'healthy') {
+        return res.status(503).json({
+          success: false,
+          error: "ABBYY FineReader Engine not available",
+          details: abbyyHealth.details,
+          suggestion: "Use Tesseract processing instead or install ABBYY FineReader Engine"
+        });
+      }
+
       // Process with ABBYY only
-      const result = await parallelOCRProcessor.processWithABBYY(filePath);
+      const result = await abbyyOCRProcessor.processDocument(filePath);
       
       // Create structured data
       const structuredData = {
-        pageCount: 1,
-        characterCount: result.text.length,
-        wordCount: result.text.split(/\s+/).filter((word: string) => word.length > 0).length,
+        pageCount: result.pageCount || 1,
+        characterCount: result.extractedText.length,
+        wordCount: result.extractedText.split(/\s+/).filter((word: string) => word.length > 0).length,
         language: 'vie',
         processingMode: 'abbyy-only',
         processingTime: result.processingTime,
@@ -922,12 +935,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Update document with results
       await storage.updateDocument(documentId, {
-        extractedText: result.text,
+        extractedText: result.extractedText,
         confidence: result.confidence,
         processingStatus: 'completed',
         processingCompletedAt: new Date(),
         structuredData: JSON.stringify(structuredData),
-        errorMessage: result.success ? null : 'ABBYY processing failed'
+        errorMessage: null
       });
 
       const updatedDocument = await storage.getDocument(documentId);
@@ -935,7 +948,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: true,
         document: updatedDocument,
         processingEngine: 'abbyy',
-        processingTime: result.processingTime
+        processingTime: result.processingTime,
+        ocrResult: {
+          extractedText: result.extractedText,
+          confidence: result.confidence,
+          pageCount: result.pageCount
+        }
       });
 
     } catch (error) {
@@ -1131,6 +1149,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({
         success: false,
         error: "ABBYY health check failed",
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // OCR engines status endpoint
+  app.get("/api/ocr/status", async (req, res) => {
+    try {
+      const abbyyHealth = await abbyyOCRProcessor.healthCheck();
+      
+      const status = {
+        engines: {
+          abbyy: {
+            available: abbyyHealth.status === 'healthy',
+            status: abbyyHealth.status,
+            details: abbyyHealth.details
+          },
+          tesseract: {
+            available: true, // Tesseract is always available in this environment
+            status: 'healthy',
+            details: {
+              optimized_for_vietnamese: true,
+              id_card_support: true,
+              psm_configurations: [3, 6, 8, 13]
+            }
+          }
+        },
+        recommendations: {
+          id_cards: abbyyHealth.status === 'healthy' ? 'ABBYY (preferred) or Tesseract PSM 6' : 'Tesseract PSM 6',
+          receipts: 'Vietnamese Receipt Processor',
+          documents: abbyyHealth.status === 'healthy' ? 'ABBYY (preferred) or Tesseract' : 'Tesseract',
+          parallel_processing: abbyyHealth.status === 'healthy'
+        }
+      };
+      
+      res.json({
+        success: true,
+        ...status
+      });
+
+    } catch (error) {
+      console.error('OCR status check error:', error);
+      res.status(500).json({
+        success: false,
+        error: "OCR status check failed",
         details: error instanceof Error ? error.message : 'Unknown error'
       });
     }
