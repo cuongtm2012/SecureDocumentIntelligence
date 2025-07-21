@@ -33,7 +33,7 @@ export interface UploadedFile {
 }
 
 interface EnhancedUploadManagerProps {
-  onFileUpload: (files: File[]) => void;
+  onFileUpload: (files: File[], forceReprocess?: boolean) => void;
   onFileRemove: (fileId: string) => void;
   onFileProcess: (fileId: string) => void;
   onFileCancel: (fileId: string) => void;
@@ -65,13 +65,19 @@ export function EnhancedUploadManager({
     }
     return acceptedFileTypes.filter(type => type === 'application/pdf');
   };
-  const onDrop = useCallback((acceptedFiles: File[]) => {
+  const onDrop = useCallback((acceptedFiles: File[], event?: any) => {
     if (isProcessing) {
       console.log('Already processing files, ignoring drop');
       return;
     }
 
     setIsProcessing(true);
+
+    // Check if force reprocess is enabled (Ctrl+Drop or Alt+Drop)
+    const forceReprocess = event?.ctrlKey || event?.altKey;
+    if (forceReprocess) {
+      console.log('🔄 Force reprocess mode enabled');
+    }
 
     // Filter files by type and size requirements
     const validFiles = acceptedFiles.filter(file => {
@@ -92,8 +98,8 @@ export function EnhancedUploadManager({
     });
 
     if (validFiles.length > 0) {
-      console.log(`Processing ${validFiles.length} new files for upload`);
-      onFileUpload(validFiles);
+      console.log(`Processing ${validFiles.length} new files for upload ${forceReprocess ? '(force reprocess)' : ''}`);
+      onFileUpload(validFiles, forceReprocess);
     }
 
     // Reset processing flag after upload
@@ -186,6 +192,9 @@ export function EnhancedUploadManager({
                     </p>
                     <p className="text-sm text-gray-500 mt-1">
                       or click to select files
+                    </p>
+                    <p className="text-xs text-gray-400 mt-2">
+                      💡 Hold Ctrl/Alt while dropping to force reprocess duplicates
                     </p>
                   </div>
                     <div className="flex gap-2">

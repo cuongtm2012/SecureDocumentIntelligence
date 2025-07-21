@@ -334,9 +334,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const userId = 1; // Default user ID
+      const forceReprocess = req.body.forceReprocess === 'true'; // Allow bypassing duplicate detection
 
-      // Check for duplicate files
-      const existingDocument = await storage.findDuplicateDocument(
+      // Check for duplicate files (unless force reprocess is enabled)
+      if (!forceReprocess) {
+        const existingDocument = await storage.findDuplicateDocument(
         req.file.originalname,
         req.file.size,
         req.file.mimetype,
@@ -351,22 +353,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.warn('Failed to delete duplicate file:', unlinkError);
         }
 
-        // Log duplicate detection
+        // Log duplicate detection with proper encoding
+        const originalNameUtf8 = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
         await storage.createAuditLog({
           userId,
-          action: `Duplicate file detected: ${req.file.originalname} (${req.file.size} bytes) - using existing document`,
+          action: `Duplicate file detected: ${originalNameUtf8} (${req.file.size} bytes) - using existing document`,
           documentId: existingDocument.id,
           ipAddress: req.ip,
           userAgent: req.get('User-Agent'),
         });
 
-        console.log(`📋 Duplicate file detected: ${req.file.originalname} - using existing document ${existingDocument.id}`);
+        console.log(`📋 Duplicate file detected: ${originalNameUtf8} - using existing document ${existingDocument.id}`);
+        console.log(`📊 Existing document details:`, {
+          id: existingDocument.id,
+          originalName: existingDocument.originalName,
+          uploadedAt: existingDocument.uploadedAt,
+          processingStatus: existingDocument.processingStatus,
+          processingCompletedAt: existingDocument.processingCompletedAt
+        });
         
         return res.json({
           ...existingDocument,
           isDuplicate: true,
-          message: `File already exists on server. Using existing document from ${existingDocument.uploadedAt}.`
+          message: `File "${originalNameUtf8}" already exists on server. Using existing document (ID: ${existingDocument.id}) from ${new Date(existingDocument.uploadedAt).toLocaleString()}.`
         });
+      }
+
+      if (forceReprocess) {
+        const originalNameUtf8 = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+        console.log(`🔄 Force reprocessing enabled for: ${originalNameUtf8}`);
       }
 
       const documentData = {
