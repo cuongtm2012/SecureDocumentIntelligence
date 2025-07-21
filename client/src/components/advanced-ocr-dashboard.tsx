@@ -44,7 +44,8 @@ import {
   Calendar,
   Filter,
   X,
-  RefreshCw
+  RefreshCw,
+  Layers
 } from 'lucide-react';
 import { nanoid } from 'nanoid';
 import { useToast } from "@/hooks/use-toast";
@@ -196,6 +197,31 @@ export function AdvancedOCRDashboard() {
     },
   });
 
+  // Parallel OCR processing mutation (ABBYY + Tesseract)
+  const parallelProcessMutation = useMutation({
+    mutationFn: async (documentId: string) => {
+      const response = await fetch(`/api/documents/${documentId}/process-parallel`, {
+        method: 'POST',
+      });
+      if (!response.ok) throw new Error('Parallel processing failed');
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['documents'] });
+      toast({
+        title: "Parallel OCR completed",
+        description: `Best platform: ${data.parallelResults?.bestPlatform}. Processing time: ${Math.round(data.parallelResults?.processingTime || 0)}ms`,
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Parallel processing failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   // File upload handler
   const handleFileUpload = async (files: File[], forceReprocess = false) => {
     const newFiles: UploadedFile[] = files.map(file => ({
@@ -286,6 +312,53 @@ export function AdvancedOCRDashboard() {
       setUploadedFiles(prev => prev.map(f => 
         f.id === fileId 
           ? { ...f, status: 'error', error: 'Processing failed' }
+          : f
+      ));
+    }
+  };
+
+  // Process uploaded file with parallel OCR (ABBYY + Tesseract)
+  const handleFileParallelProcess = async (fileId: string) => {
+    const file = uploadedFiles.find(f => f.id === fileId);
+    if (!file || !file.documentId) {
+      console.error('❌ Cannot process file: missing document ID', file);
+      return;
+    }
+
+    console.log(`🔄 Parallel processing document ID ${file.documentId} for file "${file.name}"`);
+
+    setUploadedFiles(prev => prev.map(f => 
+      f.id === fileId 
+        ? { ...f, status: 'processing', processingProgress: 0 }
+        : f
+    ));
+
+    try {
+      // Use the stored document ID for parallel processing
+      const result = await parallelProcessMutation.mutateAsync(file.documentId.toString());
+
+      setUploadedFiles(prev => prev.map(f => 
+        f.id === fileId 
+          ? { 
+              ...f, 
+              status: 'completed', 
+              processingProgress: 100,
+              result: {
+                extractedText: result.document?.extractedText || '',
+                confidence: result.document?.confidence || 0,
+                pageCount: result.document?.structuredData?.pageCount || 1,
+                wordCount: result.document?.extractedText ? result.document.extractedText.split(/\s+/).filter((word: string) => word.length > 0).length : 0,
+                characterCount: result.document?.extractedText ? result.document.extractedText.length : 0,
+                parallelResults: result.parallelResults
+              }
+            }
+          : f
+      ));
+    } catch (error) {
+      console.error('❌ Parallel processing failed for document ID', file.documentId, error);
+      setUploadedFiles(prev => prev.map(f => 
+        f.id === fileId 
+          ? { ...f, status: 'error', error: 'Parallel processing failed' }
           : f
       ));
     }
@@ -1041,6 +1114,44 @@ export function AdvancedOCRDashboard() {
                               PDF Viewer
                             </Button>
                           )}
+
+                          {/* Parallel OCR Processing Button (ABBYY + Tesseract) */}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={async () => {
+                              try {
+                                const response = await fetch(`/api/documents/${doc.id}/process-parallel`, {
+                                  method: 'POST',
+                                  headers: {
+                                    'Content-Type': 'application/json',
+                                  },
+                                });
+                                
+                                if (!response.ok) {
+                                  throw new Error('Parallel processing failed');
+                                }
+                                
+                                const result = await response.json();
+                                queryClient.invalidateQueries({ queryKey: ['documents'] });
+                                
+                                toast({
+                                  title: "Parallel OCR completed",
+                                  description: `Best platform: ${result.parallelResults?.bestPlatform}. Processing time: ${Math.round(result.parallelResults?.processingTime || 0)}ms`,
+                                });
+                              } catch (error) {
+                                toast({
+                                  title: "Parallel processing failed",
+                                  description: error instanceof Error ? error.message : 'Unknown error',
+                                  variant: "destructive",
+                                });
+                              }
+                            }}
+                            className="whitespace-nowrap bg-gradient-to-r from-blue-500 to-purple-500 text-white hover:from-blue-600 hover:to-purple-600"
+                          >
+                            <Layers className="h-4 w-4 mr-2" />
+                            Parallel OCR
+                          </Button>
 
                           {/* Vietnamese Receipt OCR Button */}
                           <Button

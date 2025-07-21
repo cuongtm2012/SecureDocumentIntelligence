@@ -26,6 +26,7 @@ import FormData from 'form-data';
 import axios from 'axios';
 import { abbyyOCRProcessor } from './abbyy-ocr-processor.js';
 import { directOCRProcessor } from './direct-ocr-processor.js';
+import { parallelOCRProcessor } from './parallel-ocr-processor';
 
 
 const writeFile = promisify(fs.writeFile);
@@ -638,7 +639,177 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       // Log successful processing
+      await storage.createAuditLog({
+        userId,
+        action: `Vietnamese receipt processing completed: ${document.originalName} (${confidence}% confidence)`,
+        documentId,
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent'),
+      });
 
+      res.json({
+        success: true,
+        document: await storage.getDocument(documentId),
+        receiptData: structuredData.receiptData
+      });
+
+    } catch (error) {
+      console.error('Receipt processing error:', error);
+
+      // Update document status to failed
+      const documentId = parseInt(req.params.id);
+      await storage.updateDocument(documentId, {
+        processingStatus: 'failed',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      });
+
+      res.status(500).json({
+        success: false,
+        error: "Receipt processing failed",
+        details: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
+
+  // Parallel OCR Processing endpoint (ABBYY + Tesseract)
+  app.post("/api/documents/:id/process-parallel", async (req, res) => {
+    try {
+      const documentId = parseInt(req.params.id);
+      const userId = 1; // Default user ID
+
+      const document = await storage.getDocument(documentId);
+      if (!document) {
+        return res.status(404).json({ message: "Document not found" });
+      }
+
+      // Update status to processing
+      await storage.updateDocument(documentId, {
+        processingStatus: 'processing',
+        processingStartedAt: new Date(),
+      });
+
+      const filePath = path.join(uploadsDir, document.filename);
+      
+      // Check if file exists before processing
+      try {
+        await fs.access(filePath);
+      } catch (fileError) {
+        console.error(`❌ File not found for document ${documentId}: ${filePath}`);
+        
+        // Try to find an alternative file with same original name
+        const uploads = await fs.readdir(uploadsDir);
+        const alternativeFile = uploads.find(filename => 
+          filename.includes(document.originalName) || 
+          document.originalName.includes(filename.replace(/^\d+-/, ''))
+        );
+        
+        if (alternativeFile) {
+          const alternativeFilePath = path.join(uploadsDir, alternativeFile);
+          console.log(`🔄 Using alternative file: ${alternativeFile}`);
+          
+          // Update document with correct filename
+          await storage.updateDocument(documentId, { filename: alternativeFile });
+          filePath = alternativeFilePath;
+        } else {
+          return res.status(400).json({ 
+            success: false, 
+            error: "File not found for processing. Please re-upload the document." 
+          });
+        }
+      }
+
+      console.log(`🔄 Processing document with parallel OCR: ${document.originalName}`);
+
+      // Process with parallel OCR (ABBYY + Tesseract)
+      const result = await parallelOCRProcessor.processDocument(filePath);
+      
+      // Process with DeepSeek enhancement if available
+      let enhancedText = result.combinedText;
+      let deepseekAnalysis = { applied: false, reason: 'No API key available' };
+      
+      if (result.combinedText && result.combinedText.length > 0) {
+        try {
+          const enhancement = await deepSeekService.enhanceText(result.combinedText);
+          if (enhancement.success) {
+            enhancedText = enhancement.enhancedText || result.combinedText;
+            deepseekAnalysis = enhancement.analysis || deepseekAnalysis;
+          }
+        } catch (deepseekError) {
+          console.warn('DeepSeek enhancement failed:', deepseekError);
+        }
+      }
+      
+      // Create structured data
+      const structuredData = {
+        pageCount: 1,
+        characterCount: enhancedText.length,
+        wordCount: enhancedText.split(/\s+/).filter(w => w.length > 0).length,
+        language: 'vie',
+        processingMode: 'parallel-abbyy-tesseract',
+        processingTime: result.processingTime / 1000,
+        deepseekAnalysis,
+        documentType: 'Government Document',
+        isReceiptDocument: false,
+        parallelResults: {
+          platforms: result.metadata.platforms,
+          bestPlatform: result.bestResult.platform,
+          agreement: result.metadata.agreement,
+          allResults: result.allResults.map(r => ({
+            platform: r.platform,
+            confidence: r.confidence,
+            success: r.success,
+            characterCount: r.extractedText.length,
+            processingTime: r.processingTime
+          }))
+        }
+      };
+
+      // Update document with results
+      await storage.updateDocument(documentId, {
+        processingStatus: 'completed',
+        processingCompletedAt: new Date(),
+        extractedText: enhancedText,
+        confidence: result.confidence,
+        structuredData: JSON.stringify(structuredData),
+      });
+
+      // Log processing completion
+      await storage.createAuditLog({
+        userId,
+        action: `Parallel OCR processing completed: ${document.originalName} (${result.metadata.platforms.join(', ')})`,
+        documentId,
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent'),
+      });
+
+      res.json({
+        success: true,
+        document: await storage.getDocument(documentId),
+        parallelResults: {
+          bestPlatform: result.bestResult.platform,
+          platforms: result.metadata.platforms,
+          agreement: result.metadata.agreement,
+          processingTime: result.processingTime
+        }
+      });
+
+    } catch (error) {
+      console.error('Parallel OCR processing error:', error);
+
+      // Update document status to failed
+      const documentId = parseInt(req.params.id);
+      await storage.updateDocument(documentId, {
+        processingStatus: 'failed',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      });
+
+      res.status(500).json({
+        success: false,
+        error: "Parallel OCR processing failed",
+        details: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
 
   // Debug PDF content endpoint
   app.get("/api/documents/:id/debug", async (req, res) => {
@@ -699,36 +870,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         success: false, 
         error: "Failed to debug document" 
-      });
-    }
-  });
-
-      await storage.createAuditLog({
-        userId,
-        action: `Vietnamese receipt processed: ${document.originalName} (${structuredData.itemCount} items, ${Math.round(confidence * 100)}% confidence)`,
-        documentId: document.id,
-        ipAddress: req?.ip || '127.0.0.1',
-        userAgent: req?.get('User-Agent') || 'Receipt Processor',
-      });
-
-      const updatedDocument = await storage.getDocument(documentId);
-      res.json(updatedDocument);
-
-    } catch (error) {
-      console.error('Vietnamese receipt processing error:', error);
-
-      // Update document status to failed
-      const documentId = parseInt(req.params.id);
-      await storage.updateDocument(documentId, {
-        processingStatus: 'failed',
-        errorMessage: error instanceof Error ? error.message : 'Unknown error',
-      });
-
-      res.status(500).json({
-        success: false,
-        error: "Vietnamese receipt processing failed",
-        details: error instanceof Error ? error.message : 'Unknown error',
-        step: "receipt-ocr"
       });
     }
   });
