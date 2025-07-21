@@ -39,6 +39,7 @@ interface EnhancedUploadManagerProps {
   onFileUpload: (files: File[], forceReprocess?: boolean) => void;
   onFileRemove: (fileId: string) => void;
   onFileProcess: (fileId: string) => void;
+  onFileProcessWithEngine: (fileId: string, engine: 'abbyy' | 'tesseract' | 'parallel') => void;
   onFileCancel: (fileId: string) => void;
   onBatchUpload?: (files: File[]) => void;
   onViewResult?: (file: UploadedFile) => void;
@@ -51,6 +52,7 @@ export function EnhancedUploadManager({
   onFileUpload,
   onFileRemove,
   onFileProcess,
+  onFileProcessWithEngine,
   onFileCancel,
   onBatchUpload,
   onViewResult,
@@ -276,13 +278,35 @@ export function EnhancedUploadManager({
                       </Badge>
 
                       {file.status === 'queued' && (
-                        <Button
-                          size="sm"
-                          onClick={() => onFileProcess(file.id)}
-                          variant="outline"
-                        >
-                          <Play className="h-4 w-4" />
-                        </Button>
+                        <div className="flex gap-1">
+                          <Button
+                            size="sm"
+                            onClick={() => onFileProcessWithEngine(file.id, 'abbyy')}
+                            variant="outline"
+                            className="text-xs px-2 bg-blue-50 hover:bg-blue-100 border-blue-200"
+                            title="Process with ABBYY FineReader"
+                          >
+                            ABBYY
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => onFileProcessWithEngine(file.id, 'tesseract')}
+                            variant="outline"
+                            className="text-xs px-2 bg-green-50 hover:bg-green-100 border-green-200"
+                            title="Process with Tesseract OCR"
+                          >
+                            Tesseract
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => onFileProcessWithEngine(file.id, 'parallel')}
+                            variant="outline"
+                            className="text-xs px-2 bg-purple-50 hover:bg-purple-100 border-purple-200"
+                            title="Process with both engines and compare results"
+                          >
+                            Both
+                          </Button>
+                        </div>
                       )}
 
                       {(file.status === 'uploading' || file.status === 'processing') && (

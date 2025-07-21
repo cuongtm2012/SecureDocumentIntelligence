@@ -364,6 +364,104 @@ export function AdvancedOCRDashboard() {
     }
   };
 
+  // Process uploaded file with specific OCR engine
+  const handleFileProcessWithEngine = async (fileId: string, engine: 'abbyy' | 'tesseract' | 'parallel') => {
+    const file = uploadedFiles.find(f => f.id === fileId);
+    if (!file || !file.documentId) {
+      console.error('❌ Cannot process file: missing document ID', file);
+      return;
+    }
+
+    console.log(`🔄 Processing document ID ${file.documentId} with ${engine} engine for file "${file.name}"`);
+
+    setUploadedFiles(prev => prev.map(f => 
+      f.id === fileId 
+        ? { ...f, status: 'processing', processingProgress: 0 }
+        : f
+    ));
+
+    try {
+      let result;
+      let endpoint;
+      
+      // Choose the appropriate endpoint based on engine selection
+      switch (engine) {
+        case 'abbyy':
+          // Create ABBYY-specific endpoint 
+          endpoint = `/api/documents/${file.documentId}/process-abbyy`;
+          break;
+        case 'tesseract':
+          // Use regular processing (which uses Tesseract)
+          endpoint = `/api/documents/${file.documentId}/process`;
+          break;
+        case 'parallel':
+          // Use parallel processing
+          endpoint = `/api/documents/${file.documentId}/process-parallel`;
+          break;
+        default:
+          endpoint = `/api/documents/${file.documentId}/process`;
+      }
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`${engine} processing failed`);
+      }
+
+      result = await response.json();
+
+      setUploadedFiles(prev => prev.map(f => 
+        f.id === fileId 
+          ? { 
+              ...f, 
+              status: 'completed', 
+              processingProgress: 100,
+              result: {
+                extractedText: result.document?.extractedText || result.extractedText || '',
+                confidence: result.document?.confidence || result.confidence || 0,
+                pageCount: result.document?.structuredData?.pageCount || result.pageCount || 1,
+                wordCount: (result.document?.extractedText || result.extractedText || '').split(/\s+/).filter((word: string) => word.length > 0).length,
+                characterCount: (result.document?.extractedText || result.extractedText || '').length,
+                processingEngine: engine,
+                parallelResults: result.parallelResults
+              }
+            }
+          : f
+      ));
+
+      // Show success notification with engine-specific message
+      const messages = {
+        abbyy: `ABBYY processing completed successfully`,
+        tesseract: `Tesseract processing completed successfully`, 
+        parallel: `Parallel processing completed. Best engine: ${result.parallelResults?.bestPlatform || 'unknown'}`
+      };
+
+      toast({
+        title: "OCR Processing Complete",
+        description: messages[engine],
+      });
+
+    } catch (error) {
+      console.error(`❌ ${engine} processing failed for document ID`, file.documentId, error);
+      setUploadedFiles(prev => prev.map(f => 
+        f.id === fileId 
+          ? { ...f, status: 'error', error: `${engine} processing failed` }
+          : f
+      ));
+
+      toast({
+        title: `${engine.toUpperCase()} Processing Failed`,
+        description: error instanceof Error ? error.message : 'Unknown error',
+        variant: "destructive",
+      });
+    }
+  };
+
   // File handlers
   const handleFileRemove = (fileId: string) => {
     setUploadedFiles(prev => prev.filter(f => f.id !== fileId));
@@ -758,6 +856,7 @@ export function AdvancedOCRDashboard() {
                   onFileUpload={handleFileUpload}
                   onFileRemove={handleFileRemove}
                   onFileProcess={handleFileProcess}
+                  onFileProcessWithEngine={handleFileProcessWithEngine}
                   onFileCancel={handleFileCancel}
                   onBatchUpload={handleBatchUpload}
                   onViewResult={handleViewUploadedFileResult}

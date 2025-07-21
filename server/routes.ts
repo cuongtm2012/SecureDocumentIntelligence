@@ -874,6 +874,89 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ABBYY-specific OCR processing endpoint
+  app.post("/api/documents/:id/process-abbyy", async (req, res) => {
+    try {
+      const documentId = parseInt(req.params.id);
+      const document = await storage.getDocument(documentId);
+
+      if (!document) {
+        return res.status(404).json({ success: false, error: "Document not found" });
+      }
+
+      // Update status to processing
+      await storage.updateDocument(documentId, {
+        processingStatus: 'processing',
+        processingStartedAt: new Date(),
+      });
+
+      const filePath = path.join(uploadsDir, document.filename);
+      
+      // Check if file exists before processing
+      try {
+        await fs.access(filePath);
+      } catch (fileError) {
+        console.error(`❌ File not found for document ${documentId}: ${filePath}`);
+        return res.status(400).json({ 
+          success: false, 
+          error: "File not found for processing. Please re-upload the document." 
+        });
+      }
+
+      console.log(`🔄 Processing document with ABBYY OCR: ${document.originalName}`);
+
+      // Process with ABBYY only
+      const result = await parallelOCRProcessor.processWithABBYY(filePath);
+      
+      // Create structured data
+      const structuredData = {
+        pageCount: 1,
+        characterCount: result.text.length,
+        wordCount: result.text.split(/\s+/).filter((word: string) => word.length > 0).length,
+        language: 'vie',
+        processingMode: 'abbyy-only',
+        processingTime: result.processingTime,
+        documentType: 'Government Document',
+        isReceiptDocument: false,
+      };
+
+      // Update document with results
+      await storage.updateDocument(documentId, {
+        extractedText: result.text,
+        confidence: result.confidence,
+        processingStatus: 'completed',
+        processingCompletedAt: new Date(),
+        structuredData: JSON.stringify(structuredData),
+        errorMessage: result.success ? null : 'ABBYY processing failed'
+      });
+
+      const updatedDocument = await storage.getDocument(documentId);
+      res.json({
+        success: true,
+        document: updatedDocument,
+        processingEngine: 'abbyy',
+        processingTime: result.processingTime
+      });
+
+    } catch (error) {
+      console.error('ABBYY processing error:', error);
+
+      // Update document status to failed
+      const documentId = parseInt(req.params.id);
+      await storage.updateDocument(documentId, {
+        processingStatus: 'failed',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      });
+
+      res.status(500).json({
+        success: false,
+        error: "ABBYY processing failed",
+        details: error instanceof Error ? error.message : 'Unknown error',
+        step: "abbyy-ocr"
+      });
+    }
+  });
+
   // Tesseract Training API Endpoints
 
   // Start training session
