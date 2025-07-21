@@ -287,7 +287,7 @@ export function UnifiedDocumentViewer({
       (imageContainer.scrollHeight - imageContainer.clientHeight);
   }, []);
 
-  // Render document content
+  // Render document content - supports multi-page scrolling
   const renderDocumentContent = () => {
     if (isLoading) {
       return (
@@ -312,42 +312,96 @@ export function UnifiedDocumentViewer({
       );
     }
 
-    const imageUrl = document.fileType === 'pdf' 
-      ? pdfImages[currentPage - 1] 
-      : currentPageData.imageUrl;
+    // Handle multi-page PDF documents
+    if (document.fileType === 'pdf' && pdfImages && pdfImages.length > 0) {
+      const isPdfFile = pdfImages[0]?.endsWith('.pdf') || pdfImages[0]?.includes('/raw');
 
-    const isPdfFile = imageUrl?.endsWith('.pdf') || imageUrl?.includes('/raw');
-
-    if (isPdfFile) {
-      return (
-        <div className="h-full w-full flex items-center justify-center bg-gray-100 dark:bg-gray-800">
-          <div className="w-full h-full max-w-full max-h-full">
-            <iframe
-              src={imageUrl}
-              className="w-full h-full border border-gray-300 rounded-lg shadow-lg"
-              style={{ 
-                minHeight: mode === 'modal' ? '600px' : '500px',
-                width: '100%',
-                height: '100%',
-                backgroundColor: 'white'
-              }}
-              title={`PDF Document - ${document.fileName}`}
-              allow="autoplay; clipboard-read; clipboard-write; fullscreen"
-              sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
-              onLoad={() => {
-                console.log('✅ PDF iframe loaded successfully:', imageUrl);
-                setError('');
-              }}
-              onError={() => {
-                console.error('❌ PDF iframe failed to load:', imageUrl);
-                setError('Failed to load PDF document');
-              }}
-            />
+      if (isPdfFile) {
+        // Single PDF file display
+        return (
+          <div className="h-full w-full flex items-center justify-center bg-gray-100 dark:bg-gray-800">
+            <div className="w-full h-full max-w-full max-h-full">
+              <iframe
+                src={pdfImages[0]}
+                className="w-full h-full border border-gray-300 rounded-lg shadow-lg"
+                style={{ 
+                  minHeight: mode === 'modal' ? '600px' : '500px',
+                  width: '100%',
+                  height: '100%',
+                  backgroundColor: 'white'
+                }}
+                title={`PDF Document - ${document.fileName}`}
+                allow="autoplay; clipboard-read; clipboard-write; fullscreen"
+                sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+                onLoad={() => {
+                  console.log('✅ PDF iframe loaded successfully:', pdfImages[0]);
+                  setError('');
+                }}
+                onError={() => {
+                  console.error('❌ PDF iframe failed to load:', pdfImages[0]);
+                  setError('Failed to load PDF document');
+                }}
+              />
+            </div>
           </div>
+        );
+      }
+
+      // Multi-page PDF as images - show all pages in scrollable view
+      return (
+        <div className="flex flex-col items-center p-4 bg-gray-50 dark:bg-gray-800 space-y-6">
+          {pdfImages.map((imageUrl, index) => (
+            <div 
+              key={index}
+              className="relative flex flex-col items-center"
+              style={{
+                transform: `scale(${zoom / 100}) rotate(${rotation}deg)`,
+                transformOrigin: 'center',
+                transition: 'transform 0.2s ease-in-out'
+              }}
+            >
+              {/* Page number indicator */}
+              <div className="mb-2 px-3 py-1 bg-blue-600 text-white rounded-full text-sm font-medium">
+                Page {index + 1} of {pdfImages.length}
+              </div>
+              
+              <img
+                src={imageUrl}
+                alt={`${document.fileName} - Page ${index + 1}`}
+                className="max-w-full w-auto border rounded-lg shadow-lg bg-white"
+                style={{
+                  maxWidth: zoom > 100 ? 'none' : '90%',
+                  height: 'auto'
+                }}
+                onLoad={() => {
+                  console.log(`✅ Page ${index + 1} loaded successfully:`, imageUrl);
+                }}
+                onError={(e) => {
+                  console.error(`❌ Page ${index + 1} failed to load:`, imageUrl);
+                }}
+              />
+            </div>
+          ))}
+          
+          {/* Scroll to top button */}
+          <button
+            onClick={() => {
+              if (imageContainerRef.current) {
+                imageContainerRef.current.scrollTop = 0;
+              }
+            }}
+            className="fixed bottom-6 right-6 bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full shadow-lg transition-colors"
+            title="Scroll to top"
+          >
+            <ChevronLeft className="h-5 w-5 rotate-90" />
+          </button>
         </div>
       );
     }
 
+    // Single image document
+    const imageUrl = currentPageData.imageUrl;
+    
     return (
       <div className="flex justify-center items-center min-h-[500px] p-4 bg-gray-50 dark:bg-gray-800">
         <div 
@@ -497,28 +551,38 @@ export function UnifiedDocumentViewer({
                   <h3 className="font-medium">Document</h3>
                   
                   <div className="flex items-center gap-2">
-                    {/* Page Navigation */}
+                    {/* Page Navigation - shows total pages for PDFs */}
                     {document.pageCount && document.pageCount > 1 && (
                       <>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={handlePrevPage}
-                          disabled={currentPage === 1}
-                        >
-                          <ChevronLeft className="h-4 w-4" />
-                        </Button>
-                        <span className="text-sm px-2">
-                          {currentPage} / {document.pageCount}
-                        </span>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={handleNextPage}
-                          disabled={currentPage === document.pageCount}
-                        >
-                          <ChevronRight className="h-4 w-4" />
-                        </Button>
+                        {document.fileType === 'pdf' ? (
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm px-2 bg-blue-100 dark:bg-blue-900 rounded">
+                              {document.pageCount} pages (scrollable)
+                            </span>
+                          </div>
+                        ) : (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={handlePrevPage}
+                              disabled={currentPage === 1}
+                            >
+                              <ChevronLeft className="h-4 w-4" />
+                            </Button>
+                            <span className="text-sm px-2">
+                              {currentPage} / {document.pageCount}
+                            </span>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={handleNextPage}
+                              disabled={currentPage === document.pageCount}
+                            >
+                              <ChevronRight className="h-4 w-4" />
+                            </Button>
+                          </>
+                        )}
                         <Separator orientation="vertical" className="h-6 mx-2" />
                       </>
                     )}
