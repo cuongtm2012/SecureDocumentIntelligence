@@ -394,14 +394,17 @@ export function AdvancedOCRDashboard() {
       (doc.originalName || doc.filename || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (doc.extractedText || '').toLowerCase().includes(searchQuery.toLowerCase());
 
-    // Date filter
-    const docDate = new Date(doc.uploadedAt);
+    // Date filter - use more robust date comparison
+    const docDate = new Date(doc.uploadedAt || doc.processedAt || doc.createdAt);
     const now = new Date();
     let dateMatch = true;
 
     switch (dateFilter) {
       case 'today':
-        dateMatch = docDate.toDateString() === now.toDateString();
+        // Create start and end of today
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+        dateMatch = docDate >= todayStart && docDate < todayEnd;
         break;
       case 'week':
         const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -739,12 +742,32 @@ export function AdvancedOCRDashboard() {
                 isLoading,
                 searchQuery,
                 dateFilter,
-                documentDates: documents?.slice(0, 5).map((doc: any) => ({
-                  name: doc.originalName || doc.filename,
-                  uploadedAt: doc.uploadedAt,
-                  uploadedAtParsed: new Date(doc.uploadedAt).toISOString(),
-                  isToday: new Date(doc.uploadedAt).toDateString() === new Date().toDateString()
-                }))
+                recentDocuments: documents?.slice(0, 10).map((doc: any) => {
+                  const docDate = new Date(doc.uploadedAt || doc.processedAt || doc.createdAt);
+                  const now = new Date();
+                  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                  const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+                  return {
+                    id: doc.id,
+                    name: doc.originalName || doc.filename,
+                    uploadedAt: doc.uploadedAt,
+                    processedAt: doc.processedAt,
+                    docDateParsed: docDate.toISOString(),
+                    todayStart: todayStart.toISOString(),
+                    todayEnd: todayEnd.toISOString(),
+                    isToday: docDate >= todayStart && docDate < todayEnd,
+                    processingStatus: doc.processingStatus,
+                    hasExtractedText: !!doc.extractedText
+                  };
+                }),
+                sampleDoc: documents?.[0] ? {
+                  id: documents[0].id,
+                  originalName: documents[0].originalName,
+                  processingStatus: documents[0].processingStatus,
+                  uploadedAt: documents[0].uploadedAt,
+                  processedAt: documents[0].processedAt,
+                  hasExtractedText: !!documents[0].extractedText
+                } : null
               })}
               </div>
               <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
@@ -753,10 +776,17 @@ export function AdvancedOCRDashboard() {
                   size="sm"
                   onClick={() => {
                     console.log('🔄 Manual refresh triggered');
+                    console.log('📊 Current documents:', documents?.map(d => ({
+                      id: d.id,
+                      name: d.originalName,
+                      status: d.processingStatus,
+                      hasText: !!d.extractedText,
+                      uploadedAt: d.uploadedAt
+                    })));
                     queryClient.invalidateQueries({ queryKey: ['documents'] });
                   }}
                 >
-                  Refresh
+                  🔄 Refresh & Debug
                 </Button>
                 <Select value={pageSize.toString()} onValueChange={(value) => {
                   setPageSize(Number(value));
