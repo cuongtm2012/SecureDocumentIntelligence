@@ -150,26 +150,69 @@ async function processFileWithFallback(filePath: string, document: any, document
 
       const reliableOCRResult = await reliableOCRProcessor.processDocument(filePath);
 
+      console.log(`🔧 ReliableOCR completed successfully, now preparing DeepSeek enhancement...`);
+      console.log(`📊 ReliableOCR result: ${reliableOCRResult.extractedText.length} chars, confidence: ${reliableOCRResult.confidence}%`);
+
       // Update progress: Reconstructing
       ocrProgressTracker.updateProgress(progressId, 'reconstructing', 4, 'Enhancing text with DeepSeek AI...');
+
+      // Now enhance the extracted text with DeepSeek API
+      let enhancedText = reliableOCRResult.extractedText;
+      let deepseekAnalysis = { applied: false, reason: 'Text enhancement skipped' };
+      let deepseekImprovements = [];
+      
+      console.log(`🎯 About to start DeepSeek enhancement with ${reliableOCRResult.extractedText.length} characters...`);
+
+      try {
+        console.log(`🤖 DeepSeek Enhancement Phase Starting...`);
+        console.log(`📊 Original OCR text: ${reliableOCRResult.extractedText.length} characters`);
+        console.log(`🔧 Calling DeepSeek reconstructVietnameseText...`);
+        
+        const reconstruction = await deepSeekService.reconstructVietnameseText(reliableOCRResult.extractedText);
+        enhancedText = reconstruction.reconstructedText;
+        deepseekImprovements = reconstruction.improvements || [];
+        
+        console.log(`✅ Text reconstruction completed: ${enhancedText.length} characters`);
+        console.log(`📝 Improvements applied: ${deepseekImprovements.length} improvements`);
+        
+        // Also get document analysis
+        console.log(`🔍 Calling DeepSeek analyzeDocument...`);
+        const analysis = await deepSeekService.analyzeDocument(enhancedText, `Vietnamese PDF document analysis: ${document.originalName}`);
+        console.log(`📋 Document analysis completed`);
+        
+        deepseekAnalysis = {
+          applied: true,
+          originalLength: reliableOCRResult.extractedText.length,
+          enhancedLength: enhancedText.length,
+          improvements: deepseekImprovements,
+          analysis: analysis
+        };
+        console.log(`✅ Complete DeepSeek enhancement finished: ${enhancedText.length} characters total`);
+      } catch (deepseekError) {
+        console.error('❌ DeepSeek enhancement error details:', deepseekError);
+        console.warn('⚠️ DeepSeek text enhancement failed, using original OCR text');
+        deepseekAnalysis.reason = `Enhancement failed: ${deepseekError instanceof Error ? deepseekError.message : 'Unknown error'}`;
+      }
 
       ocrResult = {
         success: true,
         file_id: document.originalName,
-        text: reliableOCRResult.extractedText,
+        text: enhancedText,
         confidence: reliableOCRResult.confidence,
         page_count: reliableOCRResult.pageCount || 1,
         processing_time: reliableOCRResult.processingTime / 1000,
         metadata: {
-          character_count: reliableOCRResult.extractedText.length,
-          word_count: reliableOCRResult.extractedText.split(/\s+/).filter(word => word.length > 0).length,
+          character_count: enhancedText.length,
+          word_count: enhancedText.split(/\s+/).filter(word => word.length > 0).length,
           language: 'vie',
           confidence_threshold: 60.0,
           processing_timestamp: new Date(),
           file_size_bytes: document.fileSize,
-          processing_mode: 'reliable-pdf-ocr',
+          processing_mode: 'reliable-pdf-ocr-enhanced',
           ocr_method: reliableOCRResult.method || 'reliable-ocr',
-          note: 'Reliable PDF processing with ImageMagick and Tesseract OCR'
+          deepseek_analysis: deepseekAnalysis,
+          deepseek_improvements: deepseekImprovements,
+          note: 'Reliable PDF processing with ImageMagick, Tesseract OCR, and DeepSeek enhancement'
         }
       };
 
