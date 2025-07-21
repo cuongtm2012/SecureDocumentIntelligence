@@ -207,6 +207,14 @@ Changelog:
   - Enhanced duplicate file detection with alternative file discovery for missing source files
   - Improved Vietnamese character encoding handling in duplicate detection system
   - System now correctly processes duplicate documents using their actual database IDs
+- July 21, 2025. Implemented OCR engine selection feature with individual processing options
+  - Added color-coded processing buttons to each uploaded file: ABBYY (blue), Tesseract (green), Both (purple)
+  - Created onFileProcessWithEngine function to handle engine-specific document processing
+  - Implemented new /api/documents/:id/process-abbyy endpoint for ABBYY-only OCR processing
+  - Enhanced user interface with tooltips explaining each OCR engine option
+  - Added engine-specific success notifications and error handling
+  - Users can now select preferred OCR engine for each document individually
+  - System supports three processing modes: ABBYY-only, Tesseract-only, and parallel comparison
 ```
 
 ## User Preferences
