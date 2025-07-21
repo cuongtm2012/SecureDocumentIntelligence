@@ -43,7 +43,8 @@ import {
   Search,
   Calendar,
   Filter,
-  X
+  X,
+  RefreshCw
 } from 'lucide-react';
 import { nanoid } from 'nanoid';
 import { useToast } from "@/hooks/use-toast";
@@ -88,20 +89,41 @@ export function AdvancedOCRDashboard() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedLanguage, setSelectedLanguage] = useState('vi');
+  const [isUploading, setIsUploading] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+
   // Fetch real documents from backend
+  const fetchDocuments = async () => {
+    console.log('🔄 Fetching documents from API...');
+    const response = await fetch('/api/documents');
+    if (!response.ok) throw new Error('Failed to fetch documents');
+    const data = await response.json();
+    console.log('📊 Documents fetched:', data.length, 'documents');
+    return data;
+  };
+
   const { data: documents = [], isLoading } = useQuery({
     queryKey: ['documents'],
-    queryFn: async () => {
-      console.log('🔄 Fetching documents from API...');
-      const response = await fetch('/api/documents');
-      if (!response.ok) throw new Error('Failed to fetch documents');
-      const data = await response.json();
-      console.log('📊 Documents fetched:', data.length, 'documents');
-      return data;
-    },
-    refetchInterval: 3000, // Refresh every 3 seconds for real-time updates
+    queryFn: fetchDocuments,
+    refetchInterval: false, // Disable automatic polling
     staleTime: 1000, // Consider data stale after 1 second
   });
+
+  useEffect(() => {
+    fetchDocuments();
+
+    // Set up conditional polling
+    let interval: NodeJS.Timeout | undefined;
+    if (autoRefresh) {
+      interval = setInterval(fetchDocuments, 10000);
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [autoRefresh]);
 
   // Upload mutation
   const uploadMutation = useMutation({
@@ -771,23 +793,17 @@ export function AdvancedOCRDashboard() {
               })}
               </div>
               <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    console.log('🔄 Manual refresh triggered');
-                    console.log('📊 Current documents:', documents?.map(d => ({
-                      id: d.id,
-                      name: d.originalName,
-                      status: d.processingStatus,
-                      hasText: !!d.extractedText,
-                      uploadedAt: d.uploadedAt
-                    })));
-                    queryClient.invalidateQueries({ queryKey: ['documents'] });
-                  }}
-                >
-                  🔄 Refresh & Debug
-                </Button>
+                <Button onClick={() => fetchDocuments()} variant="outline" size="sm">
+                      <RefreshCw className="w-4 h-4" />
+                      Refresh
+                    </Button>
+                    <Button 
+                      onClick={() => setAutoRefresh(!autoRefresh)} 
+                      variant={autoRefresh ? "default" : "outline"} 
+                      size="sm"
+                    >
+                      {autoRefresh ? "Stop Auto-Refresh" : "Start Auto-Refresh"}
+                    </Button>
                 <Select value={pageSize.toString()} onValueChange={(value) => {
                   setPageSize(Number(value));
                   setCurrentPage(1);
@@ -825,6 +841,7 @@ export function AdvancedOCRDashboard() {
                     onClick={() => setSearchQuery('')}
                     className="px-2"
                   >
+                    ```python
                     <X className="h-4 w-4" />
                   </Button>
                 )}
