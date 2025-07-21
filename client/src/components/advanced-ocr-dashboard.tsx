@@ -107,30 +107,19 @@ export function AdvancedOCRDashboard() {
   const { data: documents = [], isLoading } = useQuery({
     queryKey: ['documents'],
     queryFn: fetchDocuments,
-    refetchInterval: false, // Disable automatic polling
-    staleTime: 1000, // Consider data stale after 1 second
+    refetchInterval: autoRefresh ? 30000 : false, // Reduced from 10s to 30s when auto-refresh is on
+    staleTime: 5000, // Consider data stale after 5 seconds instead of 1
   });
-
-  useEffect(() => {
-    fetchDocuments();
-
-    // Set up conditional polling
-    let interval: NodeJS.Timeout | undefined;
-    if (autoRefresh) {
-      interval = setInterval(fetchDocuments, 10000);
-    }
-
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [autoRefresh]);
 
   // Upload mutation
   const uploadMutation = useMutation({
-    mutationFn: async (files: File[]) => {
+    mutationFn: async ({ files, forceReprocess = false }: { files: File[]; forceReprocess?: boolean }) => {
       const promises = files.map(async (file) => {
         const formData = new FormData();
         formData.append('file', file);
+        if (forceReprocess) {
+          formData.append('forceReprocess', 'true');
+        }
 
         const response = await fetch('/api/documents/upload', {
           method: 'POST',
@@ -202,7 +191,7 @@ export function AdvancedOCRDashboard() {
   });
 
   // File upload handler
-  const handleFileUpload = async (files: File[]) => {
+  const handleFileUpload = async (files: File[], forceReprocess = false) => {
     const newFiles: UploadedFile[] = files.map(file => ({
       id: nanoid(),
       file,
@@ -216,8 +205,10 @@ export function AdvancedOCRDashboard() {
 
     setUploadedFiles(prev => [...prev, ...newFiles]);
 
+    console.log(`📤 Uploading ${files.length} files${forceReprocess ? ' (force reprocess)' : ''}`);
+
     try {
-      await uploadMutation.mutateAsync(files);
+      await uploadMutation.mutateAsync({ files, forceReprocess });
 
       // Update files to queued status
       setUploadedFiles(prev => prev.map(f => 

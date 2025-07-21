@@ -353,8 +353,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             console.warn('Failed to delete duplicate file:', unlinkError);
           }
 
-          // Log duplicate detection with proper encoding
-          const originalNameUtf8 = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+          // Log duplicate detection with proper encoding handling
+          const originalNameUtf8 = req.file.originalname; // Use as-is since multer should handle encoding properly
           await storage.createAuditLog({
             userId,
             action: `Duplicate file detected: ${originalNameUtf8} (${req.file.size} bytes) - using existing document`,
