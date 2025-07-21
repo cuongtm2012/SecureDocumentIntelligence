@@ -297,15 +297,6 @@ export function EnhancedUploadManager({
                           >
                             Tesseract
                           </Button>
-                          <Button
-                            size="sm"
-                            onClick={() => onFileProcessWithEngine(file.id, 'parallel')}
-                            variant="outline"
-                            className="text-xs px-2 bg-purple-50 hover:bg-purple-100 border-purple-200"
-                            title="Process with both engines and compare results"
-                          >
-                            Both
-                          </Button>
                         </div>
                       )}
 
