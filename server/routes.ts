@@ -883,7 +883,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         processingTime: result.processingTime,
         documentType: 'Government Document',
         isReceiptDocument: false,
-      };```text
+      };
 
       // Update document with results
       await storage.updateDocument(documentId, {
