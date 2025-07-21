@@ -417,25 +417,50 @@ export function AdvancedOCRDashboard() {
       (doc.extractedText || '').toLowerCase().includes(searchQuery.toLowerCase());
 
     // Date filter - use processing completion date (when OCR was actually completed)
+    // Priority: processingCompletedAt > processedAt > uploadedAt > createdAt
     const docDate = new Date(doc.processingCompletedAt || doc.processedAt || doc.uploadedAt || doc.createdAt);
     const now = new Date();
     let dateMatch = true;
 
+    // Debug logging for date filtering
+    console.log('🗓️ Date filtering debug:', {
+      docId: doc.id,
+      docName: doc.originalName || doc.filename,
+      dateFilter,
+      processingCompletedAt: doc.processingCompletedAt,
+      processedAt: doc.processedAt,
+      uploadedAt: doc.uploadedAt,
+      createdAt: doc.createdAt,
+      selectedDate: docDate.toISOString(),
+      selectedDateLocal: docDate.toLocaleDateString(),
+      todayLocal: now.toLocaleDateString()
+    });
+
     if (dateFilter !== 'all') {
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+      // Convert document date to local date string for comparison to avoid timezone issues
+      const docDateLocal = new Date(docDate.getFullYear(), docDate.getMonth(), docDate.getDate());
+      const nowLocal = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       
       switch (dateFilter) {
         case 'today':
-          dateMatch = docDate >= today && docDate < tomorrow;
+          // Compare only the date parts (year, month, day) ignoring time
+          dateMatch = docDateLocal.getTime() === nowLocal.getTime();
+          console.log('🗓️ Today filter check:', {
+            docDate: docDate.toISOString(),
+            docDateLocal: docDateLocal.toDateString(),
+            nowLocal: nowLocal.toDateString(),
+            docDateLocalTime: docDateLocal.getTime(),
+            nowLocalTime: nowLocal.getTime(),
+            matches: dateMatch
+          });
           break;
         case 'week':
-          const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-          dateMatch = docDate >= weekAgo;
+          const weekAgoLocal = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
+          dateMatch = docDateLocal >= weekAgoLocal;
           break;
         case 'month':
-          const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-          dateMatch = docDate >= monthAgo;
+          const monthAgoLocal = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+          dateMatch = docDateLocal >= monthAgoLocal;
           break;
       }
     }

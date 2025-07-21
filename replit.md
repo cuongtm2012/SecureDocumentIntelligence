@@ -186,6 +186,12 @@ Changelog:
   - Enhanced zoom functionality with fit-to-screen, actual size, and mouse wheel zoom support
   - Added proper height constraints and scrolling behavior for improved user experience
   - System now prevents unnecessary file storage and processing for duplicate uploads
+- July 21, 2025. Fixed date filtering accuracy issues in document dashboard
+  - Corrected timezone handling in "today" filter to properly compare document dates
+  - Changed from UTC time ranges to local date comparison ignoring time components
+  - Documents processed on previous days now correctly filtered out when selecting "today"
+  - Enhanced debug logging shows exact date comparison logic for troubleshooting
+  - Filter now accurately shows only documents processed on the current calendar day
 ```
 
 ## User Preferences
