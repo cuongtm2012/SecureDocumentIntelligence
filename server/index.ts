@@ -57,30 +57,8 @@ app.use((req, res, next) => {
   } else {
     serveStatic(app);
   }
-  // Find an available port, preferring 5000
-  const findAvailablePort = async (startPort: number): Promise<number> => {
-    const { createServer } = await import('net');
-    return new Promise((resolve, reject) => {
-      const testServer = createServer();
-      
-      testServer.listen(startPort, "0.0.0.0", () => {
-        const address = testServer.address();
-        const port = typeof address === 'string' ? startPort : address?.port || startPort;
-        testServer.close(() => resolve(port));
-      });
-      
-      testServer.on('error', (err: any) => {
-        if (err.code === 'EADDRINUSE') {
-          // Try next port
-          findAvailablePort(startPort + 1).then(resolve).catch(reject);
-        } else {
-          reject(err);
-        }
-      });
-    });
-  };
-
-  const port = await findAvailablePort(5000);
+  // Use port 5002 for deployment (mapped to external port 80)
+  const port = 5002;
   server.listen(port, "0.0.0.0", () => {
     log(`serving on port ${port}`);
   });
