@@ -613,7 +613,7 @@ export function AdvancedOCRDashboard() {
   };
 
   // Process uploaded file with specific OCR engine
-  const handleFileProcessWithEngine = async (fileId: string, engine: 'abbyy' | 'tesseract' | 'parallel') => {
+  const handleFileProcessWithEngine = async (fileId: string, engine: 'tesseract' | 'parallel' | 'receipt') => {
     const file = uploadedFiles.find(f => f.id === fileId);
     if (!file || !file.documentId) {
       console.error('❌ Cannot process file: missing document ID', file);
@@ -634,17 +634,17 @@ export function AdvancedOCRDashboard() {
       
       // Choose the appropriate endpoint based on engine selection
       switch (engine) {
-        case 'abbyy':
-          // Create ABBYY-specific endpoint 
-          endpoint = `/api/documents/${file.documentId}/process-abbyy`;
-          break;
         case 'tesseract':
-          // Use regular processing (which uses Tesseract)
+          // Use regular processing (which uses Enhanced Tesseract + DeepSeek)
           endpoint = `/api/documents/${file.documentId}/process`;
           break;
         case 'parallel':
-          // Use parallel processing
+          // Use parallel processing (ABBYY + Tesseract comparison)
           endpoint = `/api/documents/${file.documentId}/process-parallel`;
+          break;
+        case 'receipt':
+          // Use Vietnamese receipt-specific processing
+          endpoint = `/api/documents/${file.documentId}/process-receipt`;
           break;
         default:
           endpoint = `/api/documents/${file.documentId}/process`;
@@ -684,14 +684,14 @@ export function AdvancedOCRDashboard() {
 
       // Show success notification with engine-specific message
       const messages = {
-        abbyy: `ABBYY processing completed successfully`,
-        tesseract: `Tesseract processing completed successfully`, 
-        parallel: `Parallel processing completed. Best engine: ${result.parallelResults?.bestPlatform || 'unknown'}`
+        tesseract: `Enhanced Tesseract + DeepSeek processing completed successfully`, 
+        parallel: `Parallel processing completed. Best engine: ${result.parallelResults?.bestPlatform || 'unknown'}`,
+        receipt: `Vietnamese receipt processing completed successfully`
       };
 
       toast({
         title: "OCR Processing Complete",
-        description: messages[engine],
+        description: messages[engine as keyof typeof messages] || `${engine} processing completed successfully`,
       });
 
     } catch (error) {
