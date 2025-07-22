@@ -5,6 +5,8 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
+import { useToast } from '@/hooks/use-toast';
 import { 
   Download, 
   Copy, 
@@ -17,15 +19,14 @@ import {
   Save,
   Eye,
   AlertTriangle,
-  FileText,
-  Image as ImageIcon,
   X,
-  Copy,
   FileDown,
   RotateCcw,
   Type,
   Loader2,
-  EyeOff
+  EyeOff,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -50,6 +51,15 @@ export interface DocumentData {
     confidence: number;
     position: { x: number; y: number; width: number; height: number };
   }>;
+  ocrResult?: {
+    metadata?: {
+      deepseek_analysis?: {
+        applied: boolean;
+        originalText?: string;
+        analysis?: any;
+      };
+    };
+  };
 }
 
 interface UnifiedDocumentViewerProps {

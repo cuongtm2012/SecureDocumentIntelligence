@@ -197,7 +197,7 @@ async function processFileWithFallback(filePath: string, document: any, document
         success: true,
         file_id: document.originalName,
         text: enhancedText,
-        confidence: Math.round((reconstruction?.confidence || reliableOCRResult.confidence / 100) * 100), // Use DeepSeek confidence if available
+        confidence: Math.round(reliableOCRResult.confidence / 100 * 100), // Use original OCR confidence
         page_count: reliableOCRResult.pageCount || 1,
         processing_time: reliableOCRResult.processingTime / 1000,
         metadata: {
@@ -261,7 +261,7 @@ async function processFileWithFallback(filePath: string, document: any, document
         success: true,
         file_id: document.originalName,
         text: enhancedText,
-        confidence: Math.round((reconstruction?.confidence || enhancedResult.confidence) * 100), // Use DeepSeek confidence if available
+        confidence: Math.round(enhancedResult.confidence * 100), // Use Enhanced Tesseract confidence
         page_count: 1,
         processing_time: enhancedResult.processingTime / 1000,
         metadata: {
