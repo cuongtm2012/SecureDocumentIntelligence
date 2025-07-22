@@ -120,8 +120,8 @@ export function UnifiedDocumentViewer({
 
   // Update edited text when page changes
   useEffect(() => {
-    setEditedText(currentPageData.extractedText || '');
-  }, [currentPageData.extractedText, currentPage]);
+    setEditedText(getDisplayText());
+  }, [currentPageData.extractedText, currentPage, deepSeekAnalysis]);
 
   // Calculate text statistics
   useEffect(() => {
@@ -324,12 +324,53 @@ export function UnifiedDocumentViewer({
   };
 
   // Get DeepSeek analysis data
-    const getDeepSeekAnalysis = () => {
+  const getDeepSeekAnalysis = () => {
     if (!document.ocrResult?.metadata?.deepseek_analysis) return null;
     return document.ocrResult.metadata.deepseek_analysis;
   };
 
   const deepSeekAnalysis = getDeepSeekAnalysis();
+
+  // Function to render DeepSeek improvements
+  const renderDeepSeekImprovements = () => {
+    if (!deepSeekAnalysis || !deepSeekAnalysis.improvements || deepSeekAnalysis.improvements.length === 0) {
+      return null;
+    }
+
+    return (
+      <div className="mt-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+        <div className="flex items-center gap-2 mb-3">
+          <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
+          <h4 className="font-semibold text-yellow-800 dark:text-yellow-200">
+            DeepSeek AI Improvements Applied
+          </h4>
+        </div>
+        <div className="space-y-2">
+          {deepSeekAnalysis.improvements.map((improvement: string, index: number) => (
+            <div
+              key={index}
+              className="flex items-start gap-2 p-2 bg-yellow-100 dark:bg-yellow-800/30 rounded border-l-4 border-yellow-500"
+            >
+              <div className="w-1.5 h-1.5 bg-yellow-600 rounded-full mt-2 flex-shrink-0"></div>
+              <span className="text-sm text-yellow-900 dark:text-yellow-100 font-medium">
+                {improvement}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  // Function to get the display text (prioritize reconstructed text)
+  const getDisplayText = () => {
+    // If we have DeepSeek analysis with reconstructed text, use that
+    if (deepSeekAnalysis && deepSeekAnalysis.reconstructedText) {
+      return deepSeekAnalysis.reconstructedText;
+    }
+    // Otherwise use the original extracted text
+    return currentPageData.extractedText || '';
+  };
 
   // Render document content - supports multi-page scrolling
   const renderDocumentContent = () => {
@@ -738,8 +779,23 @@ export function UnifiedDocumentViewer({
                       placeholder="Extracted text will appear here..."
                     />
                   ) : (
-                    <div className="prose prose-sm max-w-none font-mono text-sm whitespace-pre-wrap">
-                      {currentPageData.extractedText || 'No text extracted'}
+                    <div className="space-y-4">
+                      {/* Main text content */}
+                      <div className="prose prose-sm max-w-none font-mono text-sm whitespace-pre-wrap">
+                        {getDisplayText() || 'No text extracted'}
+                      </div>
+
+                      {/* DeepSeek improvements display */}
+                      {renderDeepSeekImprovements()}
+
+                      {/* Show confidence for reconstructed text */}
+                      {deepSeekAnalysis && deepSeekAnalysis.reconstructedText && (
+                        <div className="mt-3 p-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded text-xs">
+                          <span className="text-green-700 dark:text-green-300">
+                            ✅ Text enhanced by DeepSeek AI • Confidence: {Math.round(deepSeekAnalysis.confidence * 100)}%
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )}
                 </ScrollArea>
@@ -769,7 +825,8 @@ export function UnifiedDocumentViewer({
                 </CardHeader>
 
                 <CardContent className="flex-1 flex flex-col p-0 h-full">
-                  <div className="flex-1 flex flex-col p-6">
+                  <div className="flex-1 flex flex-col p-6 space-y-4">
+                    {/* Main text editor */}
                     <Textarea
                       value={editedText}
                       onChange={(e) => {
@@ -777,10 +834,28 @@ export function UnifiedDocumentViewer({
                         setIsEditing(true);
                       }}
                       placeholder="Extracted text will appear here..."
-                      className="flex-1 resize-none font-mono text-sm min-h-[400px] focus:ring-2 focus:ring-blue-500"
+                      className="flex-1 resize-none font-mono text-sm min-h-[300px] focus:ring-2 focus:ring-blue-500"
                     />
 
-                    <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                    {/* DeepSeek improvements display */}
+                    {renderDeepSeekImprovements()}
+
+                    {/* Show confidence indicator */}
+                    {deepSeekAnalysis && deepSeekAnalysis.reconstructedText && (
+                      <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                        <div className="flex items-center gap-2 text-sm">
+                          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                          <span className="text-green-700 dark:text-green-300 font-medium">
+                            Enhanced by DeepSeek AI
+                          </span>
+                          <Badge variant="outline" className="ml-auto">
+                            {Math.round(deepSeekAnalysis.confidence * 100)}% confidence
+                          </Badge>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between pt-4 border-t">
                       <div className="flex flex-wrap gap-2">
               <Button onClick={handleCopyText} variant="outline" size="sm" className="flex-1 sm:flex-none">
                 <Copy className="h-4 w-4 mr-2" />
@@ -839,11 +914,24 @@ export function UnifiedDocumentViewer({
       <div className="border-t p-3 bg-gray-50 dark:bg-gray-900 flex-shrink-0">
         <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400">
           <div>
-            Characters: {(currentPageData.extractedText || '').length} • 
-            Words: {(currentPageData.extractedText || '').split(/\s+/).filter(w => w).length}
+            Characters: {getDisplayText().length} • 
+            Words: {getDisplayText().split(/\s+/).filter(w => w).length}
+            {deepSeekAnalysis && deepSeekAnalysis.improvements && (
+              <span className="ml-2 text-yellow-600 dark:text-yellow-400">
+                • {deepSeekAnalysis.improvements.length} AI improvements
+              </span>
+            )}
           </div>
           <div>
-            Processing confidence: {Math.round((currentPageData.confidence || 0) * 100)}%
+            {deepSeekAnalysis && deepSeekAnalysis.reconstructedText ? (
+              <span className="text-green-600 dark:text-green-400">
+                DeepSeek confidence: {Math.round((deepSeekAnalysis.confidence || 0) * 100)}%
+              </span>
+            ) : (
+              <span>
+                OCR confidence: {Math.round((currentPageData.confidence || 0) * 100)}%
+              </span>
+            )}
           </div>
         </div>
       </div>
