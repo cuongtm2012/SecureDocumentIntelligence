@@ -1,20 +1,18 @@
-
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useToast } from '@/hooks/use-toast';
 import { 
+  Download, 
+  Copy, 
+  FileText, 
+  Image as ImageIcon, 
   ZoomIn, 
   ZoomOut, 
-  RotateCw, 
-  Download, 
-  ChevronLeft, 
-  ChevronRight,
+  RotateCw,
   Edit3,
   Save,
   Eye,
@@ -26,7 +24,8 @@ import {
   FileDown,
   RotateCcw,
   Type,
-  Loader2
+  Loader2,
+  EyeOff
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -69,7 +68,7 @@ export function UnifiedDocumentViewer({
   mode = 'modal'
 }: UnifiedDocumentViewerProps) {
   const { toast } = useToast();
-  
+
   // State management
   const [currentPage, setCurrentPage] = useState(1);
   const [zoom, setZoom] = useState(100);
@@ -83,7 +82,8 @@ export function UnifiedDocumentViewer({
   const [activeTab, setActiveTab] = useState<'viewer' | 'text'>('viewer');
   const [wordCount, setWordCount] = useState(0);
   const [lineCount, setLineCount] = useState(0);
-  
+  const [showComparison, setShowComparison] = useState(false);
+
   // Refs
   const imageRef = useRef<HTMLImageElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
@@ -127,13 +127,13 @@ export function UnifiedDocumentViewer({
       setError('');
 
       const response = await fetch(`/api/documents/${document.documentId}/pages`);
-      
+
       if (!response.ok) {
         throw new Error(`Failed to load PDF pages: ${response.statusText}`);
       }
-      
+
       const data = await response.json();
-      
+
       if (data.success && data.images) {
         setPdfImages(data.images);
         console.log(`✅ Loaded ${data.images.length} PDF pages as images`);
@@ -144,7 +144,7 @@ export function UnifiedDocumentViewer({
     } catch (error: any) {
       console.error('❌ Failed to load PDF images:', error);
       setError(error.message || 'Failed to load PDF content');
-      
+
       const pdfUrl = `/api/documents/${document.documentId}/raw?t=${Date.now()}`;
       setPdfImages([pdfUrl]);
     } finally {
@@ -158,13 +158,13 @@ export function UnifiedDocumentViewer({
       setError('');
 
       const response = await fetch(`/api/documents/${docId}/pages`);
-      
+
       if (!response.ok) {
         throw new Error(`Failed to load PDF pages: ${response.statusText}`);
       }
-      
+
       const data = await response.json();
-      
+
       if (data.success && data.images) {
         setPdfImages(data.images);
         console.log(`✅ Loaded ${data.images.length} PDF pages as images`);
@@ -175,7 +175,7 @@ export function UnifiedDocumentViewer({
     } catch (error: any) {
       console.error('❌ Failed to load PDF images:', error);
       setError(error.message || 'Failed to load PDF content');
-      
+
       const pdfUrl = `/api/documents/${docId}/raw?t=${Date.now()}`;
       setPdfImages([pdfUrl]);
     } finally {
@@ -209,11 +209,11 @@ export function UnifiedDocumentViewer({
       const containerHeight = container.clientHeight - 32;
       const imageWidth = imageRef.current.naturalWidth;
       const imageHeight = imageRef.current.naturalHeight;
-      
+
       const scaleX = containerWidth / imageWidth;
       const scaleY = containerHeight / imageHeight;
       const scale = Math.min(scaleX, scaleY, 1);
-      
+
       setZoom(Math.round(scale * 100));
     }
   };
@@ -263,29 +263,63 @@ export function UnifiedDocumentViewer({
   // Scroll synchronization
   const handleImageScroll = useCallback(() => {
     if (!imageContainerRef.current || !textContainerRef.current) return;
-    
+
     const imageContainer = imageContainerRef.current;
     const textContainer = textContainerRef.current;
-    
+
     const scrollPercentage = imageContainer.scrollTop / 
       (imageContainer.scrollHeight - imageContainer.clientHeight);
-    
+
     textContainer.scrollTop = scrollPercentage * 
       (textContainer.scrollHeight - textContainer.clientHeight);
   }, []);
 
   const handleTextScroll = useCallback(() => {
     if (!imageContainerRef.current || !textContainerRef.current) return;
-    
+
     const imageContainer = imageContainerRef.current;
     const textContainer = textContainerRef.current;
-    
+
     const scrollPercentage = textContainer.scrollTop / 
       (textContainer.scrollHeight - textContainer.clientHeight);
-    
+
     imageContainer.scrollTop = scrollPercentage * 
       (imageContainer.scrollHeight - imageContainer.clientHeight);
   }, []);
+
+  // Function to create highlighted text comparison
+  const createHighlightedText = (originalText: string, enhancedText: string) => {
+    if (!originalText || !enhancedText) return enhancedText;
+
+    const originalLines = originalText.split('\n');
+    const enhancedLines = enhancedText.split('\n');
+
+    return enhancedLines.map((line, index) => {
+      const originalLine = originalLines[index] || '';
+      const isChanged = line !== originalLine;
+
+      return (
+        <div key={index} className={`${isChanged ? 'bg-green-100 border-l-4 border-green-500 pl-2 my-1' : ''}`}>
+          {isChanged && (
+            <div className="text-xs text-gray-500 mb-1">
+              <span className="font-medium">Original:</span> {originalLine || '(empty)'}
+            </div>
+          )}
+          <div className={isChanged ? 'font-medium text-green-800' : ''}>
+            {line}
+          </div>
+        </div>
+      );
+    });
+  };
+
+  // Get DeepSeek analysis data
+    const getDeepSeekAnalysis = () => {
+    if (!document.ocrResult?.metadata?.deepseek_analysis) return null;
+    return document.ocrResult.metadata.deepseek_analysis;
+  };
+
+  const deepSeekAnalysis = getDeepSeekAnalysis();
 
   // Render document content - supports multi-page scrolling
   const renderDocumentContent = () => {
@@ -364,7 +398,7 @@ export function UnifiedDocumentViewer({
               <div className="mb-2 px-3 py-1 bg-blue-600 text-white rounded-full text-sm font-medium">
                 Page {index + 1} of {pdfImages.length}
               </div>
-              
+
               <img
                 src={imageUrl}
                 alt={`${document.fileName} - Page ${index + 1}`}
@@ -382,7 +416,7 @@ export function UnifiedDocumentViewer({
               />
             </div>
           ))}
-          
+
           {/* Scroll to top button */}
           <button
             onClick={() => {
@@ -401,7 +435,7 @@ export function UnifiedDocumentViewer({
 
     // Single image document
     const imageUrl = currentPageData.imageUrl;
-    
+
     return (
       <div className="flex justify-center items-center min-h-[500px] p-4 bg-gray-50 dark:bg-gray-800">
         <div 
@@ -430,11 +464,11 @@ export function UnifiedDocumentViewer({
                   const containerHeight = container.clientHeight - 32;
                   const imageWidth = imageRef.current.naturalWidth;
                   const imageHeight = imageRef.current.naturalHeight;
-                  
+
                   const scaleX = containerWidth / imageWidth;
                   const scaleY = containerHeight / imageHeight;
                   const scale = Math.min(scaleX, scaleY, 1);
-                  
+
                   if (scale < 1) {
                     setZoom(Math.round(scale * 100));
                   }
@@ -446,7 +480,7 @@ export function UnifiedDocumentViewer({
               setError('Failed to load document image');
             }}
           />
-          
+
           {/* Highlight detected text regions */}
           {showHighlights && document.lowConfidenceWords?.map((word, index) => (
             <div
@@ -483,11 +517,11 @@ export function UnifiedDocumentViewer({
               )}
               <h2 className="text-lg font-semibold">{document.fileName}</h2>
             </div>
-            
+
             <Badge variant="outline">
               Confidence: {Math.round((currentPageData.confidence || 0) * 100)}%
             </Badge>
-            
+
             {document.pageCount && document.pageCount > 1 && (
               <Badge variant="secondary">
                 Page {currentPage} of {document.pageCount}
@@ -502,9 +536,9 @@ export function UnifiedDocumentViewer({
                 <TabsTrigger value="text">Text</TabsTrigger>
               </TabsList>
             </Tabs>
-            
+
             <Separator orientation="vertical" className="h-6" />
-            
+
             <Button
               size="sm"
               variant="outline"
@@ -513,7 +547,7 @@ export function UnifiedDocumentViewer({
               <Download className="h-4 w-4 mr-2" />
               TXT
             </Button>
-            
+
             {onExport && (
               <>
                 <Button
@@ -532,7 +566,7 @@ export function UnifiedDocumentViewer({
                 </Button>
               </>
             )}
-            
+
             <Button size="sm" variant="ghost" onClick={onClose}>
               <X className="h-4 w-4" />
             </Button>
@@ -549,7 +583,7 @@ export function UnifiedDocumentViewer({
               <div className="w-1/2 border-r flex flex-col h-full">
                 <div className="border-b p-3 flex items-center justify-between flex-shrink-0">
                   <h3 className="font-medium">Document</h3>
-                  
+
                   <div className="flex items-center gap-2">
                     {/* Page Navigation - shows total pages for PDFs */}
                     {document.pageCount && document.pageCount > 1 && (
@@ -586,7 +620,7 @@ export function UnifiedDocumentViewer({
                         <Separator orientation="vertical" className="h-6 mx-2" />
                       </>
                     )}
-                    
+
                     {/* Zoom Controls */}
                     <Button size="sm" variant="outline" onClick={handleZoomOut} disabled={zoom <= 25}>
                       <ZoomOut className="h-4 w-4" />
@@ -595,18 +629,18 @@ export function UnifiedDocumentViewer({
                     <Button size="sm" variant="outline" onClick={handleZoomIn} disabled={zoom >= 400}>
                       <ZoomIn className="h-4 w-4" />
                     </Button>
-                    
+
                     <Button size="sm" variant="outline" onClick={handleFitToScreen} title="Fit to screen">
                       Fit
                     </Button>
                     <Button size="sm" variant="outline" onClick={handleZoomReset} title="Reset zoom">
                       100%
                     </Button>
-                    
+
                     <Button size="sm" variant="outline" onClick={handleRotate}>
                       <RotateCw className="h-4 w-4" />
                     </Button>
-                    
+
                     <Button
                       size="sm"
                       variant="outline"
@@ -617,7 +651,7 @@ export function UnifiedDocumentViewer({
                     </Button>
                   </div>
                 </div>
-                
+
                 <div 
                   className="flex-1 overflow-auto bg-gray-50 dark:bg-gray-800"
                   ref={imageContainerRef}
@@ -635,7 +669,7 @@ export function UnifiedDocumentViewer({
               <div className="w-1/2 flex flex-col h-full">
                 <div className="border-b p-3 flex items-center justify-between flex-shrink-0">
                   <h3 className="font-medium">Extracted Text</h3>
-                  
+
                   <div className="flex items-center gap-2">
                     {document.lowConfidenceWords && document.lowConfidenceWords.length > 0 && (
                       <Badge variant="destructive" className="text-xs">
@@ -643,13 +677,13 @@ export function UnifiedDocumentViewer({
                         {document.lowConfidenceWords.length} low confidence words
                       </Badge>
                     )}
-                    
+
                     <div className="flex items-center gap-2 text-xs text-gray-500">
                       <span>{wordCount} words</span>
                       <span>{lineCount} lines</span>
                       <span>{editedText.length} chars</span>
                     </div>
-                    
+
                     <Button
                       size="sm"
                       variant="outline"
@@ -659,7 +693,7 @@ export function UnifiedDocumentViewer({
                       <Copy className="h-3 w-3 mr-1" />
                       Copy
                     </Button>
-                    
+
                     {isEditing ? (
                       <>
                         <Button size="sm" variant="outline" onClick={handleDiscardChanges}>
@@ -679,7 +713,7 @@ export function UnifiedDocumentViewer({
                     )}
                   </div>
                 </div>
-                
+
                 <ScrollArea 
                   className="flex-1 p-4"
                   ref={textContainerRef}
@@ -716,14 +750,14 @@ export function UnifiedDocumentViewer({
                       {Math.round((currentPageData.confidence || 0) * 100)}% confidence
                     </Badge>
                   </div>
-                  
+
                   <div className="flex items-center space-x-4 text-xs text-gray-500 mt-2">
                     <span>{wordCount} words</span>
                     <span>{lineCount} lines</span>
                     <span>{editedText.length} chars</span>
                   </div>
                 </CardHeader>
-                
+
                 <CardContent className="flex-1 flex flex-col p-0 h-full">
                   <div className="flex-1 flex flex-col p-6">
                     <Textarea
@@ -735,29 +769,30 @@ export function UnifiedDocumentViewer({
                       placeholder="Extracted text will appear here..."
                       className="flex-1 resize-none font-mono text-sm min-h-[400px] focus:ring-2 focus:ring-blue-500"
                     />
-                    
+
                     <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                      <div className="flex items-center space-x-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={handleCopyText}
-                          className="text-xs"
-                        >
-                          <Copy className="h-3 w-3 mr-1" />
-                          Copy
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleExportText('txt')}
-                          className="text-xs"
-                        >
-                          <FileDown className="h-3 w-3 mr-1" />
-                          Export
-                        </Button>
-                      </div>
-                      
+                      <div className="flex flex-wrap gap-2">
+              <Button onClick={handleCopyText} variant="outline" size="sm" className="flex-1 sm:flex-none">
+                <Copy className="h-4 w-4 mr-2" />
+                Copy
+              </Button>
+              <Button onClick={() => handleExportText('txt')} variant="outline" size="sm" className="flex-1 sm:flex-none">
+                <FileDown className="h-3 w-3 mr-1" />
+                Export
+              </Button>
+              {deepSeekAnalysis && deepSeekAnalysis.originalText && (
+                <Button 
+                  onClick={() => setShowComparison(!showComparison)} 
+                  variant={showComparison ? "default" : "outline"} 
+                  size="sm" 
+                  className="flex-1 sm:flex-none"
+                >
+                  {showComparison ? <EyeOff className="h-4 w-4 mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
+                  {showComparison ? 'Hide Changes' : 'Show AI Edits'}
+                </Button>
+              )}
+            </div>
+
                       <div className="flex items-center space-x-2">
                         {isEditing && editedText !== currentPageData.extractedText && (
                           <>

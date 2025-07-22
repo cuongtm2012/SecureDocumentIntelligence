@@ -160,26 +160,26 @@ async function processFileWithFallback(filePath: string, document: any, document
       let enhancedText = reliableOCRResult.extractedText;
       let deepseekAnalysis: any = { applied: false, reason: 'Text enhancement skipped' };
       let deepseekImprovements: any[] = [];
-      
+
       console.log(`🎯 About to start DeepSeek enhancement with ${reliableOCRResult.extractedText.length} characters...`);
 
       try {
         console.log(`🤖 DeepSeek Enhancement Phase Starting...`);
         console.log(`📊 Original OCR text: ${reliableOCRResult.extractedText.length} characters`);
         console.log(`🔧 Calling DeepSeek reconstructVietnameseText...`);
-        
+
         const reconstruction = await deepSeekService.reconstructVietnameseText(reliableOCRResult.extractedText);
         enhancedText = reconstruction.reconstructedText;
         deepseekImprovements = reconstruction.improvements || [];
-        
+
         console.log(`✅ Text reconstruction completed: ${enhancedText.length} characters`);
         console.log(`📝 Improvements applied: ${deepseekImprovements.length} improvements`);
-        
+
         // Also get document analysis
         console.log(`🔍 Calling DeepSeek analyzeDocument...`);
         const analysis = await deepSeekService.analyzeDocument(enhancedText, `Vietnamese PDF document analysis: ${document.originalName}`);
         console.log(`📋 Document analysis completed`);
-        
+
         deepseekAnalysis = {
           applied: true,
           enhancedLength: enhancedText.length,
@@ -197,7 +197,7 @@ async function processFileWithFallback(filePath: string, document: any, document
         success: true,
         file_id: document.originalName,
         text: enhancedText,
-        confidence: reliableOCRResult.confidence,
+        confidence: Math.round((reconstruction?.confidence || reliableOCRResult.confidence / 100) * 100), // Use DeepSeek confidence if available
         page_count: reliableOCRResult.pageCount || 1,
         processing_time: reliableOCRResult.processingTime / 1000,
         metadata: {
@@ -222,7 +222,7 @@ async function processFileWithFallback(filePath: string, document: any, document
       console.log('🔧 Processing image with Enhanced Tesseract for Vietnamese text...');
 
       const enhancedResult = await enhancedTesseractProcessor.processDocument(filePath);
-      
+
       // Update progress: Enhancing with DeepSeek
       ocrProgressTracker.updateProgress(progressId, 'reconstructing', 4, 'Enhancing text with DeepSeek AI...');
 
@@ -230,27 +230,27 @@ async function processFileWithFallback(filePath: string, document: any, document
       let enhancedText = enhancedResult.extractedText;
       let deepseekAnalysis: any = { applied: false, reason: 'Text enhancement skipped' };
       let deepseekImprovements: any[] = [];
-      
+
       try {
         console.log(`🤖 DeepSeek Enhancement Phase Starting for image...`);
         console.log(`📊 Enhanced Tesseract result: ${enhancedResult.extractedText.length} characters, ${Math.round(enhancedResult.confidence * 100)}% confidence`);
-        
+
         const reconstruction = await deepSeekService.reconstructVietnameseText(enhancedResult.extractedText);
         enhancedText = reconstruction.reconstructedText;
         deepseekImprovements = reconstruction.improvements || [];
-        
+
         console.log(`✅ Text reconstruction completed: ${enhancedText.length} characters`);
-        
+
         // Also get document analysis
         const analysis = await deepSeekService.analyzeDocument(enhancedText, `Vietnamese ID card analysis: ${document.originalName}`);
-        
+
         deepseekAnalysis = {
           applied: true,
           enhancedLength: enhancedText.length,
           improvements: deepseekImprovements,
           analysis: analysis
         };
-        
+
       } catch (deepseekError) {
         console.error('❌ DeepSeek enhancement error for image:', deepseekError);
         console.warn('⚠️ DeepSeek text enhancement failed, using Enhanced Tesseract result');
@@ -261,7 +261,7 @@ async function processFileWithFallback(filePath: string, document: any, document
         success: true,
         file_id: document.originalName,
         text: enhancedText,
-        confidence: Math.round(enhancedResult.confidence * 100), // Convert back to percentage for consistency
+        confidence: Math.round((reconstruction?.confidence || enhancedResult.confidence) * 100), // Use DeepSeek confidence if available
         page_count: 1,
         processing_time: enhancedResult.processingTime / 1000,
         metadata: {
