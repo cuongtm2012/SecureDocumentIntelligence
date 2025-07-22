@@ -34,17 +34,7 @@ export default function Dashboard() {
             <div className="flex items-center space-x-4 mb-4 md:mb-0">
               <p className="text-sm">SecureDoc OCR v2.1.0</p>
               <span className="text-gray-500">|</span>
-              <p className="text-sm">Compliant with FISMA & FedRAMP standards</p>
-            </div>
-
-            <div className="flex items-center space-x-6">
-              <button className="text-sm hover:text-white transition-colors">
-                <i className="fas fa-clipboard-list mr-1"></i>Audit Log
-              </button>
-              <button className="text-sm hover:text-white transition-colors">
-                <i className="fas fa-headset mr-1"></i>Support
-              </button>
-              <p className="text-sm">Emergency: 1-800-GOV-HELP</p>
+              <p className="text-sm">Cuong.TM</p>
             </div>
           </div>
         </div>
