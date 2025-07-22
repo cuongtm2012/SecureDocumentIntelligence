@@ -156,15 +156,15 @@ export class EnhancedTesseractProcessor {
 
       console.log('✅ Enhanced preprocessing completed');
 
-      // Run multiple Tesseract approaches and pick the best result
+      // Run multiple Tesseract approaches with optimized Vietnamese settings
       const ocrResults = await Promise.all([
+        this.runSimpleTesseract(enhancedPath, 'vie', 6), // PSM 6: Single uniform block (best for ID cards)
+        this.runSimpleTesseract(enhancedPath, 'vie', 8), // PSM 8: Single word (good for fields)
         this.runSimpleTesseract(enhancedPath, 'vie', 3), // PSM 3: Fully automatic page segmentation
-        this.runSimpleTesseract(enhancedPath, 'vie', 6), // PSM 6: Single uniform block of text
-        this.runSimpleTesseract(enhancedPath, 'vie', 4), // PSM 4: Single column of text of variable sizes
       ]);
 
       // Select best result based on confidence and text length
-      const bestResult = ocrResults.reduce((best, current) => {
+      const bestResult = ocrResults.reduce((best: any, current: any) => {
         const scoreA = best.confidence * Math.log(best.text.length + 1);
         const scoreB = current.confidence * Math.log(current.text.length + 1);
         return scoreB > scoreA ? current : best;
