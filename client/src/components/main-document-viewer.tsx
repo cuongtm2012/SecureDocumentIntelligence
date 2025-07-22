@@ -56,7 +56,10 @@ export interface DocumentData {
       deepseek_analysis?: {
         applied: boolean;
         originalText?: string;
+        reconstructedText?: string;
         analysis?: any;
+        improvements?: string[];
+        confidence?: number;
       };
     };
   };
@@ -130,7 +133,18 @@ export function UnifiedDocumentViewer({
   const getDisplayText = () => {
     // If we have DeepSeek analysis with reconstructed text, use that
     if (deepSeekAnalysis && deepSeekAnalysis.reconstructedText) {
-      return deepSeekAnalysis.reconstructedText;
+      // Check if it's JSON format and extract the text
+      try {
+        if (deepSeekAnalysis.reconstructedText.startsWith('json\n') || deepSeekAnalysis.reconstructedText.startsWith('{')) {
+          const cleanJson = deepSeekAnalysis.reconstructedText.replace(/^json\n/, '');
+          const parsed = JSON.parse(cleanJson);
+          return parsed.reconstructedText || deepSeekAnalysis.reconstructedText;
+        }
+        return deepSeekAnalysis.reconstructedText;
+      } catch (e) {
+        // If parsing fails, return as-is
+        return deepSeekAnalysis.reconstructedText;
+      }
     }
     // Otherwise use the original extracted text
     return currentPageData.extractedText || '';
@@ -792,7 +806,7 @@ export function UnifiedDocumentViewer({
                       {deepSeekAnalysis && deepSeekAnalysis.reconstructedText && (
                         <div className="mt-3 p-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded text-xs">
                           <span className="text-green-700 dark:text-green-300">
-                            ✅ Text enhanced by DeepSeek AI • Confidence: {Math.round(deepSeekAnalysis.confidence * 100)}%
+                            ✅ Text enhanced by DeepSeek AI • Confidence: {Math.round((deepSeekAnalysis.confidence || 0) * 100)}%
                           </span>
                         </div>
                       )}
@@ -849,7 +863,7 @@ export function UnifiedDocumentViewer({
                             Enhanced by DeepSeek AI
                           </span>
                           <Badge variant="outline" className="ml-auto">
-                            {Math.round(deepSeekAnalysis.confidence * 100)}% confidence
+                            {Math.round((deepSeekAnalysis.confidence || 0) * 100)}% confidence
                           </Badge>
                         </div>
                       </div>
@@ -915,7 +929,7 @@ export function UnifiedDocumentViewer({
         <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400">
           <div>
             Characters: {getDisplayText().length} • 
-            Words: {getDisplayText().split(/\s+/).filter(w => w).length}
+            Words: {getDisplayText().split(/\s+/).filter((w: string) => w).length}
             {deepSeekAnalysis && deepSeekAnalysis.improvements && (
               <span className="ml-2 text-yellow-600 dark:text-yellow-400">
                 • {deepSeekAnalysis.improvements.length} AI improvements
