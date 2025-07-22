@@ -118,6 +118,24 @@ export function UnifiedDocumentViewer({
     }
   }, [document.documentId, document.fileType, document.id]);
 
+  // Get DeepSeek analysis data first
+  const getDeepSeekAnalysis = () => {
+    if (!document.ocrResult?.metadata?.deepseek_analysis) return null;
+    return document.ocrResult.metadata.deepseek_analysis;
+  };
+
+  const deepSeekAnalysis = getDeepSeekAnalysis();
+
+  // Function to get the display text (prioritize reconstructed text)
+  const getDisplayText = () => {
+    // If we have DeepSeek analysis with reconstructed text, use that
+    if (deepSeekAnalysis && deepSeekAnalysis.reconstructedText) {
+      return deepSeekAnalysis.reconstructedText;
+    }
+    // Otherwise use the original extracted text
+    return currentPageData.extractedText || '';
+  };
+
   // Update edited text when page changes
   useEffect(() => {
     setEditedText(getDisplayText());
@@ -323,14 +341,6 @@ export function UnifiedDocumentViewer({
     });
   };
 
-  // Get DeepSeek analysis data
-  const getDeepSeekAnalysis = () => {
-    if (!document.ocrResult?.metadata?.deepseek_analysis) return null;
-    return document.ocrResult.metadata.deepseek_analysis;
-  };
-
-  const deepSeekAnalysis = getDeepSeekAnalysis();
-
   // Function to render DeepSeek improvements
   const renderDeepSeekImprovements = () => {
     if (!deepSeekAnalysis || !deepSeekAnalysis.improvements || deepSeekAnalysis.improvements.length === 0) {
@@ -360,16 +370,6 @@ export function UnifiedDocumentViewer({
         </div>
       </div>
     );
-  };
-
-  // Function to get the display text (prioritize reconstructed text)
-  const getDisplayText = () => {
-    // If we have DeepSeek analysis with reconstructed text, use that
-    if (deepSeekAnalysis && deepSeekAnalysis.reconstructedText) {
-      return deepSeekAnalysis.reconstructedText;
-    }
-    // Otherwise use the original extracted text
-    return currentPageData.extractedText || '';
   };
 
   // Render document content - supports multi-page scrolling
