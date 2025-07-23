@@ -273,6 +273,12 @@ Changelog:
   - Fixed UpdateDocumentData interface to include filename field for file replacement functionality
   - Updated failed documents (IDs 3, 4, 5) status to allow re-upload and processing
   - System now handles file upload edge cases gracefully with proper error recovery
+- July 23, 2025. Fixed Replit Autoscale deployment port configuration for external port 80 mapping
+  - DEPLOYMENT PORT FIX: Updated server configuration to use dynamic port selection for Autoscale deployment
+  - Changed port logic: development uses 5000, production uses 5002 (which maps to external port 80 in .replit)
+  - Added environment variable support (PORT) with fallback to appropriate port based on NODE_ENV
+  - Server now listens on 0.0.0.0 for Cloud Run compatibility (already implemented)
+  - Deployment configuration now properly matches Replit Autoscale requirements
 ```
 
 ## User Preferences

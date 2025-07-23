@@ -57,8 +57,9 @@ app.use((req, res, next) => {
   } else {
     serveStatic(app);
   }
-  // Use port 5000 for Replit deployment 
-  const port = 5000;
+  // Use port from environment or 5000 for local development
+  // For Replit Autoscale deployment, use port that maps to external port 80
+  const port = parseInt(process.env.PORT || (process.env.NODE_ENV === "production" ? "5002" : "5000"));
   server.listen(port, "0.0.0.0", () => {
     log(`serving on port ${port}`);
   });
