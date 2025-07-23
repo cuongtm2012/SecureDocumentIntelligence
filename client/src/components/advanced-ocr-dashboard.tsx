@@ -29,7 +29,7 @@ import { DocumentExportManager } from "./document-export-manager";
 import { MultiLanguageOCR } from "./multi-language-ocr";
 import { BatchOCRProcessor } from "./batch-ocr-processor";
 import { TesseractTrainingInterface } from "./tesseract-training-interface";
-import { UnifiedDocumentViewer, DocumentData } from "./main-document-viewer";
+import { DocumentData } from "./main-document-viewer";
 import { OCRProgressTracker } from "./ocr-progress-tracker";
 import { ProcessingToast } from "@/components/processing-toast";
 import { useNavigationTracker } from "@/hooks/use-navigation-tracker";
@@ -65,7 +65,7 @@ import {
 import { nanoid } from "nanoid";
 import { useToast } from "@/hooks/use-toast";
 import { ApiStatusIndicator } from "@/components/api-status-indicator";
-import { MainDocumentViewer } from "@/components/main-document-viewer";
+import { UnifiedDocumentViewer } from "@/components/main-document-viewer";
 
 // OCR Result interface
 interface OCRResult {
@@ -384,6 +384,8 @@ export function AdvancedOCRDashboard() {
               let ocrProgress = f.ocrProgress || {
                 stage: "initializing",
                 stageDescription: "Starting OCR...",
+                currentStep: "Initializing OCR process",
+                progress: 0,
                 totalPages: 1,
                 pagesCompleted: 0,
                 currentPage: 1,
@@ -394,6 +396,8 @@ export function AdvancedOCRDashboard() {
                 ocrProgress = {
                   stage: "initializing",
                   stageDescription: "Starting PDF processing...",
+                  currentStep: "Initializing PDF conversion",
+                  progress: 5,
                   totalPages: logData.pageCount || 1,
                   pagesCompleted: 0,
                   currentPage: 1,
@@ -409,6 +413,8 @@ export function AdvancedOCRDashboard() {
                     ...ocrProgress,
                     stage: "converting",
                     stageDescription: "Converting PDF pages...",
+                    currentStep: `Converting page ${currentPage} of ${totalPages}`,
+                    progress: 10 + ((currentPage - 1) / totalPages) * 30,
                     currentPage,
                     totalPages,
                     processingSpeed: "200 DPI conversion",
@@ -424,6 +430,8 @@ export function AdvancedOCRDashboard() {
                     ...ocrProgress,
                     stage: "extracting",
                     stageDescription: "Extracting text from pages...",
+                    currentStep: `Extracting text from page ${currentPage}`,
+                    progress: 40 + ((currentPage - 1) / totalPages) * 40,
                     currentPage,
                     totalPages,
                     pagesCompleted: currentPage - 1,
@@ -445,8 +453,10 @@ export function AdvancedOCRDashboard() {
                     : 0;
                   ocrProgress = {
                     ...ocrProgress,
-                    stage: "extracting",
+                    stage: "extracting", 
                     stageDescription: `Page ${pageNumber} extracted (${confidence}% confidence)`,
+                    currentStep: `Processed page ${pageNumber}`,
+                    progress: 40 + (pageNumber / (ocrProgress.totalPages || 1)) * 40,
                     pagesCompleted: pageNumber,
                     processingSpeed: `${confidence}% accuracy`,
                   };
@@ -456,8 +466,10 @@ export function AdvancedOCRDashboard() {
               } else if (logData.message?.includes("DeepSeek API processing")) {
                 ocrProgress = {
                   ...ocrProgress,
-                  stage: "enhancing",
+                  stage: "reconstructing",
                   stageDescription: "Enhancing text with AI...",
+                  currentStep: "AI text enhancement",
+                  progress: 85,
                   processingSpeed: "DeepSeek AI",
                 };
                 progress = 85;
@@ -470,6 +482,8 @@ export function AdvancedOCRDashboard() {
                   ...ocrProgress,
                   stage: "completing",
                   stageDescription: "Processing completed successfully!",
+                  currentStep: "Finalizing results",
+                  progress: 100,
                   processingSpeed: "Complete",
                 };
                 progress = 100;
@@ -513,8 +527,12 @@ export function AdvancedOCRDashboard() {
                     95,
                   ),
                   ocrProgress: {
-                    ...f.ocrProgress,
+                    stage: "extracting",
                     stageDescription: "Processing in progress...",
+                    currentStep: "Processing document",
+                    progress: Math.min((f.processingProgress || 0) + 2, 95),
+                    processingSpeed: "In progress",
+                    ...f.ocrProgress,
                   },
                 };
               } else if (doc.status === "completed") {
@@ -526,6 +544,8 @@ export function AdvancedOCRDashboard() {
                   ocrProgress: {
                     stage: "completing",
                     stageDescription: "Processing completed!",
+                    currentStep: "Finalizing results",
+                    progress: 100,
                     processingSpeed: "Complete",
                   },
                 };
@@ -572,6 +592,8 @@ export function AdvancedOCRDashboard() {
               ocrProgress: {
                 stage: "initializing",
                 stageDescription: "Initializing OCR processing...",
+                currentStep: "Starting OCR process",
+                progress: 0,
                 totalPages: 1,
                 pagesCompleted: 0,
                 currentPage: 1,
@@ -606,6 +628,8 @@ export function AdvancedOCRDashboard() {
                 ocrProgress: {
                   stage: "completing",
                   stageDescription: "Processing completed successfully!",
+                  currentStep: "Finalizing results",
+                  progress: 100,
                   processingSpeed: "Complete",
                 },
                 result: {
@@ -635,6 +659,8 @@ export function AdvancedOCRDashboard() {
                 ocrProgress: {
                   stage: "completing",
                   stageDescription: "Processing failed",
+                  currentStep: "Processing failed",
+                  progress: 0,
                   processingSpeed: "Error",
                 },
               }
@@ -1965,7 +1991,6 @@ export function AdvancedOCRDashboard() {
                                   0,
                                 ) /
                                   documents.length) *
-```
                                   100,
                               ) + "%"
                             : "0%"}
@@ -2031,7 +2056,7 @@ export function AdvancedOCRDashboard() {
           .map(file => ({
             id: file.id,
             name: file.name,
-            status: file.status,
+            status: file.status as 'processing' | 'uploading' | 'queued',
             progress: file.status === 'processing' ? file.processingProgress : file.uploadProgress,
             type: file.type,
           }))
