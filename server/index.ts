@@ -57,8 +57,8 @@ app.use((req, res, next) => {
   } else {
     serveStatic(app);
   }
-  // Use port 5002 for deployment (mapped to external port 80)
-  const port = 5002;
+  // Use port 5000 for Replit deployment 
+  const port = 5000;
   server.listen(port, "0.0.0.0", () => {
     log(`serving on port ${port}`);
   });
