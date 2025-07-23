@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import express from "express";
 import { createServer, type Server } from "http";
 import { storage, type UpdateDocumentData } from "./storage";
 import multer from "multer";
@@ -375,17 +376,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Initialize database with default user
   await initializeDatabase();
 
-  // Apply security headers
+  // CORS configuration for deployment
+  app.use((req, res, next) => {
+    const allowedOrigins = [
+      'http://localhost:5000',
+      'http://localhost:3000', 
+      'https://ocr-app.replit.app',
+      'https://replit.app'
+    ];
+    
+    const origin = req.headers.origin;
+    if (allowedOrigins.includes(origin as string)) {
+      res.setHeader('Access-Control-Allow-Origin', origin as string);
+    }
+    
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    
+    if (req.method === 'OPTIONS') {
+      res.sendStatus(200);
+      return;
+    }
+    
+    next();
+  });
+
+  // Apply security headers with deployment-friendly settings
   app.use(helmet({
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
         scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-        imgSrc: ["'self'", "data:", "blob:", "http://localhost:5000", "http://localhost:3000"],
-        connectSrc: ["'self'", "ws:", "wss:", "http://localhost:8001"],
+        imgSrc: ["'self'", "data:", "blob:", "http://localhost:5000", "http://localhost:3000", "https://ocr-app.replit.app"],
+        connectSrc: ["'self'", "ws:", "wss:", "http://localhost:8001", "https://ocr-app.replit.app"],
         fontSrc: ["'self'", "data:"],
-        frameAncestors: ["'self'", "vscode-webview:", "https://vscode-cdn.net"],
+        frameAncestors: ["'self'", "vscode-webview:", "https://vscode-cdn.net", "https://replit.app"],
         frameSrc: ["'self'", "data:", "blob:"],
         objectSrc: ["'self'", "data:", "blob:"],
         upgradeInsecureRequests: [],
@@ -1355,12 +1382,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const filePath = path.join(uploadsDir, document.filename);
 
+      // Enhanced file existence check with alternative file search
       if (!fsSync.existsSync(filePath)) {
-        return res.status(404).json({ message: "File not found" });
+        console.warn(`📁 File not found: ${filePath}, searching for alternatives...`);
+        
+        // Try to find an alternative file with same original name
+        try {
+          const uploads = await fs.readdir(uploadsDir);
+          const alternativeFile = uploads.find(filename => 
+            filename.includes(document.originalName.replace(/[^\w\s.-]/g, '')) || 
+            document.originalName.includes(filename.replace(/^\d+-/, '').replace(/[^\w\s.-]/g, ''))
+          );
+
+          if (alternativeFile) {
+            const alternativePath = path.join(uploadsDir, alternativeFile);
+            console.log(`✅ Found alternative file: ${alternativeFile}`);
+            
+            // Update document record with correct filename
+            await storage.updateDocument(documentId, { filename: alternativeFile });
+            
+            res.setHeader('Content-Type', document.mimeType);
+            res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
+            res.setHeader('Cache-Control', 'no-cache');
+            
+            const fileStream = fsSync.createReadStream(alternativePath);
+            fileStream.pipe(res);
+            return;
+          }
+        } catch (searchError) {
+          console.error('Alternative file search failed:', searchError);
+        }
+        
+        return res.status(404).json({ 
+          message: "File not found",
+          details: `Missing file: ${document.filename}`,
+          suggestion: "Please re-upload this document"
+        });
       }
 
       res.setHeader('Content-Type', document.mimeType);
       res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
+      res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
 
       const fileStream = fsSync.createReadStream(filePath);
       fileStream.pipe(res);
@@ -1615,6 +1677,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       clearInterval(keepAlive);
     });
   });
+
+  // Health check endpoint for deployment
+  app.get('/health', (req, res) => {
+    res.json({ 
+      status: 'healthy', 
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV || 'development',
+      uptime: process.uptime()
+    });
+  });
+
+  // Serve static files from uploads directory  
+  app.use('/uploads', express.static(uploadsDir));
+  
+  // Serve generated PDF page images
+  app.use('/pages', express.static(path.join(process.cwd(), 'client', 'public', 'pages')));
 
   const httpServer = createServer(app);
   return httpServer;
