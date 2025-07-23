@@ -264,6 +264,15 @@ Changelog:
   - Fixed TypeScript compilation errors in routes.ts and enhanced-tesseract-processor.ts
   - System now uses optimized Vietnamese OCR settings: PSM 6/8 for ID cards, vie language model with TESSDATA_PREFIX
   - Application running stable on port 5000 with full Vietnamese document processing capabilities
+- July 23, 2025. Fixed deployment port configuration and missing file handling issues
+  - DEPLOYMENT FIX: Changed server port from dynamic detection to fixed port 5002 for Autoscale deployment compatibility
+  - Removed dynamic port finding function that was causing deployment failures
+  - MISSING FILES RESOLVED: Enhanced duplicate detection system to handle missing original files properly
+  - Added file existence verification before using duplicate detection results
+  - Implemented automatic file replacement for existing documents when original files are missing
+  - Fixed UpdateDocumentData interface to include filename field for file replacement functionality
+  - Updated failed documents (IDs 3, 4, 5) status to allow re-upload and processing
+  - System now handles file upload edge cases gracefully with proper error recovery
 ```
 
 ## User Preferences

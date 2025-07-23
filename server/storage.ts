@@ -160,6 +160,7 @@ export class MemStorage implements IStorage {
 
 // Define the interface for the update document data
 export interface UpdateDocumentData {
+  filename?: string;
   processingStatus?: 'pending' | 'processing' | 'completed' | 'failed';
   processingStartedAt?: Date;
   processingCompletedAt?: Date;
