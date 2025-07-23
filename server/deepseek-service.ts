@@ -55,13 +55,15 @@ export interface DeepSeekOCRResult {
   processingMethod?: string;
 }
 
-// Configuration for chunk processing
+// Optimized chunk processing configuration based on test results
 const CHUNK_CONFIG = {
-  MAX_CHUNK_SIZE: 3000, // Maximum characters per chunk
-  OVERLAP_SIZE: 200, // Overlap between chunks to maintain context
-  MAX_RETRIES: 3, // Maximum retries for failed chunks
-  TIMEOUT_PER_CHUNK: 30000, // 30 seconds per chunk
-  BATCH_SIZE: 3, // Maximum concurrent chunks to process
+  MAX_CHUNK_SIZE: 2500, // Reduced from 3000 for better processing stability
+  OVERLAP_SIZE: 150, // Reduced overlap for faster processing
+  MAX_RETRIES: 3, // Keep retry attempts
+  TIMEOUT_PER_CHUNK: 45000, // Increased to 45 seconds for complex chunks
+  BATCH_SIZE: 2, // Reduced to 2 concurrent chunks for stability
+  MIN_CHUNK_SIZE: 500, // Avoid creating tiny chunks
+  SMOOTHING_THRESHOLD: 0.9 // Only apply final smoothing if confidence < 90%
 };
 
 export class DeepSeekService {
@@ -334,10 +336,12 @@ Guidelines:
     improvements: string[];
     confidence: number;
   }> {
+    const processingStartTime = Date.now();
+    
     try {
       // Split text into chunks
       const chunks = this.splitTextIntoChunks(rawOcrText);
-      console.log(`📄 Split text into ${chunks.length} chunks for processing`);
+      console.log(`📄 Split ${rawOcrText.length} chars into ${chunks.length} optimized chunks`);
 
       // Process chunks in batches with retry logic
       const processedChunks = await this.processBatches(chunks);
@@ -348,7 +352,12 @@ Guidelines:
       // Optional: Final pass to smooth chunk boundaries
       const finalResult = await this.smoothChunkBoundaries(combinedResult);
 
-      console.log(`✅ Large document processing completed: ${finalResult.reconstructedText.length} chars`);
+      // Performance metrics
+      const totalTime = Date.now() - processingStartTime;
+      const avgTimePerChunk = totalTime / chunks.length;
+      console.log(`🎯 Chunking performance: ${totalTime}ms total (${avgTimePerChunk.toFixed(0)}ms/chunk)`);
+      console.log(`✅ Large document processing completed: ${finalResult.reconstructedText.length} chars, ${finalResult.improvements.length} improvements`);
+      
       return finalResult;
 
     } catch (error) {
@@ -384,6 +393,14 @@ Guidelines:
       }
 
       const chunk = text.slice(chunkStart, chunkEnd);
+      
+      // Skip very small chunks (merge with previous)
+      if (chunk.length < CHUNK_CONFIG.MIN_CHUNK_SIZE && chunks.length > 0) {
+        chunks[chunks.length - 1].chunk += chunk;
+        currentPosition = chunkEnd;
+        continue;
+      }
+
       chunks.push({
         chunk: chunk,
         index: chunkIndex,
@@ -410,16 +427,21 @@ Guidelines:
       index: number;
     }> = [];
 
-    // Process chunks in batches
+    // Process chunks in batches with performance tracking
     for (let i = 0; i < chunks.length; i += CHUNK_CONFIG.BATCH_SIZE) {
       const batch = chunks.slice(i, i + CHUNK_CONFIG.BATCH_SIZE);
-      console.log(`🔄 Processing batch ${Math.floor(i / CHUNK_CONFIG.BATCH_SIZE) + 1}/${Math.ceil(chunks.length / CHUNK_CONFIG.BATCH_SIZE)} (${batch.length} chunks)`);
+      const batchNumber = Math.floor(i / CHUNK_CONFIG.BATCH_SIZE) + 1;
+      const totalBatches = Math.ceil(chunks.length / CHUNK_CONFIG.BATCH_SIZE);
+      
+      console.log(`🔄 Processing batch ${batchNumber}/${totalBatches} (${batch.length} chunks)`);
+      const batchStartTime = Date.now();
 
       const batchPromises = batch.map(chunkData => 
         this.processChunkWithRetry(chunkData.chunk, chunkData.index, chunks.length)
       );
 
       const batchResults = await Promise.allSettled(batchPromises);
+      const batchTime = Date.now() - batchStartTime;
       
       batchResults.forEach((result, batchIndex) => {
         const chunkIndex = batch[batchIndex].index;
@@ -439,6 +461,8 @@ Guidelines:
           });
         }
       });
+
+      console.log(`⚡ Batch ${batchNumber} completed in ${batchTime}ms (${(batchTime/batch.length).toFixed(0)}ms per chunk)`);
 
       // Add delay between batches to avoid rate limiting
       if (i + CHUNK_CONFIG.BATCH_SIZE < chunks.length) {
@@ -627,8 +651,10 @@ ${chunkText}`
     improvements: string[];
     confidence: number;
   }> {
-    // Skip final pass if text is still too large or if confidence is already high
-    if (combinedResult.reconstructedText.length > CHUNK_CONFIG.MAX_CHUNK_SIZE * 2 || combinedResult.confidence > 0.9) {
+    // Skip final pass if text is too large or confidence is already high
+    if (combinedResult.reconstructedText.length > CHUNK_CONFIG.MAX_CHUNK_SIZE * 2 || 
+        combinedResult.confidence >= CHUNK_CONFIG.SMOOTHING_THRESHOLD) {
+      console.log(`⏭️ Skipping final smoothing: length=${combinedResult.reconstructedText.length}, confidence=${combinedResult.confidence}`);
       return combinedResult;
     }
 
