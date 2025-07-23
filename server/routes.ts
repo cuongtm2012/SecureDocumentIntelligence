@@ -575,15 +575,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Fix encoding for Vietnamese filenames
       const originalNameUtf8 = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
 
-      const documentData = {
-        filename: req.file.filename,
-        originalName: originalNameUtf8,
-        fileSize: req.file.size,
-        mimeType: req.file.mimetype,
-        userId,
-        processingStatus: 'pending' as const,
-      };
-
       // CRITICAL FIX: Verify file exists before creating database record
       const uploadedFilePath = path.join(process.cwd(), 'uploads', req.file.filename);
       try {
@@ -596,6 +587,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           error: "File verification failed"
         });
       }
+
+      const documentData = {
+        filename: req.file.filename,
+        originalName: originalNameUtf8,
+        fileSize: req.file.size,
+        mimeType: req.file.mimetype,
+        userId,
+        processingStatus: 'pending' as const,
+      };
 
       const document = await storage.createDocument(documentData);
 

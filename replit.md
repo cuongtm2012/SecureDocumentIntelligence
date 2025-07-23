@@ -321,6 +321,13 @@ Changelog:
   - Added comprehensive error handling for upload destination failures
   - System now prevents database records for files that don't exist on disk
   - Missing files from previous uploads automatically marked as failed with descriptive error messages
+- July 23, 2025. Fixed critical JPG upload failure and corrected file validation order
+  - PROBLEM IDENTIFIED: JPG upload created database record but file missing from disk (Document ID 13: 1000045582.jpg)
+  - Root cause: File validation happened AFTER database record creation, allowing orphaned records
+  - SOLUTION: Moved file existence verification to occur BEFORE database record creation
+  - Updated 6 missing files to failed status with proper error messages via cleanup system
+  - File upload now fails fast if multer doesn't save file properly, preventing database inconsistency
+  - System now guarantees: no database record without corresponding file on disk
 ```
 
 ## User Preferences
