@@ -1,4 +1,4 @@
-import { CloudflareR2Storage, R2UploadResult } from './cloudflare-r2-storage';
+import { CloudflareR2Storage, R2UploadResult, getR2Storage } from './cloudflare-r2-storage';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -35,15 +35,20 @@ export class HybridStorageService implements StorageService {
 
       if (hasR2Config) {
         console.log('🔧 Initializing Cloudflare R2 storage...');
-        this.r2Storage = new CloudflareR2Storage();
+        this.r2Storage = getR2Storage();
         
-        // Test R2 connection
-        const connectionOk = await this.r2Storage.testConnection();
-        if (connectionOk) {
-          this.useR2 = true;
-          console.log('✅ Using Cloudflare R2 for file storage');
+        if (this.r2Storage) {
+          // Test R2 connection
+          const connectionOk = await this.r2Storage.testConnection();
+          if (connectionOk) {
+            this.useR2 = true;
+            console.log('✅ Using Cloudflare R2 for file storage');
+          } else {
+            console.warn('⚠️ R2 connection test failed, falling back to local storage');
+            this.useR2 = false;
+          }
         } else {
-          console.warn('⚠️ R2 connection test failed, falling back to local storage');
+          console.warn('⚠️ R2 initialization failed, falling back to local storage');
           this.useR2 = false;
         }
       } else {

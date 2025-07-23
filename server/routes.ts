@@ -2,6 +2,7 @@ import type { Express } from "express";
 import express from "express";
 import { createServer, type Server } from "http";
 import { storage, type UpdateDocumentData } from "./storage";
+import { storageService } from './storage-service';
 import multer from "multer";
 import path from "path";
 import fs from "fs/promises";
@@ -575,26 +576,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Fix encoding for Vietnamese filenames
       const originalNameUtf8 = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
 
-      // CRITICAL FIX: Verify file exists before creating database record
-      const uploadedFilePath = path.join('/home/runner/uploads', req.file.filename);
+      // Upload file using hybrid storage service (R2 or local)
+      let uploadResult;
+      const fileBuffer = await fs.readFile(req.file.path);
+      
       try {
-        await fs.access(uploadedFilePath);
-        console.log(`✅ File verified on disk: ${uploadedFilePath}`);
-      } catch (fileError) {
-        console.error(`❌ CRITICAL: File missing after upload: ${uploadedFilePath}`);
+        console.log(`📤 Uploading file: ${originalNameUtf8} (${fileBuffer.length} bytes) using ${storageService.getStorageType()} storage`);
+        
+        uploadResult = await storageService.uploadFile(
+          fileBuffer,
+          req.file.filename,
+          originalNameUtf8,
+          req.file.mimetype
+        );
+        
+        console.log(`✅ File uploaded successfully to ${storageService.getStorageType()}: ${uploadResult.key}`);
+        
+        // Clean up temp file
+        try {
+          await fs.unlink(req.file.path);
+        } catch (unlinkError) {
+          console.warn('Failed to delete temp file:', unlinkError);
+        }
+      } catch (uploadError) {
+        console.error(`❌ ${storageService.getStorageType()} upload failed:`, uploadError);
+        
+        // Clean up temp file on error
+        try {
+          await fs.unlink(req.file.path);
+        } catch {
+          // Ignore cleanup errors
+        }
+        
         return res.status(500).json({ 
-          message: "Upload failed - file not saved properly",
-          error: "File verification failed"
+          message: `File upload failed using ${storageService.getStorageType()} storage`,
+          details: uploadError instanceof Error ? uploadError.message : 'Unknown error'
         });
       }
 
       const documentData = {
-        filename: req.file.filename,
+        filename: uploadResult.key, // Use R2 key or local filename
         originalName: originalNameUtf8,
-        fileSize: req.file.size,
-        mimeType: req.file.mimetype,
+        fileSize: uploadResult.metadata.size,
+        mimeType: uploadResult.metadata.contentType,
         userId,
         processingStatus: 'pending' as const,
+        storageType: storageService.getStorageType(), // Track storage type
       };
 
       const document = await storage.createDocument(documentData);
@@ -602,7 +629,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Log upload
       await storage.createAuditLog({
         userId,
-        action: `Document uploaded: ${req.file.originalname} (${req.file.size} bytes)`,
+        action: `Document uploaded: ${originalNameUtf8} (${uploadResult.metadata.size} bytes) via ${storageService.getStorageType()}`,
         documentId: document.id,
         ipAddress: req.ip,
         userAgent: req.get('User-Agent'),
@@ -614,14 +641,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Process in background without blocking the response
       setImmediate(async () => {
         try {
-          const filePath = path.join('/home/runner/uploads', document.filename);
-
-          // Check if file actually exists
+          // Get file for processing (from R2 or local storage)
+          let filePath: string;
+          let tempFileCleanup: (() => Promise<void>) | null = null;
+          
           try {
-            await fs.access(filePath);
-            console.log(`📂 File exists: ${filePath}`);
+            if (document.storageType === 'r2') {
+              // Download from R2 to temp file for processing
+              const tempDir = '/tmp';
+              const tempFileName = `ocr-temp-${document.id}-${Date.now()}`;
+              filePath = path.join(tempDir, tempFileName);
+              
+              const { stream } = await storageService.downloadFile(document.filename);
+              
+              // Write stream to temp file
+              const writeStream = fsSync.createWriteStream(filePath);
+              await new Promise((resolve, reject) => {
+                stream.pipe(writeStream);
+                stream.on('end', resolve);
+                stream.on('error', reject);
+              });
+              
+              // Set up cleanup function
+              tempFileCleanup = async () => {
+                try {
+                  await fs.unlink(filePath);
+                  console.log(`🧹 Cleaned up temp file: ${filePath}`);
+                } catch {
+                  // Ignore cleanup errors
+                }
+              };
+              
+              console.log(`📥 Downloaded R2 file to temp: ${filePath}`);
+            } else {
+              // Use local file path
+              filePath = path.join('/home/runner/uploads', document.filename);
+              
+              // Check if file actually exists
+              await fs.access(filePath);
+              console.log(`📂 Local file exists: ${filePath}`);
+            }
           } catch (fileError) {
-            console.error(`❌ File not found for auto-processing: ${filePath}`);
+            console.error(`❌ File not found for auto-processing: ${document.filename}`, fileError);
             await storage.updateDocument(document.id, { processingStatus: 'failed', errorMessage: 'File not found' });
             return;
           }
@@ -634,8 +695,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
           await processFileWithFallback(filePath, document, document.id, userId, mockReq as any, undefined);
 
           console.log(`✅ Auto-processing completed for document ${document.id}: ${document.originalName}`);
+          
+          // Clean up temp file if it was created
+          if (tempFileCleanup) {
+            await tempFileCleanup();
+          }
         } catch (error) {
           console.error(`❌ Auto-processing failed for document ${document.id}:`, error);
+          
+          // Clean up temp file on error
+          if (tempFileCleanup) {
+            await tempFileCleanup();
+          }
+          
           // Update status to failed with error details
           await storage.updateDocument(document.id, { 
             processingStatus: 'failed', 
@@ -1483,7 +1555,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           suggestion: "Please re-upload this document"
         });
       }
-
+      
       res.setHeader('Content-Type', document.mimeType);
       res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
       res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
@@ -1506,10 +1578,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Document not found" });
       }
 
-      const filePath = path.join('/home/runner/uploads', document.filename);
+      // Handle both R2 and local file serving
+      if (document.storageType === 'r2') {
+        try {
+          const { stream, metadata } = await storageService.downloadFile(document.filename);
+          
+          res.setHeader('Content-Type', metadata.contentType);
+          res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
+          res.setHeader('Cache-Control', 'public, max-age=3600');
+          res.setHeader('Content-Length', metadata.size.toString());
+          
+          stream.pipe(res);
+          return;
+        } catch (error) {
+          console.error('R2 file serving error:', error);
+          return res.status(404).json({ 
+            message: "File not found in R2 storage",
+            details: `R2 key: ${document.filename}`,
+            suggestion: "File may have been moved or deleted"
+          });
+        }
+      } else {
+        // Local file serving
+        const filePath = path.join('/home/runner/uploads', document.filename);
 
-      if (!fsSync.existsSync(filePath)) {
-        return res.status(404).json({ message: "File not found" });
+        if (!fsSync.existsSync(filePath)) {
+          return res.status(404).json({ 
+            message: "File not found in local storage",
+            details: `Local path: ${filePath}`,
+            suggestion: "Please re-upload this document"
+          });
+        }
       }
 
       // Check if it's a PDF file
@@ -1532,8 +1631,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         // Convert PDF pages to images
         const outputPattern = path.join(tempDir, 'page-%d.png');
+        // For R2 files, use local temp file; for local files, use original path
+        let pdfPath = filePath;
+        if (document.storageType === 'r2') {
+          // Download R2 file to temp location for PDF processing
+          const { stream } = await storageService.downloadFile(document.filename);
+          pdfPath = path.join(tempDir, 'temp.pdf');
+          
+          const writeStream = fsSync.createWriteStream(pdfPath);
+          await new Promise((resolve, reject) => {
+            stream.pipe(writeStream);
+            stream.on('end', resolve);
+            stream.on('error', reject);
+          });
+        }
+        
         // Convert PDF to images using ImageMagick directly
-        await convertPDFToImages(filePath, outputPattern);
+        await convertPDFToImages(pdfPath, outputPattern);
 
         // Get generated page images
         const pageFiles = await fs.readdir(tempDir);

@@ -334,6 +334,17 @@ Changelog:
   - Migrated existing 5 files from old uploads directory to new absolute path location
   - All file operations now use consistent absolute path: /home/runner/uploads
   - System ready for testing with new upload path configuration
+- July 23, 2025. Implemented comprehensive Cloudflare R2 Object Storage integration with hybrid fallback system
+  - Created CloudflareR2Storage class with full S3-compatible API for file upload, download, deletion, and listing
+  - Implemented HybridStorageService that automatically detects R2 configuration and falls back to local storage
+  - Updated upload workflow to use R2 storage when configured, with progress tracking and error handling
+  - Added database schema field to track storage type (R2 vs local) for each document
+  - Enhanced file serving endpoints to handle both R2 and local file retrieval seamlessly
+  - Integrated R2 with OCR processing pipeline - downloads R2 files to temp for processing, then cleans up
+  - System maintains backward compatibility with existing local files while enabling cloud storage migration
+  - Created comprehensive setup guide (CLOUDFLARE-R2-SETUP.md) with step-by-step instructions for R2 configuration
+  - Upload reliability issues resolved through cloud storage architecture - no more missing files
+  - Application automatically uses R2 when credentials are provided, otherwise continues with local storage
 ```
 
 ## User Preferences
