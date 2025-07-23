@@ -279,6 +279,14 @@ Changelog:
   - Added environment variable support (PORT) with fallback to appropriate port based on NODE_ENV
   - Server now listens on 0.0.0.0 for Cloud Run compatibility (already implemented)
   - Deployment configuration now properly matches Replit Autoscale requirements
+- July 23, 2025. Implemented comprehensive chunking solution for large PDF files to handle DeepSeek API timeouts
+  - CHUNKING SOLUTION: Added intelligent document splitting for large files (>3000 characters) with overlap handling
+  - Created batch processing system with retry logic (3 retries per chunk, exponential backoff)
+  - Implemented parallel processing of up to 3 chunks simultaneously to optimize performance
+  - Added chunk recombination with overlap removal and boundary smoothing using final DeepSeek pass
+  - Enhanced error handling with fallback to original text if chunking fails
+  - Added comprehensive logging and progress tracking for chunk processing stages
+  - System now handles large documents without timeout issues while maintaining text quality and context
 ```
 
 ## User Preferences
