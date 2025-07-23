@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useRef } from "react";
 import { useDropzone } from "react-dropzone";
+import { SyncLoader } from "react-spinners";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -46,6 +47,9 @@ export interface UploadedFile {
     wordCount?: number;
     characterCount?: number;
   };
+  // Convenience properties for backward compatibility
+  confidence?: number;
+  extractedText?: string;
   structuredData?: string | any; // JSON string or parsed object for additional metadata
   deepseekImprovements?: string[];
   processingMode?: string;
@@ -79,6 +83,7 @@ interface EnhancedUploadManagerProps {
   onBatchUpload?: (files: File[]) => void;
   onViewResult?: (file: UploadedFile) => void;
   uploadedFiles: UploadedFile[];
+  setUploadedFiles?: React.Dispatch<React.SetStateAction<UploadedFile[]>>;
   maxFileSize?: number;
   acceptedFileTypes?: string[];
 }
@@ -92,6 +97,7 @@ export function EnhancedUploadManager({
   onBatchUpload,
   onViewResult,
   uploadedFiles,
+  setUploadedFiles,
   maxFileSize = 10 * 1024 * 1024, // 10MB
   acceptedFileTypes = [
     "image/jpeg",
@@ -209,13 +215,15 @@ export function EnhancedUploadManager({
     const file = uploadedFiles.find((f) => f.id === fileId);
     if (!file) return;
 
-    setUploadedFiles((prev) =>
-      prev.map((f) =>
-        f.id === fileId
-          ? { ...f, status: "processing", processingProgress: 0 }
-          : f,
-      ),
-    );
+    if (setUploadedFiles) {
+      setUploadedFiles((prev: UploadedFile[]) =>
+        prev.map((f: UploadedFile) =>
+          f.id === fileId
+            ? { ...f, status: "processing", processingProgress: 0 }
+            : f,
+        ),
+      );
+    }
 
     // Set up progress tracking with Server-Sent Events
     let eventSource: EventSource | null = null;
@@ -231,25 +239,27 @@ export function EnhancedUploadManager({
           const progressData = JSON.parse(event.data);
           console.log("📊 Progress update:", progressData);
 
-          setUploadedFiles((prev) =>
-            prev.map((f) =>
-              f.id === fileId
-                ? {
-                    ...f,
-                    processingProgress: Math.round(progressData.progress || 0),
-                    ocrProgress: {
-                      stage: progressData.stage,
-                      stageDescription: progressData.currentStep,
-                      currentStep: progressData.currentStep,
-                      progress: progressData.progress,
-                      processingSpeed: progressData.processingSpeed,
-                      currentPage: progressData.details?.currentPage,
-                      totalPages: progressData.details?.totalPages,
-                    },
-                  }
-                : f,
-            ),
-          );
+          if (setUploadedFiles) {
+            setUploadedFiles((prev: UploadedFile[]) =>
+              prev.map((f: UploadedFile) =>
+                f.id === fileId
+                  ? {
+                      ...f,
+                      processingProgress: Math.round(progressData.progress || 0),
+                      ocrProgress: {
+                        stage: progressData.stage,
+                        stageDescription: progressData.currentStep,
+                        currentStep: progressData.currentStep,
+                        progress: progressData.progress,
+                        processingSpeed: progressData.processingSpeed,
+                        currentPage: progressData.details?.currentPage,
+                        totalPages: progressData.details?.totalPages,
+                      },
+                    }
+                  : f,
+              ),
+            );
+          }
 
           // Close connection when completed
           if (
@@ -307,24 +317,26 @@ export function EnhancedUploadManager({
         }
       }
 
-      setUploadedFiles((prev) =>
-        prev.map((f) =>
-          f.id === fileId
-            ? {
-                ...f,
-                status: "completed",
-                processingProgress: 100,
-                result,
-                extractedText: result.extractedText,
-                confidence: result.confidence
-                  ? Math.round(result.confidence * 100)
-                  : 0,
-                deepseekImprovements,
-                processingMode: structuredData.processingMode || "unknown",
-              }
-            : f,
-        ),
-      );
+      if (setUploadedFiles) {
+        setUploadedFiles((prev: UploadedFile[]) =>
+          prev.map((f: UploadedFile) =>
+            f.id === fileId
+              ? {
+                  ...f,
+                  status: "completed",
+                  processingProgress: 100,
+                  result,
+                  extractedText: result.extractedText,
+                  confidence: result.confidence
+                    ? Math.round(result.confidence * 100)
+                    : 0,
+                  deepseekImprovements,
+                  processingMode: structuredData.processingMode || "unknown",
+                }
+              : f,
+          ),
+        );
+      }
     } catch (error) {
       console.error("❌ Processing error:", error);
 
@@ -334,18 +346,20 @@ export function EnhancedUploadManager({
         eventSource = null;
       }
 
-      setUploadedFiles((prev) =>
-        prev.map((f) =>
-          f.id === fileId
-            ? {
-                ...f,
-                status: "error",
-                error:
-                  error instanceof Error ? error.message : "Processing failed",
-              }
-            : f,
-        ),
-      );
+      if (setUploadedFiles) {
+        setUploadedFiles((prev: UploadedFile[]) =>
+          prev.map((f: UploadedFile) =>
+            f.id === fileId
+              ? {
+                  ...f,
+                  status: "error",
+                  error:
+                    error instanceof Error ? error.message : "Processing failed",
+                }
+              : f,
+          ),
+        );
+      }
     }
   };
 
@@ -539,13 +553,13 @@ export function EnhancedUploadManager({
 
                   {file.status === "processing" && (
                     <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
+                      <div className="flex justify-between items-center text-sm">
                         <span className="flex items-center gap-2">
                           {file.ocrProgress ? (
                             <>
                               <div
                                 className={cn(
-                                  "w-2 h-2 rounded-full animate-pulse",
+                                  "w-3 h-3 rounded-full animate-spin",
                                   file.ocrProgress.stage === "initializing" &&
                                     "bg-blue-500",
                                   file.ocrProgress.stage === "converting" &&
@@ -586,13 +600,10 @@ export function EnhancedUploadManager({
                           %
                         </span>
                       </div>
-                      <Progress
-                        value={
-                          file.ocrProgress?.progress ||
-                          file.processingProgress ||
-                          0
-                        }
-                        className="h-2"
+                      <SyncLoader
+                        size={8}
+                        color={file.ocrProgress?.stage === "reconstructing" ? "#6366F1" : "#10B981"}
+                        loading={file.status === "processing"}
                       />
                     </div>
                   )}
