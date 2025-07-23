@@ -328,6 +328,12 @@ Changelog:
   - Updated 6 missing files to failed status with proper error messages via cleanup system
   - File upload now fails fast if multer doesn't save file properly, preventing database inconsistency
   - System now guarantees: no database record without corresponding file on disk
+- July 23, 2025. Updated upload path configuration to use user-specified absolute path
+  - Changed all upload storage from relative 'uploads/' to absolute '/home/runner/uploads' path
+  - Updated multer destination, file verification, and all file serving endpoints
+  - Migrated existing 5 files from old uploads directory to new absolute path location
+  - All file operations now use consistent absolute path: /home/runner/uploads
+  - System ready for testing with new upload path configuration
 ```
 
 ## User Preferences
