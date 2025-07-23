@@ -192,8 +192,8 @@ export class SimpleTesseractProcessor {
 
       setTimeout(() => {
         convert.kill('SIGTERM');
-        reject(new Error('PDF conversion timeout'));
-      }, 20000);
+        reject(new Error('PDF conversion timeout (120s)'));
+      }, 120000); // Increased to 120 seconds for large PDFs
     });
   }
 

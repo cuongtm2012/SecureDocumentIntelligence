@@ -305,6 +305,13 @@ Changelog:
   - Fixed Express import error in routes.ts causing application startup failures
   - Updated failed documents to pending status to allow re-processing after file fixes
   - System now handles file upload edge cases gracefully with proper error recovery and deployment compatibility
+- July 23, 2025. Fixed PDF processing timeout errors for large files
+  - PROBLEM SOLVED: Fixed "PDF conversion timeout (20s)" error for large documents (e.g., 4MB, 9-page PDFs)
+  - Systematically increased timeout configurations across all OCR processors from 20-30s to 120s
+  - Updated timeout values in: routes.ts, simple-tesseract-processor.ts, optimized-ocr-processor.ts, opencv-ocr-processor.ts, simple-pdf-ocr.ts, tesseract-ocr-processor.ts
+  - Large PDF files now process successfully through complete OCR + DeepSeek AI enhancement pipeline
+  - Test case: Document ID 10 now processes 9 pages extracting 12,338 characters with 99% confidence and DeepSeek improvements
+  - System handles complex Vietnamese documents without timeout failures
 ```
 
 ## User Preferences

@@ -75,8 +75,8 @@ async function convertPDFToImages(pdfPath: string, outputPattern: string): Promi
 
     setTimeout(() => {
       convert.kill('SIGTERM');
-      reject(new Error('PDF conversion timeout'));
-    }, 30000);
+      reject(new Error('PDF conversion timeout (120s)'));
+    }, 120000); // Increased to 120 seconds for large PDFs
   });
 }
 

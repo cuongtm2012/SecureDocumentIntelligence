@@ -261,11 +261,11 @@ export class OptimizedOCRProcessor {
         reject(new Error(`ImageMagick process error: ${error.message}`));
       });
       
-      // Reduced timeout for faster failure detection
+      // Increased timeout for large PDF processing
       const timeout = setTimeout(() => {
         convert.kill('SIGTERM');
-        reject(new Error('PDF conversion timeout (20s)'));
-      }, 20000);
+        reject(new Error('PDF conversion timeout (120s)'));
+      }, 120000); // Increased to 120 seconds for large PDFs
       
       convert.on('close', () => {
         clearTimeout(timeout);
