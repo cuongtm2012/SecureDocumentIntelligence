@@ -1,6 +1,6 @@
 
 import { useState, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation } from 'wouter';
 
 interface UseNavigationTrackerProps {
   uploadPagePath?: string;
@@ -9,16 +9,16 @@ interface UseNavigationTrackerProps {
 export function useNavigationTracker({ 
   uploadPagePath = '/dashboard' 
 }: UseNavigationTrackerProps = {}) {
-  const location = useLocation();
+  const [location] = useLocation();
   const [isAwayFromUploadPage, setIsAwayFromUploadPage] = useState(false);
 
   useEffect(() => {
-    const isOnUploadPage = location.pathname === uploadPagePath;
+    const isOnUploadPage = location === uploadPagePath;
     setIsAwayFromUploadPage(!isOnUploadPage);
-  }, [location.pathname, uploadPagePath]);
+  }, [location, uploadPagePath]);
 
   return {
     isAwayFromUploadPage,
-    currentPath: location.pathname,
+    currentPath: location,
   };
 }
