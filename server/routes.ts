@@ -83,7 +83,7 @@ async function convertPDFToImages(pdfPath: string, outputPattern: string): Promi
 // Configure multer for file uploads with enhanced error handling
 const storage_config = multer.diskStorage({
   destination: (req, file, cb) => {
-    const uploadsPath = path.join(process.cwd(), 'uploads');
+    const uploadsPath = '/home/runner/uploads';
     try {
       if (!fsSync.existsSync(uploadsPath)) {
         fsSync.mkdirSync(uploadsPath, { recursive: true });
@@ -127,7 +127,7 @@ const upload = multer({
 });
 
 // Ensure uploads directory exists
-const uploadsDir = path.join(process.cwd(), 'uploads');
+const uploadsDir = '/home/runner/uploads';
 if (!fsSync.existsSync(uploadsDir)) {
   fsSync.mkdirSync(uploadsDir, { recursive: true });
 }
@@ -437,7 +437,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const missingFiles = [];
       
       for (const doc of documents) {
-        const filePath = path.join(process.cwd(), 'uploads', doc.filename);
+        const filePath = path.join('/home/runner/uploads', doc.filename);
         try {
           await fs.access(filePath);
         } catch (error) {
@@ -495,7 +495,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         if (existingDocument) {
           // Check if the existing file actually exists on disk
-          const existingFilePath = path.join(process.cwd(), 'uploads', existingDocument.filename);
+          const existingFilePath = path.join('/home/runner/uploads', existingDocument.filename);
           let fileExists = false;
           
           try {
@@ -576,7 +576,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const originalNameUtf8 = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
 
       // CRITICAL FIX: Verify file exists before creating database record
-      const uploadedFilePath = path.join(process.cwd(), 'uploads', req.file.filename);
+      const uploadedFilePath = path.join('/home/runner/uploads', req.file.filename);
       try {
         await fs.access(uploadedFilePath);
         console.log(`✅ File verified on disk: ${uploadedFilePath}`);
@@ -614,7 +614,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Process in background without blocking the response
       setImmediate(async () => {
         try {
-          const filePath = path.join(process.cwd(), 'uploads', document.filename);
+          const filePath = path.join('/home/runner/uploads', document.filename);
 
           // Check if file actually exists
           try {
@@ -1506,7 +1506,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Document not found" });
       }
 
-      const filePath = path.join(process.cwd(), 'uploads', document.filename);
+      const filePath = path.join('/home/runner/uploads', document.filename);
 
       if (!fsSync.existsSync(filePath)) {
         return res.status(404).json({ message: "File not found" });
