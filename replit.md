@@ -295,6 +295,16 @@ Changelog:
   - Enhanced smoothing logic to skip final pass when confidence ≥90% for faster processing
   - Fixed auto-processing mock request issue preventing background document processing
   - Test results: Successfully processed 9-page PDF (13,093 chars) with 126 improvements in ~300 seconds
+- July 23, 2025. Resolved PDF file serving and deployment configuration issues
+  - DEPLOYMENT FIXES: Enhanced file serving endpoints with intelligent alternative file search for missing files
+  - Fixed missing file handling by automatically finding and updating alternative filenames in uploads directory
+  - Added proper CORS headers for production deployment (https://ocr-app.replit.app)
+  - Implemented health check endpoint (/health) for deployment monitoring with uptime tracking
+  - Added static file serving for generated PDF page images (/pages endpoint)
+  - Enhanced Content Security Policy to include deployment domains and proper frame handling
+  - Fixed Express import error in routes.ts causing application startup failures
+  - Updated failed documents to pending status to allow re-processing after file fixes
+  - System now handles file upload edge cases gracefully with proper error recovery and deployment compatibility
 ```
 
 ## User Preferences
