@@ -31,6 +31,8 @@ import { BatchOCRProcessor } from "./batch-ocr-processor";
 import { TesseractTrainingInterface } from "./tesseract-training-interface";
 import { UnifiedDocumentViewer, DocumentData } from "./main-document-viewer";
 import { OCRProgressTracker } from "./ocr-progress-tracker";
+import { ProcessingToast } from "@/components/processing-toast";
+import { useNavigationTracker } from "@/hooks/use-navigation-tracker";
 
 import {
   Upload,
@@ -62,6 +64,8 @@ import {
 } from "lucide-react";
 import { nanoid } from "nanoid";
 import { useToast } from "@/hooks/use-toast";
+import { ApiStatusIndicator } from "@/components/api-status-indicator";
+import { MainDocumentViewer } from "@/components/main-document-viewer";
 
 // OCR Result interface
 interface OCRResult {
@@ -112,6 +116,7 @@ export function AdvancedOCRDashboard() {
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { isAwayFromUploadPage } = useNavigationTracker({ uploadPagePath: '/dashboard' });
 
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedLanguage, setSelectedLanguage] = useState("vi");
@@ -1960,6 +1965,7 @@ export function AdvancedOCRDashboard() {
                                   0,
                                 ) /
                                   documents.length) *
+```
                                   100,
                               ) + "%"
                             : "0%"}
@@ -2017,6 +2023,26 @@ export function AdvancedOCRDashboard() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Processing Toast - appears when navigating away from upload page */}
+      <ProcessingToast
+        processingFiles={uploadedFiles
+          .filter(file => file.status === 'processing' || file.status === 'uploading')
+          .map(file => ({
+            id: file.id,
+            name: file.name,
+            status: file.status,
+            progress: file.status === 'processing' ? file.processingProgress : file.uploadProgress,
+            type: file.type,
+          }))
+        }
+        isAwayFromUploadPage={isAwayFromUploadPage}
+        onDismiss={() => {
+          // Optional: Add any additional logic when toast is dismissed
+          console.log('Processing toast dismissed');
+        }}
+        autoHideDuration={0} // Don't auto-hide, let user control
+      />
 
       {/* OCR Viewer Modal */}
       {selectedResult && (
