@@ -80,17 +80,27 @@ async function convertPDFToImages(pdfPath: string, outputPattern: string): Promi
   });
 }
 
-// Configure multer for file uploads
+// Configure multer for file uploads with enhanced error handling
 const storage_config = multer.diskStorage({
   destination: (req, file, cb) => {
     const uploadsPath = path.join(process.cwd(), 'uploads');
-    if (!fsSync.existsSync(uploadsPath)) {
-      fsSync.mkdirSync(uploadsPath, { recursive: true });
+    try {
+      if (!fsSync.existsSync(uploadsPath)) {
+        fsSync.mkdirSync(uploadsPath, { recursive: true });
+        console.log(`📁 Created uploads directory: ${uploadsPath}`);
+      }
+      // Verify directory is writable
+      fsSync.accessSync(uploadsPath, fsSync.constants.W_OK);
+      console.log(`✅ Upload destination verified: ${uploadsPath}`);
+      cb(null, uploadsPath);
+    } catch (error) {
+      console.error(`❌ Upload destination error:`, error);
+      cb(error as Error, uploadsPath);
     }
-    cb(null, uploadsPath);
   },
   filename: (req, file, cb) => {
     const uniqueName = `${Date.now()}-${file.originalname}`;
+    console.log(`📝 Generated filename: ${uniqueName}`);
     cb(null, uniqueName);
   }
 });
@@ -420,6 +430,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
     },
   }));
 
+  // Cleanup endpoint to handle missing files
+  app.post("/api/documents/cleanup-missing", async (req, res) => {
+    try {
+      const documents = await storage.getAllDocuments();
+      const missingFiles = [];
+      
+      for (const doc of documents) {
+        const filePath = path.join(process.cwd(), 'uploads', doc.filename);
+        try {
+          await fs.access(filePath);
+        } catch (error) {
+          missingFiles.push({
+            id: doc.id,
+            filename: doc.filename,
+            originalName: doc.originalName,
+            status: doc.processingStatus
+          });
+          
+          // Update status to failed if not already completed
+          if (doc.processingStatus !== 'completed') {
+            await storage.updateDocument(doc.id, {
+              processingStatus: 'failed',
+              errorMessage: 'File missing from uploads directory'
+            });
+          }
+        }
+      }
+      
+      console.log(`🧹 Cleanup found ${missingFiles.length} missing files`);
+      res.json({
+        success: true,
+        missingFiles,
+        message: `Found and updated ${missingFiles.length} missing files`
+      });
+      
+    } catch (error) {
+      console.error('Cleanup error:', error);
+      res.status(500).json({ message: "Cleanup failed" });
+    }
+  });
+
   // Document upload endpoint
   app.post("/api/documents/upload", upload.single('file'), async (req, res) => {
     try {
@@ -532,6 +583,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId,
         processingStatus: 'pending' as const,
       };
+
+      // CRITICAL FIX: Verify file exists before creating database record
+      const uploadedFilePath = path.join(process.cwd(), 'uploads', req.file.filename);
+      try {
+        await fs.access(uploadedFilePath);
+        console.log(`✅ File verified on disk: ${uploadedFilePath}`);
+      } catch (fileError) {
+        console.error(`❌ CRITICAL: File missing after upload: ${uploadedFilePath}`);
+        return res.status(500).json({ 
+          message: "Upload failed - file not saved properly",
+          error: "File verification failed"
+        });
+      }
 
       const document = await storage.createDocument(documentData);
 

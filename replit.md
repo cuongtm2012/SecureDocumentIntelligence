@@ -312,6 +312,15 @@ Changelog:
   - Large PDF files now process successfully through complete OCR + DeepSeek AI enhancement pipeline
   - Test case: Document ID 10 now processes 9 pages extracting 12,338 characters with 99% confidence and DeepSeek improvements
   - System handles complex Vietnamese documents without timeout failures
+- July 23, 2025. Implemented comprehensive file persistence validation and missing file cleanup system
+  - CRITICAL FIX: Identified recurring upload path issue where files disappear from uploads directory after database insertion
+  - Root cause: Files uploaded successfully but lost during processing or storage, causing database-filesystem mismatch
+  - Solution: Added file existence verification before database record creation in upload endpoint
+  - Enhanced multer configuration with directory writability checks and detailed logging
+  - Implemented /api/documents/cleanup-missing endpoint for systematic orphaned record detection
+  - Added comprehensive error handling for upload destination failures
+  - System now prevents database records for files that don't exist on disk
+  - Missing files from previous uploads automatically marked as failed with descriptive error messages
 ```
 
 ## User Preferences
