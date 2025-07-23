@@ -782,63 +782,6 @@ export function EnhancedUploadManager({
                       </p>
                     </div>
                   )}
-                  {/* DeepSeek Text Improvements and Highlighting */}
-                  {file.status === "completed" && file.result && (
-                    <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                            Extracted Text ({file.confidence}% confidence)
-                          </h4>
-                          {file.processingMode?.includes("deepseek") && (
-                            <Badge variant="secondary" className="text-xs">
-                              <Sparkles className="h-3 w-3 mr-1" />
-                              Enhanced by AI
-                            </Badge>
-                          )}
-                        </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            navigator.clipboard.writeText(file.extractedText!);
-                            // Add toast notification here if needed
-                          }}
-                        >
-                          <Copy className="h-3 w-3 mr-1" />
-                          Copy
-                        </Button>
-                      </div>
-
-                      {file.deepseekImprovements &&
-                        file.deepseekImprovements.length > 0 && (
-                          <div className="mb-2 p-2 bg-purple-50 dark:bg-purple-900/20 rounded border border-purple-200 dark:border-purple-800">
-                            <div className="flex items-center gap-1 mb-1">
-                              <Sparkles className="h-3 w-3 text-purple-600" />
-                              <span className="text-xs font-medium text-purple-700 dark:text-purple-300">
-                                DeepSeek AI Improvements:
-                              </span>
-                            </div>
-                            <ul className="text-xs text-purple-600 dark:text-purple-400 list-disc list-inside">
-                              {file.deepseekImprovements.map(
-                                (improvement, index) => (
-                                  <li key={index}>{improvement}</li>
-                                ),
-                              )}
-                            </ul>
-                          </div>
-                        )}
-
-                      <div className="relative">
-                        <pre className="text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap max-h-32 overflow-y-auto">
-                          {file.extractedText}
-                        </pre>
-                        {file.processingMode?.includes("deepseek") && (
-                          <div className="absolute top-0 left-0 w-2 h-full bg-gradient-to-b from-purple-500 to-blue-500 rounded-l opacity-30"></div>
-                        )}
-                      </div>
-                    </div>
-                  )}
                 </div>
               ))
             )}
