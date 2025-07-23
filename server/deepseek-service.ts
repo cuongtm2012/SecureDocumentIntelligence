@@ -55,6 +55,15 @@ export interface DeepSeekOCRResult {
   processingMethod?: string;
 }
 
+// Configuration for chunk processing
+const CHUNK_CONFIG = {
+  MAX_CHUNK_SIZE: 3000, // Maximum characters per chunk
+  OVERLAP_SIZE: 200, // Overlap between chunks to maintain context
+  MAX_RETRIES: 3, // Maximum retries for failed chunks
+  TIMEOUT_PER_CHUNK: 30000, // 30 seconds per chunk
+  BATCH_SIZE: 3, // Maximum concurrent chunks to process
+};
+
 export class DeepSeekService {
   async processDocumentImage(imagePath: string, documentType?: string): Promise<DeepSeekOCRResult> {
     const startTime = Date.now();
@@ -305,7 +314,169 @@ Guidelines:
     }
   }
 
+  // Chunked processing for large documents
   async reconstructVietnameseText(rawOcrText: string): Promise<{
+    reconstructedText: string;
+    improvements: string[];
+    confidence: number;
+  }> {
+    // Check if text is large enough to require chunking
+    if (rawOcrText.length <= CHUNK_CONFIG.MAX_CHUNK_SIZE) {
+      return this.processTextChunk(rawOcrText, 0, 1);
+    }
+
+    console.log(`📊 Large document detected (${rawOcrText.length} chars), processing in chunks...`);
+    return this.processLargeTextInChunks(rawOcrText);
+  }
+
+  private async processLargeTextInChunks(rawOcrText: string): Promise<{
+    reconstructedText: string;
+    improvements: string[];
+    confidence: number;
+  }> {
+    try {
+      // Split text into chunks
+      const chunks = this.splitTextIntoChunks(rawOcrText);
+      console.log(`📄 Split text into ${chunks.length} chunks for processing`);
+
+      // Process chunks in batches with retry logic
+      const processedChunks = await this.processBatches(chunks);
+
+      // Recombine processed chunks
+      const combinedResult = this.recombineChunks(processedChunks);
+
+      // Optional: Final pass to smooth chunk boundaries
+      const finalResult = await this.smoothChunkBoundaries(combinedResult);
+
+      console.log(`✅ Large document processing completed: ${finalResult.reconstructedText.length} chars`);
+      return finalResult;
+
+    } catch (error) {
+      console.error('❌ Large document chunking failed:', error);
+      // Fallback to simple processing
+      return this.processTextChunk(rawOcrText, 0, 1);
+    }
+  }
+
+  private splitTextIntoChunks(text: string): Array<{chunk: string, index: number, originalStart: number}> {
+    const chunks: Array<{chunk: string, index: number, originalStart: number}> = [];
+    let currentPosition = 0;
+    let chunkIndex = 0;
+
+    while (currentPosition < text.length) {
+      let chunkEnd = Math.min(currentPosition + CHUNK_CONFIG.MAX_CHUNK_SIZE, text.length);
+      
+      // Try to break at sentence boundaries to maintain context
+      if (chunkEnd < text.length) {
+        const sentenceBreak = text.lastIndexOf('.', chunkEnd);
+        const lineBreak = text.lastIndexOf('\n', chunkEnd);
+        const breakPoint = Math.max(sentenceBreak, lineBreak);
+        
+        if (breakPoint > currentPosition + CHUNK_CONFIG.MAX_CHUNK_SIZE / 2) {
+          chunkEnd = breakPoint + 1;
+        }
+      }
+
+      // Include overlap from previous chunk
+      let chunkStart = currentPosition;
+      if (chunkIndex > 0) {
+        chunkStart = Math.max(0, currentPosition - CHUNK_CONFIG.OVERLAP_SIZE);
+      }
+
+      const chunk = text.slice(chunkStart, chunkEnd);
+      chunks.push({
+        chunk: chunk,
+        index: chunkIndex,
+        originalStart: currentPosition
+      });
+
+      currentPosition = chunkEnd;
+      chunkIndex++;
+    }
+
+    return chunks;
+  }
+
+  private async processBatches(chunks: Array<{chunk: string, index: number, originalStart: number}>): Promise<Array<{
+    reconstructedText: string;
+    improvements: string[];
+    confidence: number;
+    index: number;
+  }>> {
+    const results: Array<{
+      reconstructedText: string;
+      improvements: string[];
+      confidence: number;
+      index: number;
+    }> = [];
+
+    // Process chunks in batches
+    for (let i = 0; i < chunks.length; i += CHUNK_CONFIG.BATCH_SIZE) {
+      const batch = chunks.slice(i, i + CHUNK_CONFIG.BATCH_SIZE);
+      console.log(`🔄 Processing batch ${Math.floor(i / CHUNK_CONFIG.BATCH_SIZE) + 1}/${Math.ceil(chunks.length / CHUNK_CONFIG.BATCH_SIZE)} (${batch.length} chunks)`);
+
+      const batchPromises = batch.map(chunkData => 
+        this.processChunkWithRetry(chunkData.chunk, chunkData.index, chunks.length)
+      );
+
+      const batchResults = await Promise.allSettled(batchPromises);
+      
+      batchResults.forEach((result, batchIndex) => {
+        const chunkIndex = batch[batchIndex].index;
+        if (result.status === 'fulfilled') {
+          results.push({
+            ...result.value,
+            index: chunkIndex
+          });
+        } else {
+          console.error(`❌ Chunk ${chunkIndex} failed:`, result.reason);
+          // Add fallback result for failed chunk
+          results.push({
+            reconstructedText: batch[batchIndex].chunk,
+            improvements: ['Failed to process chunk, using original text'],
+            confidence: 0.5,
+            index: chunkIndex
+          });
+        }
+      });
+
+      // Add delay between batches to avoid rate limiting
+      if (i + CHUNK_CONFIG.BATCH_SIZE < chunks.length) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+
+    // Sort results by index to maintain order
+    return results.sort((a, b) => a.index - b.index);
+  }
+
+  private async processChunkWithRetry(chunkText: string, chunkIndex: number, totalChunks: number): Promise<{
+    reconstructedText: string;
+    improvements: string[];
+    confidence: number;
+  }> {
+    let lastError: Error | null = null;
+    
+    for (let attempt = 1; attempt <= CHUNK_CONFIG.MAX_RETRIES; attempt++) {
+      try {
+        console.log(`🔧 Processing chunk ${chunkIndex + 1}/${totalChunks} (attempt ${attempt})`);
+        return await this.processTextChunk(chunkText, chunkIndex, totalChunks);
+      } catch (error) {
+        lastError = error as Error;
+        console.warn(`⚠️ Chunk ${chunkIndex + 1} attempt ${attempt} failed:`, error);
+        
+        if (attempt < CHUNK_CONFIG.MAX_RETRIES) {
+          // Exponential backoff
+          const delay = Math.pow(2, attempt) * 1000;
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+
+    throw lastError || new Error(`Failed to process chunk after ${CHUNK_CONFIG.MAX_RETRIES} attempts`);
+  }
+
+  private async processTextChunk(chunkText: string, chunkIndex: number, totalChunks: number): Promise<{
     reconstructedText: string;
     improvements: string[];
     confidence: number;
@@ -336,12 +507,14 @@ Trả về kết quả theo định dạng JSON:
             role: "user",
             content: `Dưới đây là một đoạn văn bản hành chính/pháp lý của cơ quan nhà nước Việt Nam, nhưng đã bị lỗi nhiều ký tự do nhận diện từ ảnh (OCR).
 
+${totalChunks > 1 ? `Đây là phần ${chunkIndex + 1}/${totalChunks} của tài liệu. Chú ý duy trì tính liên kết với các phần khác.` : ''}
+
 Nhiệm vụ của bạn:
 Phục hồi lại văn bản gốc, viết lại đoạn văn bản sao cho đúng thể thức, chuẩn câu chữ pháp lý, sửa các lỗi chính tả, lỗi ký tự, lỗi định dạng do OCR gây ra.
 Tuyệt đối không tự ý thêm hoặc bớt nội dung, chỉ sửa các lỗi và căn chỉnh cho đúng văn phong văn bản hành chính.
 
 Đây là đoạn raw text cần phục hồi:
-${rawOcrText}`
+${chunkText}`
           }
         ],
         temperature: 0.1,
@@ -359,8 +532,8 @@ ${rawOcrText}`
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0]);
           return {
-            reconstructedText: parsed.reconstructedText || rawOcrText,
-            improvements: parsed.improvements || ["Text reconstruction applied"],
+            reconstructedText: parsed.reconstructedText || chunkText,
+            improvements: parsed.improvements || [`Chunk ${chunkIndex + 1}/${totalChunks} processed`],
             confidence: parsed.confidence || 0.8
           };
         }
@@ -371,12 +544,12 @@ ${rawOcrText}`
       // Fallback: treat as plain text response
       return {
         reconstructedText: responseContent.replace(/^[^a-zA-ZÀ-ỹ]*/, '').trim(),
-        improvements: ["DeepSeek text reconstruction applied (fallback)"],
+        improvements: [`DeepSeek chunk ${chunkIndex + 1}/${totalChunks} processed (fallback)`],
         confidence: 0.7
       };
 
     } catch (error: any) {
-      console.error('DeepSeek text reconstruction error:', error);
+      console.error(`DeepSeek chunk ${chunkIndex + 1}/${totalChunks} error:`, error);
       
       // Handle specific error types
       if (error.status === 402) {
@@ -388,6 +561,134 @@ ${rawOcrText}`
       } else {
         throw new Error(`Text reconstruction failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
+    }
+  }
+
+  private recombineChunks(processedChunks: Array<{
+    reconstructedText: string;
+    improvements: string[];
+    confidence: number;
+    index: number;
+  }>): {
+    reconstructedText: string;
+    improvements: string[];
+    confidence: number;
+  } {
+    console.log('🔧 Recombining processed chunks...');
+    
+    // Combine texts, removing overlap
+    let combinedText = '';
+    let allImprovements: string[] = [];
+    let totalConfidence = 0;
+
+    processedChunks.forEach((chunk, i) => {
+      if (i === 0) {
+        // First chunk: use as-is
+        combinedText = chunk.reconstructedText;
+      } else {
+        // Subsequent chunks: remove overlap from the beginning
+        let chunkText = chunk.reconstructedText;
+        
+        // Try to find overlap with previous chunk
+        const overlapSearch = Math.min(CHUNK_CONFIG.OVERLAP_SIZE, chunkText.length);
+        const lastPart = combinedText.slice(-overlapSearch);
+        
+        if (lastPart.length > 0) {
+          const overlapIndex = chunkText.indexOf(lastPart);
+          if (overlapIndex >= 0 && overlapIndex < overlapSearch) {
+            chunkText = chunkText.slice(overlapIndex + lastPart.length);
+          }
+        }
+        
+        combinedText += chunkText;
+      }
+      
+      allImprovements.push(...chunk.improvements);
+      totalConfidence += chunk.confidence;
+    });
+
+    const averageConfidence = processedChunks.length > 0 ? totalConfidence / processedChunks.length : 0;
+    
+    console.log(`✅ Recombined ${processedChunks.length} chunks into ${combinedText.length} characters`);
+    
+    return {
+      reconstructedText: combinedText,
+      improvements: allImprovements,
+      confidence: averageConfidence
+    };
+  }
+
+  private async smoothChunkBoundaries(combinedResult: {
+    reconstructedText: string;
+    improvements: string[];
+    confidence: number;
+  }): Promise<{
+    reconstructedText: string;
+    improvements: string[];
+    confidence: number;
+  }> {
+    // Skip final pass if text is still too large or if confidence is already high
+    if (combinedResult.reconstructedText.length > CHUNK_CONFIG.MAX_CHUNK_SIZE * 2 || combinedResult.confidence > 0.9) {
+      return combinedResult;
+    }
+
+    try {
+      console.log('🔧 Performing final smoothing pass...');
+      
+      const completion = await openai.chat.completions.create({
+        model: "deepseek-chat",
+        messages: [
+          {
+            role: "system",
+            content: `Bạn là chuyên gia hoàn thiện văn bản tiếng Việt. Nhiệm vụ của bạn là:
+- Làm mượt các đoạn nối giữa các phần văn bản đã được xử lý riêng lẻ
+- Đảm bảo tính liên kết và mạch lạc của toàn bộ văn bản
+- Sửa lỗi nhỏ về ngữ pháp và chính tả còn sót lại
+- KHÔNG thêm hoặc bớt nội dung, chỉ làm mượt các chỗ nối
+
+Trả về kết quả theo định dạng JSON:
+{
+  "reconstructedText": "văn bản đã được làm mượt",
+  "improvements": ["danh sách các cải tiến đã thực hiện"],
+  "confidence": 0.95
+}`
+          },
+          {
+            role: "user",
+            content: `Đây là văn bản đã được xử lý từng phần và ghép lại. Hãy làm mượt các chỗ nối và hoàn thiện văn bản:
+
+${combinedResult.reconstructedText}`
+          }
+        ],
+        temperature: 0.1,
+        max_tokens: 4000,
+        timeout: CHUNK_CONFIG.TIMEOUT_PER_CHUNK
+      });
+
+      const responseContent = completion.choices[0]?.message?.content;
+      if (!responseContent) {
+        return combinedResult; // Return original if no response
+      }
+
+      try {
+        const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          return {
+            reconstructedText: parsed.reconstructedText || combinedResult.reconstructedText,
+            improvements: [...combinedResult.improvements, ...parsed.improvements || ['Final smoothing applied']],
+            confidence: Math.min(parsed.confidence || combinedResult.confidence, 1.0)
+          };
+        }
+      } catch (parseError) {
+        console.warn('Failed to parse smoothing response, using original');
+      }
+
+      return combinedResult;
+
+    } catch (error) {
+      console.warn('Final smoothing failed, using combined result:', error);
+      return combinedResult;
     }
   }
 
