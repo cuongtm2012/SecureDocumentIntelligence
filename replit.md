@@ -287,6 +287,14 @@ Changelog:
   - Enhanced error handling with fallback to original text if chunking fails
   - Added comprehensive logging and progress tracking for chunk processing stages
   - System now handles large documents without timeout issues while maintaining text quality and context
+- July 23, 2025. Optimized chunking performance based on large PDF test results
+  - PERFORMANCE OPTIMIZATIONS: Reduced chunk size to 2500 chars, overlap to 150 chars for better stability
+  - Decreased batch size to 2 concurrent chunks and increased timeout to 45 seconds per chunk
+  - Added intelligent small chunk merging (min 500 chars) to avoid fragmentation
+  - Implemented performance metrics tracking: batch timing, per-chunk processing speed
+  - Enhanced smoothing logic to skip final pass when confidence ≥90% for faster processing
+  - Fixed auto-processing mock request issue preventing background document processing
+  - Test results: Successfully processed 9-page PDF (13,093 chars) with 126 improvements in ~300 seconds
 ```
 
 ## User Preferences
