@@ -18,6 +18,7 @@ export const documents = pgTable("documents", {
   mimeType: text("mime_type").notNull(),
   uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
   userId: integer("user_id").notNull(),
+  storageType: text("storage_type").default('local'), // 'r2' or 'local'
   processingStatus: text("processing_status").notNull().default("pending"), // pending, processing, completed, failed
   processingStartedAt: timestamp("processing_started_at"),
   processingCompletedAt: timestamp("processing_completed_at"),

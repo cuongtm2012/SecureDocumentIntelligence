@@ -288,5 +288,17 @@ export class CloudflareR2Storage {
   }
 }
 
-// Export singleton instance
-export const r2Storage = new CloudflareR2Storage();
+// Export singleton instance (conditional initialization)
+let r2Storage: CloudflareR2Storage | null = null;
+
+export function getR2Storage(): CloudflareR2Storage | null {
+  if (!r2Storage) {
+    try {
+      r2Storage = new CloudflareR2Storage();
+    } catch (error) {
+      console.warn('R2 storage not available:', error instanceof Error ? error.message : 'Unknown error');
+      return null;
+    }
+  }
+  return r2Storage;
+}
