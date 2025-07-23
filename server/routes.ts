@@ -416,35 +416,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
         );
 
         if (existingDocument) {
-          // Delete the uploaded file since we found a duplicate
+          // Check if the existing file actually exists on disk
+          const existingFilePath = path.join(process.cwd(), 'uploads', existingDocument.filename);
+          let fileExists = false;
+          
           try {
-            await fs.unlink(req.file.path);
-          } catch (unlinkError) {
-            console.warn('Failed to delete duplicate file:', unlinkError);
+            await fs.access(existingFilePath);
+            fileExists = true;
+            console.log(`✅ Existing file found: ${existingFilePath}`);
+          } catch (fileError) {
+            console.warn(`⚠️ Existing file missing: ${existingFilePath}`);
+            fileExists = false;
           }
 
-          await storage.createAuditLog({
-            userId,
-            action: `Duplicate file detected: ${originalNameUtf8} (${req.file.size} bytes) - using existing document`,
-            documentId: existingDocument.id,
-            ipAddress: req.ip,
-            userAgent: req.get('User-Agent'),
-          });
+          if (fileExists) {
+            // Original file exists, use duplicate detection
+            try {
+              await fs.unlink(req.file.path);
+            } catch (unlinkError) {
+              console.warn('Failed to delete duplicate file:', unlinkError);
+            }
 
-          console.log(`📋 Duplicate file detected: ${originalNameUtf8} - using existing document ${existingDocument.id}`);
-          console.log(`📊 Existing document details:`, {
-            id: existingDocument.id,
-            originalName: existingDocument.originalName,
-            uploadedAt: existingDocument.uploadedAt,
-            processingStatus: existingDocument.processingStatus,
-            processingCompletedAt: existingDocument.processingCompletedAt
-          });
+            await storage.createAuditLog({
+              userId,
+              action: `Duplicate file detected: ${originalNameUtf8} (${req.file.size} bytes) - using existing document`,
+              documentId: existingDocument.id,
+              ipAddress: req.ip,
+              userAgent: req.get('User-Agent'),
+            });
 
-          return res.json({
-            ...existingDocument,
-            isDuplicate: true,
-            message: `File "${originalNameUtf8}" already exists on server. Using existing document (ID: ${existingDocument.id}) from ${new Date(existingDocument.uploadedAt).toLocaleString()}.`
-          });
+            console.log(`📋 Duplicate file detected: ${originalNameUtf8} - using existing document ${existingDocument.id}`);
+            console.log(`📊 Existing document details:`, {
+              id: existingDocument.id,
+              originalName: existingDocument.originalName,
+              uploadedAt: existingDocument.uploadedAt,
+              processingStatus: existingDocument.processingStatus,
+              processingCompletedAt: existingDocument.processingCompletedAt
+            });
+
+            return res.json({
+              ...existingDocument,
+              isDuplicate: true,
+              message: `File "${originalNameUtf8}" already exists on server. Using existing document (ID: ${existingDocument.id}) from ${new Date(existingDocument.uploadedAt).toLocaleString()}.`
+            });
+          } else {
+            // Original file is missing, update the existing record with new file
+            const newFilename = req.file.filename;
+            await storage.updateDocument(existingDocument.id, { 
+              filename: newFilename,
+              processingStatus: 'pending'
+            });
+
+            await storage.createAuditLog({
+              userId,
+              action: `Replaced missing file for existing document: ${originalNameUtf8} - new file: ${newFilename}`,
+              documentId: existingDocument.id,
+              ipAddress: req.ip,
+              userAgent: req.get('User-Agent'),
+            });
+
+            console.log(`🔄 Replaced missing file for document ${existingDocument.id}: ${originalNameUtf8}`);
+            console.log(`📁 New file: ${newFilename}`);
+
+            // Return the updated document
+            const updatedDocument = await storage.getDocument(existingDocument.id);
+            return res.json({
+              ...updatedDocument,
+              isReplacement: true,
+              message: `File "${originalNameUtf8}" was missing. Updated existing document (ID: ${existingDocument.id}) with new file.`
+            });
+          }
         }
       }
 
