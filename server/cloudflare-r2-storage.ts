@@ -24,9 +24,23 @@ export class CloudflareR2Storage {
   constructor() {
     // Validate required environment variables
     const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
-    const accessKeyId = process.env.CLOUDFLARE_R2_ACCESS_KEY_ID;
+    let accessKeyId = process.env.CLOUDFLARE_R2_ACCESS_KEY_ID || '';
     const secretAccessKey = process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY;
     this.bucketName = process.env.CLOUDFLARE_R2_BUCKET_NAME || 'ocr-documents';
+
+    // Debug credentials
+    console.log(`🔍 R2 Credentials Debug:`);
+    console.log(`  Account ID: ${accountId ? accountId.slice(0, 8) + '...' : 'missing'}`);
+    console.log(`  Access Key ID length: ${accessKeyId.length} (should be 32)`);
+    console.log(`  Secret Key length: ${secretAccessKey?.length || 0}`);
+    console.log(`  Bucket: ${this.bucketName}`);
+
+    // Fix access key if it has extra character
+    if (accessKeyId.length === 33) {
+      console.log(`⚠️ Access key has 33 chars, trimming to 32...`);
+      accessKeyId = accessKeyId.slice(0, 32);
+      console.log(`✅ Trimmed access key length: ${accessKeyId.length}`);
+    }
 
     if (!accountId || !accessKeyId || !secretAccessKey) {
       throw new Error('Missing required Cloudflare R2 environment variables: CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_R2_ACCESS_KEY_ID, CLOUDFLARE_R2_SECRET_ACCESS_KEY');
@@ -37,7 +51,7 @@ export class CloudflareR2Storage {
       region: 'auto', // Cloudflare R2 uses 'auto' region
       endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
       credentials: {
-        accessKeyId,
+        accessKeyId: accessKeyId,
         secretAccessKey,
       },
       // Force path-style addressing for R2 compatibility
