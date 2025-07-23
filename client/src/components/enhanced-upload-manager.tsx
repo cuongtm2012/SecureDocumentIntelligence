@@ -245,7 +245,9 @@ export function EnhancedUploadManager({
                 f.id === fileId
                   ? {
                       ...f,
-                      processingProgress: Math.round(progressData.progress || 0),
+                      processingProgress: Math.round(
+                        progressData.progress || 0,
+                      ),
                       ocrProgress: {
                         stage: progressData.stage,
                         stageDescription: progressData.currentStep,
@@ -354,7 +356,9 @@ export function EnhancedUploadManager({
                   ...f,
                   status: "error",
                   error:
-                    error instanceof Error ? error.message : "Processing failed",
+                    error instanceof Error
+                      ? error.message
+                      : "Processing failed",
                 }
               : f,
           ),
@@ -587,24 +591,17 @@ export function EnhancedUploadManager({
                           )}
                         </span>
                         <span className="flex items-center gap-2">
-                          {file.ocrProgress?.processingSpeed && (
-                            <span className="text-xs text-gray-500">
-                              {file.ocrProgress.processingSpeed}
-                            </span>
-                          )}
-                          {Math.round(
-                            file.ocrProgress?.progress ||
-                              file.processingProgress ||
-                              0,
-                          )}
-                          %
+                          <SyncLoader
+                            size={8}
+                            color={
+                              file.ocrProgress?.stage === "reconstructing"
+                                ? "#6366F1"
+                                : "#10B981"
+                            }
+                            loading={file.status === "processing"}
+                          />
                         </span>
                       </div>
-                      <SyncLoader
-                        size={8}
-                        color={file.ocrProgress?.stage === "reconstructing" ? "#6366F1" : "#10B981"}
-                        loading={file.status === "processing"}
-                      />
                     </div>
                   )}
                   {/* OCR Result Summary - Clickable */}
