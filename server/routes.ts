@@ -178,27 +178,38 @@ async function processFileWithFallback(filePath: string, document: any, document
       try {
         console.log(`🤖 DeepSeek Enhancement Phase Starting...`);
         console.log(`📊 Original OCR text: ${reliableOCRResult.extractedText.length} characters`);
-        console.log(`🔧 Calling DeepSeek reconstructVietnameseText...`);
 
-        const reconstruction = await deepSeekService.reconstructVietnameseText(reliableOCRResult.extractedText);
-        enhancedText = reconstruction.reconstructedText;
-        deepseekImprovements = reconstruction.improvements || [];
+        // Skip DeepSeek enhancement for very small texts (< 500 chars) to improve performance
+        if (reliableOCRResult.extractedText.length < 500) {
+          console.log(`⚡ Skipping DeepSeek enhancement - text too small (${reliableOCRResult.extractedText.length} chars)`);
+          deepseekAnalysis = {
+            applied: false,
+            reason: `Skipped - text too small (${reliableOCRResult.extractedText.length} chars)`,
+            enhancedLength: reliableOCRResult.extractedText.length
+          };
+        } else {
+          console.log(`🔧 Calling DeepSeek reconstructVietnameseText...`);
 
-        console.log(`✅ Text reconstruction completed: ${enhancedText.length} characters`);
-        console.log(`📝 Improvements applied: ${deepseekImprovements.length} improvements`);
+          const reconstruction = await deepSeekService.reconstructVietnameseText(reliableOCRResult.extractedText);
+          enhancedText = reconstruction.reconstructedText;
+          deepseekImprovements = reconstruction.improvements || [];
 
-        // Also get document analysis
-        console.log(`🔍 Calling DeepSeek analyzeDocument...`);
-        const analysis = await deepSeekService.analyzeDocument(enhancedText, `Vietnamese PDF document analysis: ${document.originalName}`);
-        console.log(`📋 Document analysis completed`);
+          console.log(`✅ Text reconstruction completed: ${enhancedText.length} characters`);
+          console.log(`📝 Improvements applied: ${deepseekImprovements.length} improvements`);
 
-        deepseekAnalysis = {
-          applied: true,
-          enhancedLength: enhancedText.length,
-          improvements: deepseekImprovements,
-          analysis: analysis
-        };
-        console.log(`✅ Complete DeepSeek enhancement finished: ${enhancedText.length} characters total`);
+          // Also get document analysis
+          console.log(`🔍 Calling DeepSeek analyzeDocument...`);
+          const analysis = await deepSeekService.analyzeDocument(enhancedText, `Vietnamese PDF document analysis: ${document.originalName}`);
+          console.log(`📋 Document analysis completed`);
+
+          deepseekAnalysis = {
+            applied: true,
+            enhancedLength: enhancedText.length,
+            improvements: deepseekImprovements,
+            analysis: analysis
+          };
+          console.log(`✅ Complete DeepSeek enhancement finished: ${enhancedText.length} characters total`);
+        }
       } catch (deepseekError) {
         console.error('❌ DeepSeek enhancement error details:', deepseekError);
         console.warn('⚠️ DeepSeek text enhancement failed, using original OCR text');
@@ -228,12 +239,12 @@ async function processFileWithFallback(filePath: string, document: any, document
       };
 
     } else {
-      // Image processing with Enhanced Tesseract for optimal Vietnamese OCR
-      ocrProgressTracker.updateProgress(progressId, 'extracting', 3, 'Processing image with Enhanced Tesseract...');
+      // Image processing with optimized processor for faster results
+      ocrProgressTracker.updateProgress(progressId, 'extracting', 3, 'Processing image with optimized OCR...');
 
-      console.log('🔧 Processing image with Enhanced Tesseract for Vietnamese text...');
+      console.log('🔧 Processing image with optimized OCR for Vietnamese text...');
 
-      const enhancedResult = await enhancedTesseractProcessor.processDocument(filePath);
+      const enhancedResult = await optimizedOCRProcessor.processDocument(filePath);
 
       // Update progress: Enhancing with DeepSeek
       ocrProgressTracker.updateProgress(progressId, 'reconstructing', 4, 'Enhancing text with DeepSeek AI...');
@@ -245,27 +256,37 @@ async function processFileWithFallback(filePath: string, document: any, document
 
       try {
         console.log(`🤖 DeepSeek Enhancement Phase Starting for image...`);
-        console.log(`📊 Enhanced Tesseract result: ${enhancedResult.extractedText.length} characters, ${Math.round(enhancedResult.confidence * 100)}% confidence`);
+        console.log(`📊 Optimized OCR result: ${enhancedResult.extractedText.length} characters, ${enhancedResult.confidence}% confidence`);
 
-        const reconstruction = await deepSeekService.reconstructVietnameseText(enhancedResult.extractedText);
-        enhancedText = reconstruction.reconstructedText;
-        deepseekImprovements = reconstruction.improvements || [];
+        // Skip DeepSeek enhancement for very small texts (< 200 chars) or high confidence (> 85%)
+        if (enhancedResult.extractedText.length < 200 || enhancedResult.confidence > 85) {
+          console.log(`⚡ Skipping DeepSeek enhancement - text too small (${enhancedResult.extractedText.length} chars) or confidence too high (${enhancedResult.confidence}%)`);
+          deepseekAnalysis = {
+            applied: false,
+            reason: `Skipped - ${enhancedResult.extractedText.length < 200 ? 'text too small' : 'confidence too high'} (${enhancedResult.confidence}%)`,
+            enhancedLength: enhancedResult.extractedText.length
+          };
+        } else {
+          const reconstruction = await deepSeekService.reconstructVietnameseText(enhancedResult.extractedText);
+          enhancedText = reconstruction.reconstructedText;
+          deepseekImprovements = reconstruction.improvements || [];
 
-        console.log(`✅ Text reconstruction completed: ${enhancedText.length} characters`);
+          console.log(`✅ Text reconstruction completed: ${enhancedText.length} characters`);
 
-        // Also get document analysis
-        const analysis = await deepSeekService.analyzeDocument(enhancedText, `Vietnamese ID card analysis: ${document.originalName}`);
+          // Also get document analysis
+          const analysis = await deepSeekService.analyzeDocument(enhancedText, `Vietnamese ID card analysis: ${document.originalName}`);
 
-        deepseekAnalysis = {
-          applied: true,
-          enhancedLength: enhancedText.length,
-          improvements: deepseekImprovements,
-          analysis: analysis
-        };
+          deepseekAnalysis = {
+            applied: true,
+            enhancedLength: enhancedText.length,
+            improvements: deepseekImprovements,
+            analysis: analysis
+          };
+        }
 
       } catch (deepseekError) {
         console.error('❌ DeepSeek enhancement error for image:', deepseekError);
-        console.warn('⚠️ DeepSeek text enhancement failed, using Enhanced Tesseract result');
+        console.warn('⚠️ DeepSeek text enhancement failed, using optimized OCR result');
         deepseekAnalysis.reason = `Enhancement failed: ${deepseekError instanceof Error ? deepseekError.message : 'Unknown error'}`;
       }
 
@@ -273,7 +294,7 @@ async function processFileWithFallback(filePath: string, document: any, document
         success: true,
         file_id: document.originalName,
         text: enhancedText,
-        confidence: Math.round(enhancedResult.confidence * 100), // Use Enhanced Tesseract confidence
+        confidence: enhancedResult.confidence, // Use optimized OCR confidence
         page_count: 1,
         processing_time: enhancedResult.processingTime / 1000,
         metadata: {
@@ -283,11 +304,11 @@ async function processFileWithFallback(filePath: string, document: any, document
           confidence_threshold: 60.0,
           processing_timestamp: new Date(),
           file_size_bytes: document.fileSize,
-          processing_mode: 'enhanced-tesseract-vietnamese',
-          ocr_method: enhancedResult.processingMethod || 'enhanced-tesseract',
+          processing_mode: 'optimized-vietnamese-ocr',
+          ocr_method: enhancedResult.processingMethod || 'optimized-ocr',
           deepseek_analysis: deepseekAnalysis,
           deepseek_improvements: deepseekImprovements,
-          note: 'Enhanced Tesseract processing optimized for Vietnamese text with DeepSeek enhancement'
+          note: 'Optimized OCR processing for Vietnamese text with DeepSeek enhancement'
         }
       };
     }
@@ -1567,52 +1588,75 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Document not found" });
       }
 
-      const filePath = path.join(uploadsDir, document.filename);
-
-      // Enhanced file existence check with alternative file search
-      if (!fsSync.existsSync(filePath)) {
-        console.warn(`📁 File not found: ${filePath}, searching for alternatives...`);
-        
-        // Try to find an alternative file with same original name
+      // Handle R2 vs local storage
+      if (document.storageType === 'r2') {
         try {
-          const uploads = await fs.readdir(uploadsDir);
-          const alternativeFile = uploads.find(filename => 
-            filename.includes(document.originalName.replace(/[^\w\s.-]/g, '')) || 
-            document.originalName.includes(filename.replace(/^\d+-/, '').replace(/[^\w\s.-]/g, ''))
-          );
+          const { stream, metadata } = await storageService.downloadFile(document.filename);
+          
+          res.setHeader('Content-Type', metadata.contentType);
+          res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
+          res.setHeader('Cache-Control', 'public, max-age=3600');
+          res.setHeader('Content-Length', metadata.size.toString());
+          
+          stream.pipe(res);
+          return;
+        } catch (error) {
+          console.error('R2 file serving error:', error);
+          return res.status(404).json({ 
+            message: "File not found in R2 storage",
+            details: `R2 key: ${document.filename}`,
+            suggestion: "File may have been moved or deleted"
+          });
+        }
+      } else {
+        // Local file handling
+        const filePath = path.join(uploadsDir, document.filename);
 
-          if (alternativeFile) {
-            const alternativePath = path.join(uploadsDir, alternativeFile);
-            console.log(`✅ Found alternative file: ${alternativeFile}`);
-            
-            // Update document record with correct filename
-            await storage.updateDocument(documentId, { filename: alternativeFile });
-            
-            res.setHeader('Content-Type', document.mimeType);
-            res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
-            res.setHeader('Cache-Control', 'no-cache');
-            
-            const fileStream = fsSync.createReadStream(alternativePath);
-            fileStream.pipe(res);
-            return;
+        // Enhanced file existence check with alternative file search
+        if (!fsSync.existsSync(filePath)) {
+          console.warn(`📁 File not found: ${filePath}, searching for alternatives...`);
+          
+          // Try to find an alternative file with same original name
+          try {
+            const uploads = await fs.readdir(uploadsDir);
+            const alternativeFile = uploads.find(filename => 
+              filename.includes(document.originalName.replace(/[^\w\s.-]/g, '')) || 
+              document.originalName.includes(filename.replace(/^\d+-/, '').replace(/[^\w\s.-]/g, ''))
+            );
+
+            if (alternativeFile) {
+              const alternativePath = path.join(uploadsDir, alternativeFile);
+              console.log(`✅ Found alternative file: ${alternativeFile}`);
+              
+              // Update document record with correct filename
+              await storage.updateDocument(documentId, { filename: alternativeFile });
+              
+              res.setHeader('Content-Type', document.mimeType);
+              res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
+              res.setHeader('Cache-Control', 'no-cache');
+              
+              const fileStream = fsSync.createReadStream(alternativePath);
+              fileStream.pipe(res);
+              return;
+            }
+          } catch (searchError) {
+            console.error('Alternative file search failed:', searchError);
           }
-        } catch (searchError) {
-          console.error('Alternative file search failed:', searchError);
+          
+          return res.status(404).json({ 
+            message: "File not found",
+            details: `Missing file: ${document.filename}`,
+            suggestion: "Please re-upload this document"
+          });
         }
         
-        return res.status(404).json({ 
-          message: "File not found",
-          details: `Missing file: ${document.filename}`,
-          suggestion: "Please re-upload this document"
-        });
-      }
-      
-      res.setHeader('Content-Type', document.mimeType);
-      res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
-      res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
+        res.setHeader('Content-Type', document.mimeType);
+        res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
+        res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
 
-      const fileStream = fsSync.createReadStream(filePath);
-      fileStream.pipe(res);
+        const fileStream = fsSync.createReadStream(filePath);
+        fileStream.pipe(res);
+      }
     } catch (error) {
       console.error('Get raw document error:', error);
       res.status(500).json({ message: "Failed to fetch document" });
