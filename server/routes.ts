@@ -305,7 +305,7 @@ async function processFileWithFallback(filePath: string, document: any, document
           processing_timestamp: new Date(),
           file_size_bytes: document.fileSize,
           processing_mode: 'optimized-vietnamese-ocr',
-          ocr_method: enhancedResult.processingMethod || 'optimized-ocr',
+          ocr_method: enhancedResult.method || 'optimized-ocr',
           deepseek_analysis: deepseekAnalysis,
           deepseek_improvements: deepseekImprovements,
           note: 'Optimized OCR processing for Vietnamese text with DeepSeek enhancement'
@@ -669,10 +669,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           try {
             if (document.storageType === 'r2') {
-              // Download from R2 to temp file for processing
+              // Download from R2 to temp file for processing (preserve file extension)
               const tempDir = '/tmp';
-              const tempFileName = `ocr-temp-${document.id}-${Date.now()}`;
+              const originalExt = path.extname(document.originalName) || path.extname(document.filename);
+              const tempFileName = `ocr-temp-${document.id}-${Date.now()}${originalExt}`;
               filePath = path.join(tempDir, tempFileName);
+              
+              console.log(`🔧 Debug: originalName="${document.originalName}", filename="${document.filename}", ext="${originalExt}", tempPath="${filePath}"`);
               
               const { stream } = await storageService.downloadFile(document.filename);
               
@@ -774,10 +777,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       try {
         if (document.storageType === 'r2') {
-          // Download from R2 to temp file for processing
+          // Download from R2 to temp file for processing (preserve file extension)
           const tempDir = '/tmp';
-          const tempFileName = `ocr-temp-${document.id}-${Date.now()}`;
+          const originalExt = path.extname(document.originalName) || path.extname(document.filename);
+          const tempFileName = `ocr-temp-${document.id}-${Date.now()}${originalExt}`;
           filePath = path.join(tempDir, tempFileName);
+          
+          console.log(`🔧 Manual processing debug: originalName="${document.originalName}", filename="${document.filename}", ext="${originalExt}", tempPath="${filePath}"`);
           
           console.log(`📥 Downloading file from R2: ${document.filename}`);
           const { stream } = await storageService.downloadFile(document.filename);
