@@ -362,6 +362,14 @@ Changelog:
   - System now successfully processes JPG and PDF files stored in Cloudflare R2 cloud storage
   - Vietnamese OCR extraction working with Enhanced Tesseract + DeepSeek AI enhancement
   - Upload reliability issues permanently solved - complete end-to-end R2 integration functional
+- July 24, 2025. Implemented cycle time tracking feature for OCR processing duration display
+  - Added "Cycle Time" field to results tab showing precise duration between processing start and completion
+  - Created calculateCycleTime helper function with intelligent time formatting (seconds, minutes, hours)
+  - Enhanced results grid layout from 4 columns to 5 columns to accommodate cycle time display
+  - Cycle time appears with blue highlighting to emphasize processing efficiency metrics
+  - Time format automatically adapts: "45s" for quick processing, "1m 23s" for longer tasks, "1h 15m" for extended processing
+  - Only displays cycle time for completed documents with valid start/end timestamps
+  - Improves user insight into OCR processing performance and system efficiency
 ```
 
 ## User Preferences
