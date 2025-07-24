@@ -179,15 +179,8 @@ async function processFileWithFallback(filePath: string, document: any, document
         console.log(`🤖 DeepSeek Enhancement Phase Starting...`);
         console.log(`📊 Original OCR text: ${reliableOCRResult.extractedText.length} characters`);
 
-        // Skip DeepSeek enhancement for very small texts (< 500 chars) to improve performance
-        if (reliableOCRResult.extractedText.length < 500) {
-          console.log(`⚡ Skipping DeepSeek enhancement - text too small (${reliableOCRResult.extractedText.length} chars)`);
-          deepseekAnalysis = {
-            applied: false,
-            reason: `Skipped - text too small (${reliableOCRResult.extractedText.length} chars)`,
-            enhancedLength: reliableOCRResult.extractedText.length
-          };
-        } else {
+        // Always process with DeepSeek for maximum confidence
+        {
           console.log(`🔧 Calling DeepSeek reconstructVietnameseText...`);
 
           const reconstruction = await deepSeekService.reconstructVietnameseText(reliableOCRResult.extractedText);
@@ -258,15 +251,8 @@ async function processFileWithFallback(filePath: string, document: any, document
         console.log(`🤖 DeepSeek Enhancement Phase Starting for image...`);
         console.log(`📊 Optimized OCR result: ${enhancedResult.extractedText.length} characters, ${enhancedResult.confidence}% confidence`);
 
-        // Skip DeepSeek enhancement for very small texts (< 200 chars) or high confidence (> 85%)
-        if (enhancedResult.extractedText.length < 200 || enhancedResult.confidence > 85) {
-          console.log(`⚡ Skipping DeepSeek enhancement - text too small (${enhancedResult.extractedText.length} chars) or confidence too high (${enhancedResult.confidence}%)`);
-          deepseekAnalysis = {
-            applied: false,
-            reason: `Skipped - ${enhancedResult.extractedText.length < 200 ? 'text too small' : 'confidence too high'} (${enhancedResult.confidence}%)`,
-            enhancedLength: enhancedResult.extractedText.length
-          };
-        } else {
+        // Always process with DeepSeek for maximum confidence
+        {
           const reconstruction = await deepSeekService.reconstructVietnameseText(enhancedResult.extractedText);
           enhancedText = reconstruction.reconstructedText;
           deepseekImprovements = reconstruction.improvements || [];
