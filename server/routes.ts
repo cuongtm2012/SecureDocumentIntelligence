@@ -1665,39 +1665,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Document not found" });
       }
 
-      // For non-PDF responses, handle R2 and local file serving
-      if (document.storageType === 'r2') {
-        try {
-          const { stream, metadata } = await storageService.downloadFile(document.filename);
-          
-          res.setHeader('Content-Type', metadata.contentType);
-          res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
-          res.setHeader('Cache-Control', 'public, max-age=3600');
-          res.setHeader('Content-Length', metadata.size.toString());
-          
-          stream.pipe(res);
-          return;
-        } catch (error) {
-          console.error('R2 file serving error:', error);
-          return res.status(404).json({ 
-            message: "File not found in R2 storage",
-            details: `R2 key: ${document.filename}`,
-            suggestion: "File may have been moved or deleted"
-          });
-        }
-      }
-      
-      // For local files, define filePath for later use
-      const filePath = path.join('/home/runner/uploads', document.filename);
-      if (!fsSync.existsSync(filePath)) {
-        return res.status(404).json({ 
-          message: "File not found in local storage",
-          details: `Local path: ${filePath}`,
-          suggestion: "Please re-upload this document"
-        });
-      }
-
-      // Check if it's a PDF file
+      // Check if it's a PDF file first
       const ext = path.extname(document.filename).toLowerCase();
       if (ext !== '.pdf') {
         // For non-PDF files, return the raw file as a single "page"
@@ -1709,6 +1677,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           message: "Single image file"
         });
       }
+      
+      // For PDF files only, proceed with page generation
+      console.log(`🖼️ Generating PDF pages for document ${documentId}: ${document.originalName}`);
 
       // For PDF files, generate page images using ImageMagick
       const tempDir = `/tmp/pdf_pages_${documentId}_${Date.now()}`;
@@ -1717,11 +1688,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         // Convert PDF pages to images
         const outputPattern = path.join(tempDir, 'page-%d.png');
-        // For R2 files, need to download to temp first
+        // Handle R2 vs local file access for PDF processing
         let pdfPath: string;
         let tempPdfCleanup: (() => Promise<void>) | null = null;
         
         if (document.storageType === 'r2') {
+          console.log(`📥 Downloading R2 file for PDF conversion: ${document.filename}`);
           // Download R2 file to temp for PDF processing
           pdfPath = path.join(tempDir, 'temp.pdf');
           const { stream } = await storageService.downloadFile(document.filename);
@@ -1738,9 +1710,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
               await fs.unlink(pdfPath);
             } catch {}
           };
+          console.log(`✅ R2 file downloaded for conversion: ${pdfPath}`);
         } else {
           // Use local file path directly
+          const filePath = path.join('/home/runner/uploads', document.filename);
+          if (!fsSync.existsSync(filePath)) {
+            return res.status(404).json({ 
+              message: "Local PDF file not found",
+              details: `Local path: ${filePath}`,
+              suggestion: "Please re-upload this document"
+            });
+          }
           pdfPath = filePath;
+          console.log(`📁 Using local file for conversion: ${pdfPath}`);
         }
         
         // Convert PDF to images using ImageMagick directly
@@ -1776,19 +1758,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
           message: "PDF pages generated successfully"
         });
 
+        // Clean up temp PDF if downloaded from R2
+        if (tempPdfCleanup) {
+          await tempPdfCleanup();
+        }
+
       } catch (conversionError) {
-        console.warn('PDF page generation failed, falling back to direct PDF:', conversionError);
+        console.error('PDF page generation failed:', conversionError);
 
         // Clean up on error
         await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+        
+        // Clean up temp PDF if downloaded from R2
+        if (tempPdfCleanup) {
+          await tempPdfCleanup();
+        }
 
-        // Fallback to direct PDF display
-        const pdfUrl = `/api/documents/${documentId}/raw?t=${Date.now()}`;
-        res.json({
+        // Return error instead of fallback to avoid confusion
+        res.status(500).json({
           success: false,
-          images: [pdfUrl],
-          pageCount: 1,
-          message: "Falling back to direct PDF display"
+          error: "PDF page generation failed",
+          details: conversionError instanceof Error ? conversionError.message : 'Unknown error',
+          suggestion: "PDF may be corrupted or ImageMagick conversion failed"
         });
       }
 
@@ -1808,11 +1799,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Document not found" });
       }
 
-      // For PDF files, redirect to the raw PDF endpoint  
-      // For images, we could serve the image directly
-      const rawUrl = `/api/documents/${documentId}/raw`;
+      console.log(`🖼️ Serving thumbnail for document ${documentId}: ${document.originalName}`);
 
-      // Redirect to the raw document
+      // Check if page images exist for PDF files
+      const ext = path.extname(document.filename).toLowerCase();
+      if (ext === '.pdf') {
+        const publicPagesDir = path.join(process.cwd(), 'client', 'public', 'pages', documentId.toString());
+        const firstPagePath = path.join(publicPagesDir, 'page-1.png');
+        
+        if (fsSync.existsSync(firstPagePath)) {
+          console.log(`✅ Found page-1.png, serving thumbnail from: ${firstPagePath}`);
+          res.setHeader('Content-Type', 'image/png');
+          res.setHeader('Cache-Control', 'public, max-age=3600');
+          const fileStream = fsSync.createReadStream(firstPagePath);
+          fileStream.pipe(res);
+          return;
+        } else {
+          console.log(`⚠️ No page images found for PDF ${documentId}, redirecting to raw`);
+        }
+      }
+
+      // For non-PDF files or when page images don't exist, redirect to raw
+      const rawUrl = `/api/documents/${documentId}/raw`;
       res.redirect(rawUrl);
     } catch (error) {
       console.error('Get thumbnail error:', error);
