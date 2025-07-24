@@ -9,7 +9,7 @@ dotenv.config();
 const openai = new OpenAI({
   baseURL: 'https://api.deepseek.com',
   apiKey: process.env.OPENAI_API_KEY,
-  timeout: 60000, // 60 second timeout
+  timeout: 30000, // 30 second timeout for faster processing
 });
 
 // Test API connection
@@ -57,13 +57,13 @@ export interface DeepSeekOCRResult {
 
 // Optimized chunk processing configuration based on test results
 const CHUNK_CONFIG = {
-  MAX_CHUNK_SIZE: 2500, // Reduced from 3000 for better processing stability
-  OVERLAP_SIZE: 150, // Reduced overlap for faster processing
-  MAX_RETRIES: 3, // Keep retry attempts
-  TIMEOUT_PER_CHUNK: 45000, // Increased to 45 seconds for complex chunks
-  BATCH_SIZE: 2, // Reduced to 2 concurrent chunks for stability
-  MIN_CHUNK_SIZE: 500, // Avoid creating tiny chunks
-  SMOOTHING_THRESHOLD: 0.9 // Only apply final smoothing if confidence < 90%
+  MAX_CHUNK_SIZE: 4000, // Increased chunk size to reduce number of chunks
+  OVERLAP_SIZE: 100, // Reduced overlap for much faster processing
+  MAX_RETRIES: 2, // Reduced retries for faster processing
+  TIMEOUT_PER_CHUNK: 25000, // Reduced timeout to 25 seconds per chunk
+  BATCH_SIZE: 3, // Increased concurrent processing for speed
+  MIN_CHUNK_SIZE: 800, // Larger minimum chunks to avoid tiny fragments
+  SMOOTHING_THRESHOLD: 0.95 // Skip final smoothing in most cases for speed
 };
 
 export class DeepSeekService {
