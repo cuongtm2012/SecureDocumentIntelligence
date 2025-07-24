@@ -118,6 +118,37 @@ export function AdvancedOCRDashboard() {
   const { toast } = useToast();
   const { isAwayFromUploadPage } = useNavigationTracker({ uploadPagePath: '/dashboard' });
 
+  // Helper function to calculate and format cycle time
+  const calculateCycleTime = (startTime: string | null | undefined, endTime: string | null | undefined) => {
+    if (!startTime || !endTime) return null;
+    
+    try {
+      const start = new Date(startTime);
+      const end = new Date(endTime);
+      const diffMs = end.getTime() - start.getTime();
+      
+      if (diffMs < 0) return null; // Invalid time range
+      
+      // Convert to seconds
+      const diffSeconds = Math.floor(diffMs / 1000);
+      
+      if (diffSeconds < 60) {
+        return `${diffSeconds}s`;
+      } else if (diffSeconds < 3600) {
+        const minutes = Math.floor(diffSeconds / 60);
+        const seconds = diffSeconds % 60;
+        return `${minutes}m ${seconds}s`;
+      } else {
+        const hours = Math.floor(diffSeconds / 3600);
+        const minutes = Math.floor((diffSeconds % 3600) / 60);
+        return `${hours}h ${minutes}m`;
+      }
+    } catch (error) {
+      console.error('Error calculating cycle time:', error);
+      return null;
+    }
+  };
+
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedLanguage, setSelectedLanguage] = useState("vi");
   const [isUploading, setIsUploading] = useState(false);
@@ -1650,7 +1681,7 @@ export function AdvancedOCRDashboard() {
                                 </Badge>
                               </div>
 
-                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4 text-sm text-gray-600 mb-4">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 sm:gap-4 text-sm text-gray-600 mb-4">
                                 <div>
                                   <span className="font-medium">
                                     Processed:
@@ -1683,6 +1714,20 @@ export function AdvancedOCRDashboard() {
                                     </div>
                                   </div>
                                 )}
+                                {/* Add Cycle Time field */}
+                                {(() => {
+                                  const cycleTime = calculateCycleTime(doc.processingStartedAt, doc.processingCompletedAt);
+                                  return cycleTime ? (
+                                    <div>
+                                      <span className="font-medium">
+                                        Cycle Time:
+                                      </span>
+                                      <div className="text-blue-600 font-medium">
+                                        {cycleTime}
+                                      </div>
+                                    </div>
+                                  ) : null;
+                                })()}
                                 <div>
                                   <span className="font-medium">Type:</span>
                                   <div className="capitalize">
