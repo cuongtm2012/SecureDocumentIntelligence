@@ -263,14 +263,25 @@ export class CloudflareR2Storage {
   async testConnection(): Promise<boolean> {
     try {
       console.log('🔍 Testing R2 connection...');
+      console.log(`🔍 Bucket URL: https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com/${this.bucketName}`);
       
       // Try to list objects (without prefix to avoid errors if bucket is empty)
       await this.listFiles(undefined, 1);
       
       console.log('✅ R2 connection test successful');
       return true;
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ R2 connection test failed:', error);
+      
+      // Enhanced error diagnostics
+      if (error.Code === 'Unauthorized' || error.message?.includes('Unauthorized')) {
+        console.log('💡 Troubleshooting: The bucket exists but API token lacks permissions');
+        console.log('💡 Please verify the R2 API token has "Object Read and Write" permissions for bucket:', this.bucketName);
+        console.log('💡 Or try creating a new token with full R2 permissions');
+      } else if (error.Code === 'NoSuchBucket') {
+        console.log('💡 Bucket does not exist, please create it in Cloudflare dashboard:', this.bucketName);
+      }
+      
       return false;
     }
   }
