@@ -691,8 +691,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
           await storage.updateDocument(document.id, { processingStatus: 'processing' });
 
           // Process the document (create mock req object for auto-processing)
-          const mockReq = { ip: '127.0.0.1', get: () => 'Auto-processing' };
-          await processFileWithFallback(filePath, document, document.id, userId, mockReq as any, undefined);
+          const mockReq = { 
+            ip: '127.0.0.1', 
+            get: () => 'Auto-processing',
+            params: { id: document.id.toString() }
+          };
+          const mockRes = {
+            json: (data: any) => {
+              console.log(`✅ Auto-processing result for document ${document.id}:`, data.success ? 'Success' : 'Failed');
+            },
+            status: (code: number) => ({ json: (data: any) => console.log(`❌ Auto-processing error ${code}:`, data) })
+          };
+          await processFileWithFallback(filePath, document, document.id, userId, mockReq as any, mockRes as any);
 
           console.log(`✅ Auto-processing completed for document ${document.id}: ${document.originalName}`);
           
