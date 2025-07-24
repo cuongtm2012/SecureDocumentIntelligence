@@ -502,16 +502,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         );
 
         if (existingDocument) {
-          // Check if the existing file actually exists on disk
-          const existingFilePath = path.join('/home/runner/uploads', existingDocument.filename);
+          // Check if the existing file actually exists in storage (R2 or local)
           let fileExists = false;
           
           try {
-            await fs.access(existingFilePath);
-            fileExists = true;
-            console.log(`✅ Existing file found: ${existingFilePath}`);
+            if (existingDocument.storageType === 'r2') {
+              // Check R2 storage
+              try {
+                const { metadata } = await storageService.downloadFile(existingDocument.filename);
+                if (!metadata) throw new Error('File not found in R2');
+                fileExists = true;
+                console.log(`✅ Existing R2 file found: ${existingDocument.filename}`);
+              } catch (r2Error) {
+                console.warn(`⚠️ Existing R2 file missing: ${existingDocument.filename}`);
+                fileExists = false;
+              }
+            } else {
+              // Check local storage (legacy files)
+              const existingFilePath = path.join('/home/runner/uploads', existingDocument.filename);
+              await fs.access(existingFilePath);
+              fileExists = true;
+              console.log(`✅ Existing local file found: ${existingFilePath}`);
+            }
           } catch (fileError) {
-            console.warn(`⚠️ Existing file missing: ${existingFilePath}`);
+            console.warn(`⚠️ Existing file missing in storage`);
             fileExists = false;
           }
 
@@ -968,145 +982,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Parallel OCR Processing endpoint (ABBYY + Tesseract)
-  app.post("/api/documents/:id/process-parallel", async (req, res) => {
-    try {
-      const documentId = parseInt(req.params.id);
-      const userId = 1; // Default user ID
-
-      const document = await storage.getDocument(documentId);
-      if (!document) {
-        return res.status(404).json({ message: "Document not found" });
-      }
-
-      // Update status to processing
-      await storage.updateDocument(documentId, {
-        processingStatus: 'processing',
-        processingStartedAt: new Date(),
-      });
-
-      const filePath = path.join(uploadsDir, document.filename);
-
-      // Check if file exists before processing
-      try {
-        await fs.access(filePath);
-      } catch (fileError) {
-        console.error(`❌ File not found for document ${documentId}: ${filePath}`);
-
-        // Try to find an alternative file with same original name
-        const uploads = await fs.readdir(uploadsDir);
-        const alternativeFile = uploads.find(filename => 
-          filename.includes(document.originalName) || 
-          document.originalName.includes(filename.replace(/^\d+-/, ''))
-        );
-
-        if (alternativeFile) {
-          const alternativeFilePath = path.join(uploadsDir, alternativeFile);
-          console.log(`🔄 Using alternative file: ${alternativeFile}`);
-
-          // Use the alternative file path (no need to update document as filename is not in schema)
-          const filePath = alternativeFilePath;
-        } else {
-          return res.status(400).json({ 
-            success: false, 
-            error: "File not found for processing. Please re-upload the document." 
-          });
-        }
-      }
-
-      console.log(`🔄 Processing document with parallel OCR: ${document.originalName}`);
-
-      // Process with parallel OCR (ABBYY + Tesseract) 
-      console.log(`🔄 Processing with parallel OCR engines...`);
-      const result = await parallelOCRProcessor.processDocument(filePath);
-
-      // Process with DeepSeek enhancement if available
-      let enhancedText = result.combinedText;
-      let deepseekAnalysis = { applied: false, reason: 'No API key available' };
-
-      if (result.combinedText && result.combinedText.length > 0) {
-        try {
-          const enhancement = await deepSeekService.analyzeDocument(result.combinedText, "Text enhancement analysis");
-          if (enhancement.success) {
-            enhancedText = enhancement.enhancedText || result.combinedText;
-            deepseekAnalysis = enhancement.analysis || deepseekAnalysis;
-          }
-        } catch (deepseekError) {
-          console.warn('DeepSeek enhancement failed:', deepseekError);
-        }
-      }
-
-      // Create structured data
-      const structuredData = {
-        pageCount: 1,
-        characterCount: enhancedText.length,
-        wordCount: enhancedText.split(/\s+/).filter(w => w.length > 0).length,
-        language: 'vie',
-        processingMode: 'parallel-abbyy-tesseract',
-        processingTime: result.processingTime / 1000,
-        deepseekAnalysis,
-        documentType: 'Government Document',
-        isReceiptDocument: false,
-        parallelResults: {
-          platforms: result.metadata.platforms,
-          bestPlatform: result.bestResult.platform,
-          agreement: result.metadata.agreement,
-          allResults: result.allResults.map(r => ({
-            platform: r.platform,
-            confidence: r.confidence,
-            success: r.success,
-            characterCount: r.extractedText.length,
-            processingTime: r.processingTime
-          }))
-        }
-      };
-
-      // Update document with results
-      await storage.updateDocument(documentId, {
-        processingStatus: 'completed',
-        processingCompletedAt: new Date(),
-        extractedText: enhancedText,
-        confidence: result.confidence,
-        structuredData: JSON.stringify(structuredData),
-      });
-
-      // Log processing completion
-      await storage.createAuditLog({
-        userId,
-        action: `Parallel OCR processing completed: ${document.originalName} (${result.metadata.platforms.join(', ')})`,
-        documentId,
-        ipAddress: req.ip,
-        userAgent: req.get('User-Agent'),
-      });
-
-      res.json({
-        success: true,
-        document: await storage.getDocument(documentId),
-        parallelResults: {
-          bestPlatform: result.bestResult.platform,
-          platforms: result.metadata.platforms,
-          agreement: result.metadata.agreement,
-          processingTime: result.processingTime
-        }
-      });
-
-    } catch (error) {
-      console.error('Parallel OCR processing error:', error);
-
-      // Update document status to failed
-      const documentId = parseInt(req.params.id);
-      await storage.updateDocument(documentId, {
-        processingStatus: 'failed',
-        errorMessage: error instanceof Error ? error.message : 'Unknown error',
-      });
-
-      res.status(500).json({
-        success: false,
-        error: "Parallel OCR processing failed",
-        details: error instanceof Error ? error.message : 'Unknown error',
-      });
-    }
-  });
 
   // Debug PDF content endpoint
   app.get("/api/documents/:id/debug", async (req, res) => {
@@ -1169,105 +1044,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         success: false, 
         error: "Failed to debug document" 
-      });
-    }
-  });
-
-  // ABBYY-specific OCR processing endpoint
-  app.post("/api/documents/:id/process-abbyy", async (req, res) => {
-    try {
-      const documentId = parseInt(req.params.id);
-      const document = await storage.getDocument(documentId);
-
-      if (!document) {
-        return res.status(404).json({ success: false, error: "Document not found" });
-      }
-
-      // Update status to processing
-      await storage.updateDocument(documentId, {
-        processingStatus: 'processing',
-        processingStartedAt: new Date(),
-      });
-
-      const filePath = path.join(uploadsDir, document.filename);
-
-      // Check if file exists before processing
-      try {
-        await fs.access(filePath);
-      } catch (fileError) {
-        console.error(`❌ File not found for document ${documentId}: ${filePath}`);
-        return res.status(400).json({ 
-          success: false, 
-          error: "File not found for processing. Please re-upload the document." 
-        });
-      }
-
-      console.log(`🔄 Processing document with ABBYY OCR: ${document.originalName}`);
-
-      // Check ABBYY availability first
-      const abbyyHealth = await abbyyOCRProcessor.healthCheck();
-      if (abbyyHealth.status !== 'healthy') {
-        return res.status(503).json({
-          success: false,
-          error: "ABBYY FineReader Engine not available",
-          details: abbyyHealth.details,
-          suggestion: "Use Tesseract processing instead or install ABBYY FineReader Engine"
-        });
-      }
-
-      // Process with ABBYY only
-      const result = await abbyyOCRProcessor.processDocument(filePath);
-
-      // Create structured data
-      const structuredData = {
-        pageCount: result.pageCount || 1,
-        characterCount: result.extractedText.length,
-        wordCount: result.extractedText.split(/\s+/).filter((word: string) => word.length > 0).length,
-        language: 'vie',
-        processingMode: 'abbyy-only',
-        processingTime: result.processingTime,
-        documentType: 'Government Document',
-        isReceiptDocument: false,
-      };
-
-      // Update document with results
-      await storage.updateDocument(documentId, {
-        extractedText: result.extractedText,
-        confidence: result.confidence,
-        processingStatus: 'completed',
-        processingCompletedAt: new Date(),
-        structuredData: JSON.stringify(structuredData),
-        errorMessage: undefined
-      });
-
-      const updatedDocument = await storage.getDocument(documentId);
-      res.json({
-        success: true,
-        document: updatedDocument,
-        processingEngine: 'abbyy',
-        processingTime: result.processingTime,
-        ocrResult: {
-          extractedText: result.extractedText,
-          confidence: result.confidence,
-          pageCount: result.pageCount
-        }
-      });
-
-    } catch (error) {
-      console.error('ABBYY processing error:', error);
-
-      // Update document status to failed
-      const documentId = parseInt(req.params.id);
-      await storage.updateDocument(documentId, {
-        processingStatus: 'failed',
-        errorMessage: error instanceof Error ? error.message : 'Unknown error',
-      });
-
-      res.status(500).json({
-        success: false,
-        error: "ABBYY processing failed",
-        details: error instanceof Error ? error.message : 'Unknown error',
-        step: "abbyy-ocr"
       });
     }
   });
@@ -1431,25 +1207,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ABBYY OCR health check endpoint
-  app.get("/api/ocr/abbyy/health", async (req, res) => {
-    try {
-      const healthResult = await abbyyOCRProcessor.healthCheck();
-
-      res.json({
-        success: true,
-        ...healthResult
-      });
-
-    } catch (error) {
-      console.error('ABBYY health check error:', error);
-      res.status(500).json({
-        success: false,
-        error: "ABBYY health check failed",
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  });
 
   // Text reconstruction endpoint for testing
   app.post("/api/ocr/reconstruct-text", async (req, res) => {
@@ -1685,12 +1442,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const tempDir = `/tmp/pdf_pages_${documentId}_${Date.now()}`;
       await fs.mkdir(tempDir, { recursive: true });
 
+      // Declare variables outside try block for proper scope
+      let tempPdfCleanup: (() => Promise<void>) | null = null;
+
       try {
         // Convert PDF pages to images
         const outputPattern = path.join(tempDir, 'page-%d.png');
         // Handle R2 vs local file access for PDF processing
         let pdfPath: string;
-        let tempPdfCleanup: (() => Promise<void>) | null = null;
         
         if (document.storageType === 'r2') {
           console.log(`📥 Downloading R2 file for PDF conversion: ${document.filename}`);
@@ -1983,7 +1742,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log("🧹 Starting R2 storage cleanup...");
       
       // List all files in R2 bucket
-      const files = await storageService.listFiles();
+      // Skip R2 cleanup for now (method not implemented)
+      const files: any[] = [];
+      console.log('⚠️ R2 cleanup endpoint disabled (listFiles method not implemented)');
       console.log(`📁 Found ${files.length} files in R2 storage`);
       
       // Delete each file
