@@ -640,10 +640,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Process in background without blocking the response
       setImmediate(async () => {
+        // Get file for processing (from R2 or local storage)
+        let filePath: string;
+        let tempFileCleanup: (() => Promise<void>) | null = null;
+        
         try {
-          // Get file for processing (from R2 or local storage)
-          let filePath: string;
-          let tempFileCleanup: (() => Promise<void>) | null = null;
           
           try {
             if (document.storageType === 'r2') {
@@ -1628,7 +1629,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Document not found" });
       }
 
-      // Handle both R2 and local file serving
+      // For non-PDF responses, handle R2 and local file serving
       if (document.storageType === 'r2') {
         try {
           const { stream, metadata } = await storageService.downloadFile(document.filename);
@@ -1648,17 +1649,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
             suggestion: "File may have been moved or deleted"
           });
         }
-      } else {
-        // Local file serving
-        const filePath = path.join('/home/runner/uploads', document.filename);
-
-        if (!fsSync.existsSync(filePath)) {
-          return res.status(404).json({ 
-            message: "File not found in local storage",
-            details: `Local path: ${filePath}`,
-            suggestion: "Please re-upload this document"
-          });
-        }
+      }
+      
+      // For local files, define filePath for later use
+      const filePath = path.join('/home/runner/uploads', document.filename);
+      if (!fsSync.existsSync(filePath)) {
+        return res.status(404).json({ 
+          message: "File not found in local storage",
+          details: `Local path: ${filePath}`,
+          suggestion: "Please re-upload this document"
+        });
       }
 
       // Check if it's a PDF file
