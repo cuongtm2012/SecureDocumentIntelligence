@@ -1983,6 +1983,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Serve generated PDF page images
   app.use('/pages', express.static(path.join(process.cwd(), 'client', 'public', 'pages')));
 
+  // R2 Storage cleanup endpoint
+  app.post("/api/cleanup-r2", async (req, res) => {
+    try {
+      console.log("🧹 Starting R2 storage cleanup...");
+      
+      // List all files in R2 bucket
+      const files = await storageService.listFiles();
+      console.log(`📁 Found ${files.length} files in R2 storage`);
+      
+      // Delete each file
+      let deletedCount = 0;
+      for (const file of files) {
+        try {
+          await storageService.deleteFile(file.filename);
+          console.log(`🗑️ Deleted: ${file.filename}`);
+          deletedCount++;
+        } catch (error) {
+          console.error(`❌ Failed to delete ${file.filename}:`, error);
+        }
+      }
+      
+      console.log(`✅ R2 cleanup completed: ${deletedCount}/${files.length} files deleted`);
+      res.json({ 
+        success: true, 
+        message: `Deleted ${deletedCount} files from R2 storage`,
+        deletedFiles: deletedCount,
+        totalFiles: files.length
+      });
+      
+    } catch (error) {
+      console.error("❌ R2 cleanup failed:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
