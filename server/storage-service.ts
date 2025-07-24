@@ -17,8 +17,8 @@ export interface StorageService {
 }
 
 export class HybridStorageService implements StorageService {
-  private r2Storage: CloudflareR2Storage | null = null;
-  private useR2: boolean = false;
+  public r2Storage: CloudflareR2Storage | null = null;
+  public useR2: boolean = false;
 
   constructor() {
     this.initializeR2();

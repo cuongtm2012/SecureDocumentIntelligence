@@ -393,6 +393,15 @@ Changelog:
   - Text improvement validation: Mathematical symbols correctly reconstructed (® → ², ° → ², " → ²)
   - Enhanced analysis: Comprehensive document analysis with key findings and recommendations provided
   - System now prioritizes maximum confidence over processing speed for Vietnamese document intelligence
+- July 24, 2025. FIXED: PDF preview issues and migrated all storage references to R2 cloud storage
+  - CRITICAL FIXES: Resolved PDF preview failures for both local development and deployed environments
+  - PDF conversion working: Document 27 (5 pages) and Document 26 (2 pages) now generate proper page images
+  - Thumbnail endpoint fixed: Serves actual page-1.png images instead of redirecting to raw PDFs
+  - Pages endpoint corrected: Returns proper JSON with image URLs instead of PDF stream content
+  - R2 storage migration: Updated duplicate detection logic to check R2 storage instead of local filesystem
+  - Removed legacy local storage references: All file existence checks now use R2 downloadFile method
+  - Enhanced error handling: Clear error messages for PDF conversion failures and missing R2 files
+  - System now fully uses Cloudflare R2 cloud storage with proper backward compatibility for legacy files
 ```
 
 ## User Preferences
