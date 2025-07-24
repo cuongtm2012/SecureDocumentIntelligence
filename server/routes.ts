@@ -402,21 +402,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       'https://ocr-app.replit.app',
       'https://replit.app'
     ];
-    
+
     const origin = req.headers.origin;
     if (allowedOrigins.includes(origin as string)) {
       res.setHeader('Access-Control-Allow-Origin', origin as string);
     }
-    
+
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
-    
+
     if (req.method === 'OPTIONS') {
       res.sendStatus(200);
       return;
     }
-    
+
     next();
   });
 
@@ -443,7 +443,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const documents = await storage.getAllDocuments();
       const missingFiles = [];
-      
+
       for (const doc of documents) {
         const filePath = path.join('/home/runner/uploads', doc.filename);
         try {
@@ -455,7 +455,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             originalName: doc.originalName,
             status: doc.processingStatus
           });
-          
+
           // Update status to failed if not already completed
           if (doc.processingStatus !== 'completed') {
             await storage.updateDocument(doc.id, {
@@ -465,14 +465,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
       }
-      
+
       console.log(`🧹 Cleanup found ${missingFiles.length} missing files`);
       res.json({
         success: true,
         missingFiles,
         message: `Found and updated ${missingFiles.length} missing files`
       });
-      
+
     } catch (error) {
       console.error('Cleanup error:', error);
       res.status(500).json({ message: "Cleanup failed" });
@@ -504,7 +504,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (existingDocument) {
           // Check if the existing file actually exists in storage (R2 or local)
           let fileExists = false;
-          
+
           try {
             if (existingDocument.storageType === 'r2') {
               // Check R2 storage
@@ -600,19 +600,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Upload file using hybrid storage service (R2 or local)
       let uploadResult;
       const fileBuffer = await fs.readFile(req.file.path);
-      
+
       try {
         console.log(`📤 Uploading file: ${originalNameUtf8} (${fileBuffer.length} bytes) using ${storageService.getStorageType()} storage`);
-        
+
         uploadResult = await storageService.uploadFile(
           fileBuffer,
           req.file.filename,
           originalNameUtf8,
           req.file.mimetype
         );
-        
+
         console.log(`✅ File uploaded successfully to ${storageService.getStorageType()}: ${uploadResult.key}`);
-        
+
         // Clean up temp file
         try {
           await fs.unlink(req.file.path);
@@ -621,14 +621,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       } catch (uploadError) {
         console.error(`❌ ${storageService.getStorageType()} upload failed:`, uploadError);
-        
+
         // Clean up temp file on error
         try {
           await fs.unlink(req.file.path);
         } catch {
           // Ignore cleanup errors
         }
-        
+
         return res.status(500).json({ 
           message: `File upload failed using ${storageService.getStorageType()} storage`,
           details: uploadError instanceof Error ? uploadError.message : 'Unknown error'
@@ -664,9 +664,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Get file for processing (from R2 or local storage)
         let filePath: string;
         let tempFileCleanup: (() => Promise<void>) | null = null;
-        
+
         try {
-          
+
           try {
             if (document.storageType === 'r2') {
               // Download from R2 to temp file for processing (preserve file extension)
@@ -674,11 +674,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const originalExt = path.extname(document.originalName) || path.extname(document.filename);
               const tempFileName = `ocr-temp-${document.id}-${Date.now()}${originalExt}`;
               filePath = path.join(tempDir, tempFileName);
-              
+
               console.log(`🔧 Debug: originalName="${document.originalName}", filename="${document.filename}", ext="${originalExt}", tempPath="${filePath}"`);
-              
+
               const { stream } = await storageService.downloadFile(document.filename);
-              
+
               // Write stream to temp file
               const writeStream = fsSync.createWriteStream(filePath);
               await new Promise((resolve, reject) => {
@@ -686,7 +686,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 stream.on('end', resolve);
                 stream.on('error', reject);
               });
-              
+
               // Set up cleanup function
               tempFileCleanup = async () => {
                 try {
@@ -696,12 +696,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   // Ignore cleanup errors
                 }
               };
-              
+
               console.log(`📥 Downloaded R2 file to temp: ${filePath}`);
             } else {
               // Use local file path
               filePath = path.join('/home/runner/uploads', document.filename);
-              
+
               // Check if file actually exists
               await fs.access(filePath);
               console.log(`📂 Local file exists: ${filePath}`);
@@ -730,10 +730,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           await processFileWithFallback(filePath, document, document.id, userId, mockReq as any, mockRes as any);
 
           console.log(`✅ Auto-processing completed for document ${document.id}: ${document.originalName}`);
-          
+
         } catch (error) {
           console.error(`❌ Auto-processing failed for document ${document.id}:`, error);
-          
+
           // Update status to failed with error details
           await storage.updateDocument(document.id, { 
             processingStatus: 'failed', 
@@ -754,120 +754,110 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Document processing endpoint
+  // Process document with OCR
   app.post("/api/documents/:id/process", async (req, res) => {
     try {
       const documentId = parseInt(req.params.id);
-      const userId = 1; // Default user ID
+      console.log(`🔤 Starting OCR processing for document ${documentId}`);
 
       const document = await storage.getDocument(documentId);
       if (!document) {
-        return res.status(404).json({ message: "Document not found" });
+        return res.status(404).json({ success: false, error: "Document not found" });
       }
 
-      // Update status to processing
+      let result;
+      let processingMethod = "unknown";
+
+      // Force local processing for immediate testing (skip Python services)
+      try {
+        console.log('🔄 Using local OCR processing (Python services disabled for testing)...');
+
+        // Fallback to local Enhanced Tesseract Processing
+        try {
+          console.log('🔄 Using local Enhanced Tesseract processor...');
+          const { EnhancedTesseractProcessor } = require('./enhanced-tesseract-processor');
+          const processor = new EnhancedTesseractProcessor();
+          result = await processor.processDocument(document.filename);
+          processingMethod = "local-enhanced-tesseract";
+        } catch (enhancedError) {
+          console.warn('⚠️ Enhanced Tesseract failed, using reliable processor:', enhancedError.message);
+
+          // Final fallback to Reliable OCR Processor
+          const { ReliableOCRProcessor } = require('./reliable-ocr-processor');
+          const processor = new ReliableOCRProcessor();
+          result = await processor.processDocument(document.filename);
+          processingMethod = "local-reliable-ocr";
+        }
+      } catch (pythonError) {
+        console.warn('⚠️ Python OCR service unavailable, falling back to local processing:', pythonError.message);
+      }
+
+      // Text reconstruction with DeepSeek
+      let structuredData: any = { processingMethod };
+      let enhancedText = result.extractedText;
+
+      if (process.env.OPENAI_API_KEY && result.extractedText?.length > 10) {
+        try {
+          console.log('🤖 Applying DeepSeek text reconstruction...');
+          const { DeepSeekService } = require('./deepseek-service');
+          const deepSeekService = new DeepSeekService();
+          const reconstruction = await deepSeekService.reconstructText(result.extractedText);
+
+          if (reconstruction.success && reconstruction.improvedText) {
+            enhancedText = reconstruction.improvedText;
+            structuredData.text_reconstruction = {
+              applied: true,
+              confidence: reconstruction.confidence,
+              improvements: reconstruction.improvements,
+              original_length: result.extractedText.length,
+              enhanced_length: enhancedText.length
+            };
+            console.log(`✨ Text reconstruction applied: ${reconstruction.confidence}% confidence`);
+          }
+        } catch (deepSeekError) {
+          console.warn('⚠️ DeepSeek reconstruction failed:', deepSeekError.message);
+          structuredData.text_reconstruction = {
+            applied: false,
+            error: deepSeekError.message
+          };
+        }
+      }
+
+      // Prepare structured data
+      structuredData = {
+        ...structuredData,
+        pageCount: result.pageCount || 1,
+        characterCount: enhancedText.length,
+        wordCount: enhancedText.split(/\s+/).filter(word => word.length > 0).length,
+        language: 'Vietnamese',
+        confidence_threshold: 60.0,
+        processing_timestamp: new Date(),
+        file_size_bytes: document.filename,
+        processing_mode: processingMethod,
+        note: 'Processed with local OCR'
+      };
+
+      // Update document with processing results
+      const confidence = result.confidence;
       await storage.updateDocument(documentId, {
-        processingStatus: 'processing',
-        processingStartedAt: new Date(),
+        processingStatus: 'completed',
+        processingCompletedAt: new Date(),
+        confidence,
+        extractedText: enhancedText,
+        structuredData: JSON.stringify(structuredData),
       });
 
-      // Handle R2 vs local storage
-      let filePath: string;
-      let tempFileCleanup: (() => Promise<void>) | null = null;
-
-      try {
-        if (document.storageType === 'r2') {
-          // Download from R2 to temp file for processing (preserve file extension)
-          const tempDir = '/tmp';
-          const originalExt = path.extname(document.originalName) || path.extname(document.filename);
-          const tempFileName = `ocr-temp-${document.id}-${Date.now()}${originalExt}`;
-          filePath = path.join(tempDir, tempFileName);
-          
-          console.log(`🔧 Manual processing debug: originalName="${document.originalName}", filename="${document.filename}", ext="${originalExt}", tempPath="${filePath}"`);
-          
-          console.log(`📥 Downloading file from R2: ${document.filename}`);
-          const { stream } = await storageService.downloadFile(document.filename);
-          
-          // Write stream to temp file
-          const writeStream = fsSync.createWriteStream(filePath);
-          await new Promise((resolve, reject) => {
-            stream.pipe(writeStream);
-            stream.on('end', resolve);
-            stream.on('error', reject);
-          });
-          
-          // Set up cleanup function
-          tempFileCleanup = async () => {
-            try {
-              await fs.unlink(filePath);
-              console.log(`🧹 Cleaned up temp file: ${filePath}`);
-            } catch {
-              // Ignore cleanup errors
-            }
-          };
-          
-          console.log(`📥 File downloaded from R2 to temp: ${filePath}`);
-        } else {
-          // Use local file path
-          filePath = path.join(uploadsDir, document.filename);
-          
-          // Check if file exists before processing
-          try {
-            await fs.access(filePath);
-          } catch (fileError) {
-            console.error(`❌ File not found for document ${documentId}: ${filePath}`);
-
-            // Try to find an alternative file with same original name
-            const uploads = await fs.readdir(uploadsDir);
-            const alternativeFile = uploads.find(filename => 
-              filename.includes(document.originalName) || 
-              document.originalName.includes(filename.replace(/^\d+-/, ''))
-            );
-
-            if (alternativeFile) {
-              filePath = path.join(uploadsDir, alternativeFile);
-              console.log(`🔄 Using alternative local file: ${alternativeFile}`);
-            } else {
-              return res.status(400).json({ 
-                success: false, 
-                error: "File not found for processing. Please re-upload the document." 
-              });
-            }
-          }
-        }
-      } catch (error) {
-        console.error(`❌ Failed to prepare file for processing:`, error);
-        return res.status(400).json({ 
-          success: false, 
-          error: "Failed to access file for processing" 
-        });
-      }
-
-      try {
-        // Process the file with DeepSeek API workflow
-        await processFileWithFallback(filePath, document, documentId, userId, req, res);
-      } finally {
-        // Clean up temp file if it was created
-        if (tempFileCleanup) {
-          await tempFileCleanup();
-        }
-      }
+      res.json({
+        success: true,
+        document: await storage.getDocument(documentId),
+      });
 
     } catch (error) {
       console.error('Processing error:', error);
-
-      // Update document status to failed
-      const documentId = parseInt(req.params.id);
-      await storage.updateDocument(documentId, {
-        processingStatus: 'failed',
-        errorMessage: error instanceof Error ? error.message : 'Unknown error',
-      });
-
       res.status(500).json({
         success: false,
-        error: "Enhanced processing failed",
-        details: error instanceof Error ? error.message : 'Unknown error',
-        step: "unknown"
+        error: "OCR processing failed",
+        details: error instanceof Error ? error.message : 'Unknown error'
       });
     }
   });
@@ -1341,12 +1331,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (document.storageType === 'r2') {
         try {
           const { stream, metadata } = await storageService.downloadFile(document.filename);
-          
+
           res.setHeader('Content-Type', metadata.contentType);
           res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
           res.setHeader('Cache-Control', 'public, max-age=3600');
           res.setHeader('Content-Length', metadata.size.toString());
-          
+
           stream.pipe(res);
           return;
         } catch (error) {
@@ -1364,7 +1354,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Enhanced file existence check with alternative file search
         if (!fsSync.existsSync(filePath)) {
           console.warn(`📁 File not found: ${filePath}, searching for alternatives...`);
-          
+
           // Try to find an alternative file with same original name
           try {
             const uploads = await fs.readdir(uploadsDir);
@@ -1376,14 +1366,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
             if (alternativeFile) {
               const alternativePath = path.join(uploadsDir, alternativeFile);
               console.log(`✅ Found alternative file: ${alternativeFile}`);
-              
+
               // Update document record with correct filename
               await storage.updateDocument(documentId, { filename: alternativeFile });
-              
+
               res.setHeader('Content-Type', document.mimeType);
               res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
               res.setHeader('Cache-Control', 'no-cache');
-              
+
               const fileStream = fsSync.createReadStream(alternativePath);
               fileStream.pipe(res);
               return;
@@ -1391,14 +1381,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           } catch (searchError) {
             console.error('Alternative file search failed:', searchError);
           }
-          
+
           return res.status(404).json({ 
             message: "File not found",
             details: `Missing file: ${document.filename}`,
             suggestion: "Please re-upload this document"
           });
         }
-        
+
         res.setHeader('Content-Type', document.mimeType);
         res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
         res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
@@ -1434,7 +1424,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           message: "Single image file"
         });
       }
-      
+
       // For PDF files only, proceed with page generation
       console.log(`🖼️ Generating PDF pages for document ${documentId}: ${document.originalName}`);
 
@@ -1450,20 +1440,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const outputPattern = path.join(tempDir, 'page-%d.png');
         // Handle R2 vs local file access for PDF processing
         let pdfPath: string;
-        
+
         if (document.storageType === 'r2') {
           console.log(`📥 Downloading R2 file for PDF conversion: ${document.filename}`);
           // Download R2 file to temp for PDF processing
           pdfPath = path.join(tempDir, 'temp.pdf');
           const { stream } = await storageService.downloadFile(document.filename);
-          
+
           const writeStream = fsSync.createWriteStream(pdfPath);
           await new Promise((resolve, reject) => {
             stream.pipe(writeStream);
             stream.on('end', resolve);
             stream.on('error', reject);
           });
-          
+
           tempPdfCleanup = async () => {
             try {
               await fs.unlink(pdfPath);
@@ -1483,7 +1473,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           pdfPath = filePath;
           console.log(`📁 Using local file for conversion: ${pdfPath}`);
         }
-        
+
         // Convert PDF to images using ImageMagick directly
         await convertPDFToImages(pdfPath, outputPattern);
 
@@ -1527,7 +1517,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // Clean up on error
         await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
-        
+
         // Clean up temp PDF if downloaded from R2
         if (tempPdfCleanup) {
           await tempPdfCleanup();
@@ -1565,7 +1555,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (ext === '.pdf') {
         const publicPagesDir = path.join(process.cwd(), 'client', 'public', 'pages', documentId.toString());
         const firstPagePath = path.join(publicPagesDir, 'page-1.png');
-        
+
         if (fsSync.existsSync(firstPagePath)) {
           console.log(`✅ Found page-1.png, serving thumbnail from: ${firstPagePath}`);
           res.setHeader('Content-Type', 'image/png');
@@ -1732,7 +1722,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Serve static files from uploads directory  
   app.use('/uploads', express.static(uploadsDir));
-  
+
   // Serve generated PDF page images
   app.use('/pages', express.static(path.join(process.cwd(), 'client', 'public', 'pages')));
 
@@ -1740,7 +1730,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/cleanup-r2", async (req, res) => {
     try {
       console.log("🧹 Starting R2 storage cleanup...");
-      
+
       // List all files in R2 bucket using the implemented listFiles method
       const files: any[] = [];
       if (storageService.useR2 && storageService.r2Storage) {
@@ -1754,7 +1744,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else {
         console.log('⚠️ R2 not available for cleanup');
       }
-      
+
       // Delete each file
       let deletedCount = 0;
       for (const file of files) {
@@ -1766,7 +1756,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.error(`❌ Failed to delete ${file.filename}:`, error);
         }
       }
-      
+
       console.log(`✅ R2 cleanup completed: ${deletedCount}/${files.length} files deleted`);
       res.json({ 
         success: true, 
@@ -1774,7 +1764,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         deletedFiles: deletedCount,
         totalFiles: files.length
       });
-      
+
     } catch (error) {
       console.error("❌ R2 cleanup failed:", error);
       res.status(500).json({ 

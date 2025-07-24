@@ -47,3 +47,16 @@ author = "agent"
 task = "shell.exec"
 args = "npm run dev"
 waitForPort = 5000
+
+[[workflows.workflow]]
+name = "Start Python OCR Services"
+author = 14531134
+mode = "parallel"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd python-tesseract-service && python app.py &"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd python-opencv-service && python app.py &"
