@@ -1741,11 +1741,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       console.log("🧹 Starting R2 storage cleanup...");
       
-      // List all files in R2 bucket
-      // Skip R2 cleanup for now (method not implemented)
+      // List all files in R2 bucket using the implemented listFiles method
       const files: any[] = [];
-      console.log('⚠️ R2 cleanup endpoint disabled (listFiles method not implemented)');
-      console.log(`📁 Found ${files.length} files in R2 storage`);
+      if (storageService.useR2 && storageService.r2Storage) {
+        try {
+          const r2Result = await storageService.r2Storage.listFiles();
+          files.push(...r2Result.files.map(f => ({ filename: f.filename })));
+          console.log(`📁 Found ${files.length} files in R2 storage`);
+        } catch (listError) {
+          console.error('❌ Failed to list R2 files:', listError);
+        }
+      } else {
+        console.log('⚠️ R2 not available for cleanup');
+      }
       
       // Delete each file
       let deletedCount = 0;
