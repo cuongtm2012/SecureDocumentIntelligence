@@ -696,23 +696,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           console.log(`✅ Auto-processing completed for document ${document.id}: ${document.originalName}`);
           
-          // Clean up temp file if it was created
-          if (tempFileCleanup) {
-            await tempFileCleanup();
-          }
         } catch (error) {
           console.error(`❌ Auto-processing failed for document ${document.id}:`, error);
-          
-          // Clean up temp file on error
-          if (tempFileCleanup) {
-            await tempFileCleanup();
-          }
           
           // Update status to failed with error details
           await storage.updateDocument(document.id, { 
             processingStatus: 'failed', 
             errorMessage: error instanceof Error ? error.message : 'Unknown error'
           });
+        } finally {
+          // Clean up temp file if it was created
+          if (tempFileCleanup) {
+            await tempFileCleanup();
+          }
         }
       });
 
@@ -740,40 +736,84 @@ export async function registerRoutes(app: Express): Promise<Server> {
         processingStartedAt: new Date(),
       });
 
-      const filePath = path.join(uploadsDir, document.filename);
+      // Handle R2 vs local storage
+      let filePath: string;
+      let tempFileCleanup: (() => Promise<void>) | null = null;
 
-      // Check if file exists before processing
       try {
-        await fs.access(filePath);
-      } catch (fileError) {
-        console.error(`❌ File not found for document ${documentId}: ${filePath}`);
-
-        // Try to find an alternative file with same original name
-        const uploads = await fs.readdir(uploadsDir);
-        const alternativeFile = uploads.find(filename => 
-          filename.includes(document.originalName) || 
-          document.originalName.includes(filename.replace(/^\d+-/, ''))
-        );
-
-        if (alternativeFile) {
-          const alternativeFilePath = path.join(uploadsDir, alternativeFile);
-          console.log(`🔄 Using alternative file: ${alternativeFile}`);
-
-          // Use the alternative file (no need to update document as filename is not in schema)
-
-          // Process the alternative file
-          await processFileWithFallback(alternativeFilePath, document, documentId, userId, req, res);
-          return;
-        } else {
-          return res.status(400).json({ 
-            success: false, 
-            error: "File not found for processing. Please re-upload the document." 
+        if (document.storageType === 'r2') {
+          // Download from R2 to temp file for processing
+          const tempDir = '/tmp';
+          const tempFileName = `ocr-temp-${document.id}-${Date.now()}`;
+          filePath = path.join(tempDir, tempFileName);
+          
+          console.log(`📥 Downloading file from R2: ${document.filename}`);
+          const { stream } = await storageService.downloadFile(document.filename);
+          
+          // Write stream to temp file
+          const writeStream = fsSync.createWriteStream(filePath);
+          await new Promise((resolve, reject) => {
+            stream.pipe(writeStream);
+            stream.on('end', resolve);
+            stream.on('error', reject);
           });
+          
+          // Set up cleanup function
+          tempFileCleanup = async () => {
+            try {
+              await fs.unlink(filePath);
+              console.log(`🧹 Cleaned up temp file: ${filePath}`);
+            } catch {
+              // Ignore cleanup errors
+            }
+          };
+          
+          console.log(`📥 File downloaded from R2 to temp: ${filePath}`);
+        } else {
+          // Use local file path
+          filePath = path.join(uploadsDir, document.filename);
+          
+          // Check if file exists before processing
+          try {
+            await fs.access(filePath);
+          } catch (fileError) {
+            console.error(`❌ File not found for document ${documentId}: ${filePath}`);
+
+            // Try to find an alternative file with same original name
+            const uploads = await fs.readdir(uploadsDir);
+            const alternativeFile = uploads.find(filename => 
+              filename.includes(document.originalName) || 
+              document.originalName.includes(filename.replace(/^\d+-/, ''))
+            );
+
+            if (alternativeFile) {
+              filePath = path.join(uploadsDir, alternativeFile);
+              console.log(`🔄 Using alternative local file: ${alternativeFile}`);
+            } else {
+              return res.status(400).json({ 
+                success: false, 
+                error: "File not found for processing. Please re-upload the document." 
+              });
+            }
+          }
         }
+      } catch (error) {
+        console.error(`❌ Failed to prepare file for processing:`, error);
+        return res.status(400).json({ 
+          success: false, 
+          error: "Failed to access file for processing" 
+        });
       }
 
-      // Process the file with DeepSeek API workflow
-      await processFileWithFallback(filePath, document, documentId, userId, req, res);
+      try {
+        // Process the file with DeepSeek API workflow
+        await processFileWithFallback(filePath, document, documentId, userId, req, res);
+      } finally {
+        // Clean up temp file if it was created
+        if (tempFileCleanup) {
+          await tempFileCleanup();
+        }
+      }
 
     } catch (error) {
       console.error('Processing error:', error);
@@ -1631,12 +1671,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         // Convert PDF pages to images
         const outputPattern = path.join(tempDir, 'page-%d.png');
-        // For R2 files, use local temp file; for local files, use original path
-        let pdfPath = filePath;
+        // For R2 files, need to download to temp first
+        let pdfPath: string;
+        let tempPdfCleanup: (() => Promise<void>) | null = null;
+        
         if (document.storageType === 'r2') {
-          // Download R2 file to temp location for PDF processing
-          const { stream } = await storageService.downloadFile(document.filename);
+          // Download R2 file to temp for PDF processing
           pdfPath = path.join(tempDir, 'temp.pdf');
+          const { stream } = await storageService.downloadFile(document.filename);
           
           const writeStream = fsSync.createWriteStream(pdfPath);
           await new Promise((resolve, reject) => {
@@ -1644,6 +1686,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
             stream.on('end', resolve);
             stream.on('error', reject);
           });
+          
+          tempPdfCleanup = async () => {
+            try {
+              await fs.unlink(pdfPath);
+            } catch {}
+          };
+        } else {
+          // Use local file path directly
+          pdfPath = filePath;
         }
         
         // Convert PDF to images using ImageMagick directly
