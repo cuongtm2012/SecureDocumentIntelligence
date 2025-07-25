@@ -696,6 +696,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Complete cleanup: Delete all data from R2 and database
+  app.post("/api/cleanup-all", async (req, res) => {
+    try {
+      let r2DeletedCount = 0;
+      let dbDeletedCount = 0;
+      const results = [];
+
+      // Step 1: Clean up R2 storage
+      if (storageService.useR2 && storageService.r2Storage) {
+        try {
+          const r2Files = await storageService.r2Storage.listFiles();
+          console.log(`🧹 Starting complete cleanup: ${r2Files.files.length} R2 files found`);
+          
+          for (const file of r2Files.files) {
+            try {
+              await storageService.r2Storage.deleteFile(file.filename);
+              r2DeletedCount++;
+              console.log(`🗑️ Deleted R2 file: ${file.filename}`);
+            } catch (deleteError) {
+              console.warn(`Failed to delete R2 file ${file.filename}:`, deleteError);
+            }
+          }
+          
+          results.push(`R2 Storage: ${r2DeletedCount}/${r2Files.files.length} files deleted`);
+        } catch (r2Error) {
+          console.error('R2 cleanup error:', r2Error);
+          results.push('R2 Storage: Cleanup failed');
+        }
+      } else {
+        results.push('R2 Storage: Not configured');
+      }
+
+      // Step 2: Clean up database
+      try {
+        // Get all documents for counting
+        const allDocuments = await storage.getAllDocuments();
+        dbDeletedCount = allDocuments.length;
+        
+        console.log(`🗑️ Starting database cleanup: ${dbDeletedCount} documents found`);
+        
+        // Delete all documents and audit logs
+        await storage.clearAllData();
+        
+        console.log(`🧹 Database cleanup completed: ${dbDeletedCount} documents deleted`);
+        results.push(`Database: ${dbDeletedCount} documents deleted`);
+        results.push('Database: All audit logs cleared');
+        
+      } catch (dbError) {
+        console.error('Database cleanup error:', dbError);
+        results.push('Database: Cleanup failed');
+      }
+
+      console.log(`🧹 Complete cleanup finished: R2 files: ${r2DeletedCount}, DB records: ${dbDeletedCount}`);
+      
+      res.json({ 
+        success: true, 
+        r2DeletedCount, 
+        dbDeletedCount, 
+        message: `Complete cleanup successful: ${results.join(', ')}`,
+        details: results
+      });
+      
+    } catch (error: any) {
+      console.error('Complete cleanup error:', error);
+      res.status(500).json({ success: false, message: "Complete cleanup failed", error: error?.message || 'Unknown error' });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

@@ -61,6 +61,7 @@ import {
   X,
   RefreshCw,
   Layers,
+  Trash2,
 } from "lucide-react";
 import { nanoid } from "nanoid";
 import { useToast } from "@/hooks/use-toast";
@@ -164,12 +165,54 @@ export function AdvancedOCRDashboard() {
     return data;
   };
 
-  const { data: documents = [], isLoading } = useQuery({
+  const { data: documents = [], isLoading, refetch } = useQuery({
     queryKey: ["documents"],
     queryFn: fetchDocuments,
     refetchInterval: autoRefresh ? 30000 : false, // Reduced from 10s to 30s when auto-refresh is on
     staleTime: 5000, // Consider data stale after 5 seconds instead of 1
   });
+
+  // Cleanup mutation
+  const cleanupMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch('/api/cleanup-all', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!response.ok) {
+        throw new Error('Failed to clean up data');
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Cleanup Complete",
+        description: data.message,
+        variant: "default",
+      });
+      // Refresh the documents list
+      refetch();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Cleanup Failed",
+        description: error.message || "Failed to clean up data",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Cleanup handler
+  const handleCleanup = () => {
+    const confirmCleanup = window.confirm(
+      "Are you sure you want to delete ALL documents and files? This action cannot be undone."
+    );
+    if (confirmCleanup) {
+      cleanupMutation.mutate();
+    }
+  };
 
   // Upload mutation
   const uploadMutation = useMutation({
@@ -1534,6 +1577,15 @@ export function AdvancedOCRDashboard() {
                     Refresh
                   </Button>
                   <Button
+                    onClick={handleCleanup}
+                    variant="destructive"
+                    size="sm"
+                    disabled={cleanupMutation.isPending}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    {cleanupMutation.isPending ? "Cleaning..." : "Clean Up"}
+                  </Button>
+                  <Button
                     onClick={() => setAutoRefresh(!autoRefresh)}
                     variant={autoRefresh ? "default" : "outline"}
                     size="sm"
@@ -1584,7 +1636,6 @@ export function AdvancedOCRDashboard() {
                       onClick={() => setSearchQuery("")}
                       className="px-2"
                     >
-                      ```python
                       <X className="h-4 w-4" />
                     </Button>
                   )}
