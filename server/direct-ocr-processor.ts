@@ -157,8 +157,8 @@ export class DirectOCRProcessor {
       
       const timeout = setTimeout(() => {
         process.kill('SIGTERM');
-        reject(new Error('PDF conversion timeout (45s limit)'));
-      }, 45000);
+        reject(new Error('PDF conversion timeout (5 minutes limit)'));
+      }, 300000);
       
       process.on('close', (code) => {
         clearTimeout(timeout);
@@ -205,9 +205,9 @@ export class DirectOCRProcessor {
     return new Promise((resolve, reject) => {
       let tesseractProcess: any = null;
       
-      // Increase timeout to 120 seconds for complex Vietnamese documents
+      // Increase timeout to 5 minutes for complex Vietnamese documents
       const timeout = setTimeout(() => {
-        console.warn(`⏰ Tesseract timeout for ${path.basename(imagePath)} (120s limit reached)`);
+        console.warn(`⏰ Tesseract timeout for ${path.basename(imagePath)} (5 minutes limit reached)`);
         // Try to kill the tesseract process if it's still running
         if (tesseractProcess && tesseractProcess.pid) {
           try {
@@ -221,7 +221,7 @@ export class DirectOCRProcessor {
           text: '[OCR timeout - document may be too complex or corrupted]',
           confidence: 0
         });
-      }, 120000);
+      }, 300000);
 
       // Try multiple PSM modes for better text detection
       const psmModes = [3, 6, 4]; // Document modes in order of preference
@@ -243,7 +243,7 @@ export class DirectOCRProcessor {
         
         tesseractProcess = spawn('tesseract', args, {
           stdio: ['pipe', 'pipe', 'pipe'],
-          timeout: 90000 // 90 second timeout per attempt
+          timeout: 240000 // 4 minute timeout per attempt
         });
         
         let stdout = '';

@@ -264,8 +264,8 @@ export class OptimizedOCRProcessor {
       // Increased timeout for large PDF processing
       const timeout = setTimeout(() => {
         convert.kill('SIGTERM');
-        reject(new Error('PDF conversion timeout (120s)'));
-      }, 120000); // Increased to 120 seconds for large PDFs
+        reject(new Error('PDF conversion timeout (5 minutes)'));
+      }, 300000); // Increased to 5 minutes for large PDFs
       
       convert.on('close', () => {
         clearTimeout(timeout);

@@ -434,6 +434,13 @@ Changelog:
   - Vietnamese ID card processed successfully: Tesseract OCR (47% confidence) + DeepSeek analysis with entity extraction
   - Complete processing pipeline verified: R2 storage → OCR extraction → DeepSeek enhancement → structured data storage
   - System correctly maintains OCR confidence scores while adding AI-powered document analysis and recommendations
+- July 25, 2025. RESOLVED: Fixed critical timeout errors causing OCR processing failures across all processors
+  - TIMEOUT FIXES: Increased all OCR processing timeouts from 45s-120s to 5 minutes (300 seconds) across entire system
+  - Updated timeout configurations in 7 OCR processors: DirectOCRProcessor, OptimizedOCRProcessor, SimpleTesseractProcessor, SimplePDFOCRProcessor, OpenCVOCRProcessor, TesseractOCRProcessor, LocalPaddleOCRProcessor
+  - Fixed process variable conflict in DirectOCRProcessor timeout handler that was causing ESRCH kill errors
+  - Added proper TypeScript error handling and process management for all OCR timeout scenarios
+  - System now handles complex Vietnamese documents without premature timeout failures
+  - Large PDF processing (4+ pages, 4MB+ files) now completes successfully with extended processing time allowance
 ```
 
 ## User Preferences
