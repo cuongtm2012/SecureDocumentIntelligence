@@ -23,6 +23,9 @@ export interface IStorage {
 
   // Duplicate detection
   findDuplicateDocument(originalName: string, fileSize: number, mimeType: string, userId: number): Promise<Document | undefined>;
+  
+  // Cleanup methods
+  clearAllData(): Promise<void>;
 }
 
 export class MemStorage implements IStorage {
@@ -93,6 +96,7 @@ export class MemStorage implements IStorage {
       ...insertDocument,
       id,
       uploadedAt: new Date(),
+      storageType: insertDocument.storageType || 'local',
       processingStatus: "pending",
       processingStartedAt: null,
       processingCompletedAt: null,
@@ -155,6 +159,14 @@ export class MemStorage implements IStorage {
       .sort((a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime());
 
     return documents[0] || undefined;
+  }
+
+  async clearAllData(): Promise<void> {
+    this.documents.clear();
+    this.auditLogs.clear();
+    this.currentDocumentId = 1;
+    this.currentAuditLogId = 1;
+    console.log('🧹 MemStorage: Cleared all documents and audit logs');
   }
 }
 
@@ -261,6 +273,16 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(documents.uploadedAt))
       .limit(1);
     return document || undefined;
+  }
+
+  async clearAllData(): Promise<void> {
+    // Delete all documents
+    await db.delete(documents);
+    
+    // Delete all audit logs
+    await db.delete(auditLogs);
+    
+    console.log('🧹 DatabaseStorage: Cleared all documents and audit logs');
   }
 }
 
