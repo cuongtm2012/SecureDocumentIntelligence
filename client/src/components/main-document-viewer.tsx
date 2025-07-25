@@ -580,7 +580,7 @@ export function UnifiedDocumentViewer({
               ) : (
                 <ImageIcon className="h-5 w-5 text-blue-500" />
               )}
-              <h2 className="text-lg font-semibold">{document.fileName}</h2>
+              <h2 className="text-lg font-semibold">{decodeURIComponent(document.fileName)}</h2>
             </div>
 
             <Badge variant="outline">

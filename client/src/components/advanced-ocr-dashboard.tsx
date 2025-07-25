@@ -960,10 +960,22 @@ export function AdvancedOCRDashboard() {
 
   // View OCR result from uploaded files
   const handleViewUploadedFileResult = (file: UploadedFile) => {
-    // Find the corresponding document from the backend
-    const correspondingDocument = documents.find(
-      (doc: any) => doc.originalName === file.name,
-    );
+    // Find the corresponding document from the backend using documentId if available
+    let correspondingDocument;
+    
+    if (file.documentId) {
+      // First try to find by document ID (most reliable)
+      correspondingDocument = documents.find(
+        (doc: any) => doc.id === file.documentId,
+      );
+    }
+    
+    // Fallback to finding by filename
+    if (!correspondingDocument) {
+      correspondingDocument = documents.find(
+        (doc: any) => doc.originalName === file.name || doc.filename === file.name,
+      );
+    }
 
     if (!correspondingDocument) {
       toast({
@@ -979,29 +991,31 @@ export function AdvancedOCRDashboard() {
       documentId: correspondingDocument.id,
       fileName: file.name,
       fileType: file.type,
+      hasResult: !!file.result,
+      documentData: correspondingDocument,
     });
 
-    // For both images and PDFs, use the unified document viewer
-    if (file.result) {
-      const result: OCRResult = {
-        id: correspondingDocument.id.toString(),
-        fileName: file.name,
-        fileType: file.type,
-        extractedText: file.result.extractedText,
-        confidence: file.result.confidence,
-        pageCount: file.result.pageCount || 1,
-
-        imageUrl: `/api/documents/${correspondingDocument.id}/thumbnail`,
-        lowConfidenceWords: [],
-      };
-      setSelectedResult(result);
-      setShowViewer(true);
-    } else {
-      // Fallback to PDF viewer for documents without results
-      setSelectedFileForViewer(file);
-      setCurrentDocument(correspondingDocument);
-      setShowPDFViewer(true);
-    }
+    // Create result for the unified viewer
+    const result: OCRResult = {
+      id: correspondingDocument.id.toString(),
+      fileName: decodeURIComponent(correspondingDocument.originalName || correspondingDocument.filename || file.name),
+      fileType: file.type,
+      extractedText: file.result?.extractedText || correspondingDocument.extractedText || "",
+      confidence: (file.result?.confidence || correspondingDocument.confidence || 0), // Keep as 0-1 range
+      pageCount: file.result?.pageCount || (() => {
+        try {
+          const structured = correspondingDocument.structuredData ? JSON.parse(correspondingDocument.structuredData) : {};
+          return structured.pageCount || 1;
+        } catch {
+          return 1;
+        }
+      })(),
+      imageUrl: `/api/documents/${correspondingDocument.id}/thumbnail`,
+      lowConfidenceWords: [],
+    };
+    
+    setSelectedResult(result);
+    setShowViewer(true);
   };
 
   // View OCR result from documents
@@ -1009,7 +1023,7 @@ export function AdvancedOCRDashboard() {
     if (document.extractedText) {
       const result: OCRResult = {
         id: document.id.toString(),
-        fileName: document.originalName,
+        fileName: decodeURIComponent(document.originalName),
         fileType: document.mimeType.startsWith("image/") ? "image" : "pdf",
         extractedText: document.extractedText,
         confidence: document.confidence || 0.8,
@@ -1715,7 +1729,7 @@ export function AdvancedOCRDashboard() {
                                 <div className="flex items-center space-x-2">
                                   <FileText className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600" />
                                   <h3 className="font-semibold text-gray-900 text-sm sm:text-base truncate">
-                                    {doc.originalName || doc.filename}
+                                    {decodeURIComponent(doc.originalName || doc.filename)}
                                   </h3>
                                 </div>
                                 <Badge
