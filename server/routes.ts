@@ -1,113 +1,31 @@
 import type { Express } from "express";
-import express from "express";
 import { createServer, type Server } from "http";
-import { storage, type UpdateDocumentData } from "./storage";
-import { storageService } from './storage-service';
+import { storage } from "./storage";
 import multer from "multer";
 import path from "path";
-import fs from "fs/promises";
-import * as fsSync from "fs";
+import fs from "fs";
 import { promisify } from "util";
-import { spawn } from "child_process";
-
+import { createWorker } from "tesseract.js";
 import sharp from "sharp";
 import { deepSeekService } from "./deepseek-service";
 import { vietnameseTextCleaner } from "./vietnamese-text-cleaner";
 import { enhancedVietnameseOCR } from "./enhanced-vietnamese-ocr";
 import { pdfProcessor } from "./pdf-processor";
-import { simpleTesseractProcessor } from "./simple-tesseract-processor";
-import { simplePDFOCRProcessor } from "./simple-pdf-ocr";
-import { vietnameseReceiptOCRProcessor } from "./vietnamese-receipt-ocr-processor";
-import { enhancedTesseractProcessor } from "./enhanced-tesseract-processor";
-import { reliableOCRProcessor } from "./reliable-ocr-processor";
-import { optimizedOCRProcessor } from "./optimized-ocr-processor";
-import { ocrProgressTracker } from "./ocr-progress-tracker";
-import { trainingPipeline } from "./training-pipeline";
+import { directOCRProcessor } from "./direct-ocr-processor";
 import helmet from "helmet";
 import { insertDocumentSchema, insertAuditLogSchema } from "@shared/schema";
 import { z } from "zod";
 import { initializeDatabase } from "./init-db";
 import FormData from 'form-data';
 import axios from 'axios';
-import { abbyyOCRProcessor } from './abbyy-ocr-processor.js';
-import { directOCRProcessor } from './direct-ocr-processor.js';
-import { parallelOCRProcessor } from './parallel-ocr-processor';
-
+import { storageService } from "./storage-service";
 
 const writeFile = promisify(fs.writeFile);
 const readFile = promisify(fs.readFile);
 
-// PDF to images conversion function
-async function convertPDFToImages(pdfPath: string, outputPattern: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const args = [
-      '-density', '200',
-      '-colorspace', 'RGB',
-      '-alpha', 'remove',
-      '-background', 'white',
-      pdfPath,
-      outputPattern
-    ];
-
-    console.log(`🔄 Running: convert ${args.join(' ')}`);
-
-    const convert = spawn('convert', args, {
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-
-    let stderr = '';
-
-    convert.stderr.on('data', (data: Buffer) => {
-      stderr += data.toString();
-    });
-
-    convert.on('close', (code: number) => {
-      if (code === 0) {
-        console.log('✅ PDF to images conversion completed');
-        resolve();
-      } else {
-        reject(new Error(`ImageMagick failed with code ${code}: ${stderr}`));
-      }
-    });
-
-    convert.on('error', (error: any) => {
-      reject(new Error(`Failed to start ImageMagick: ${error.message}`));
-    });
-
-    setTimeout(() => {
-      convert.kill('SIGTERM');
-      reject(new Error('PDF conversion timeout (120s)'));
-    }, 120000); // Increased to 120 seconds for large PDFs
-  });
-}
-
-// Configure multer for file uploads with enhanced error handling
-const storage_config = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadsPath = '/home/runner/uploads';
-    try {
-      if (!fsSync.existsSync(uploadsPath)) {
-        fsSync.mkdirSync(uploadsPath, { recursive: true });
-        console.log(`📁 Created uploads directory: ${uploadsPath}`);
-      }
-      // Verify directory is writable
-      fsSync.accessSync(uploadsPath, fsSync.constants.W_OK);
-      console.log(`✅ Upload destination verified: ${uploadsPath}`);
-      cb(null, uploadsPath);
-    } catch (error) {
-      console.error(`❌ Upload destination error:`, error);
-      cb(error as Error, uploadsPath);
-    }
-  },
-  filename: (req, file, cb) => {
-    const uniqueName = `${Date.now()}-${file.originalname}`;
-    console.log(`📝 Generated filename: ${uniqueName}`);
-    cb(null, uniqueName);
-  }
-});
-
+// Configure multer for R2 cloud storage (memory storage only)
 const upload = multer({
-  storage: storage_config,
+  storage: multer.memoryStorage(),
   limits: {
     fileSize: 50 * 1024 * 1024, // 50MB limit
   },
@@ -118,7 +36,7 @@ const upload = multer({
       'image/jpg', 
       'image/png'
     ];
-
+    
     if (allowedMimes.includes(file.mimetype)) {
       cb(null, true);
     } else {
@@ -127,216 +45,106 @@ const upload = multer({
   }
 });
 
-// Ensure uploads directory exists
-const uploadsDir = '/home/runner/uploads';
-if (!fsSync.existsSync(uploadsDir)) {
-  fsSync.mkdirSync(uploadsDir, { recursive: true });
-}
+// R2 cloud storage is used exclusively - no local uploads directory needed
 
 // Helper function to process file with DeepSeek API as primary workflow
-async function processFileWithFallback(filePath: string, document: any, documentId: number, userId: number, req?: any, res?: any) {
+async function processFileWithFallback(filePath: string, document: any, documentId: number, userId: number, req: any, res: any) {
   console.log(`🚀 Processing document ${document.originalName} with DeepSeek API workflow...`);
-
-  // Start progress tracking
-  const { ocrProgressTracker } = await import('./ocr-progress-tracker');
-  const progressId = `doc-${documentId}`;
-  ocrProgressTracker.startTracking(progressId, 5);
-
+  
   let ocrResult;
 
-  try {
-    // Update progress: Initializing
-    ocrProgressTracker.updateProgress(progressId, 'initializing', 1, 'Initializing DeepSeek processing...');
-
-    // Check if it's a PDF file
-    const isPDF = document.originalName.toLowerCase().endsWith('.pdf');
-
-    if (isPDF) {
-      // Update progress: Converting
-      ocrProgressTracker.updateProgress(progressId, 'converting', 2, 'Converting PDF for processing...');
-
-      console.log('🤖 Processing PDF with Reliable OCR...');
-
-      // Update progress: Extracting
-      ocrProgressTracker.updateProgress(progressId, 'extracting', 3, 'Extracting text with Tesseract...');
-
-      const reliableOCRResult = await reliableOCRProcessor.processDocument(filePath);
-
-      console.log(`🔧 ReliableOCR completed successfully, now preparing DeepSeek enhancement...`);
-      console.log(`📊 ReliableOCR result: ${reliableOCRResult.extractedText.length} chars, confidence: ${reliableOCRResult.confidence}%`);
-
-      // Update progress: Reconstructing
-      ocrProgressTracker.updateProgress(progressId, 'reconstructing', 4, 'Enhancing text with DeepSeek AI...');
-
-      // Now enhance the extracted text with DeepSeek API
-      let enhancedText = reliableOCRResult.extractedText;
-      let deepseekAnalysis: any = { applied: false, reason: 'Text enhancement skipped' };
-      let deepseekImprovements: any[] = [];
-
-      console.log(`🎯 About to start DeepSeek enhancement with ${reliableOCRResult.extractedText.length} characters...`);
-
-      try {
-        console.log(`🤖 DeepSeek Enhancement Phase Starting...`);
-        console.log(`📊 Original OCR text: ${reliableOCRResult.extractedText.length} characters`);
-
-        // Always process with DeepSeek for maximum confidence
-        {
-          console.log(`🔧 Calling DeepSeek reconstructVietnameseText...`);
-
-          const reconstruction = await deepSeekService.reconstructVietnameseText(reliableOCRResult.extractedText);
-          enhancedText = reconstruction.reconstructedText;
-          deepseekImprovements = reconstruction.improvements || [];
-
-          console.log(`✅ Text reconstruction completed: ${enhancedText.length} characters`);
-          console.log(`📝 Improvements applied: ${deepseekImprovements.length} improvements`);
-
-          // Also get document analysis
-          console.log(`🔍 Calling DeepSeek analyzeDocument...`);
-          const analysis = await deepSeekService.analyzeDocument(enhancedText, `Vietnamese PDF document analysis: ${document.originalName}`);
-          console.log(`📋 Document analysis completed`);
-
-          deepseekAnalysis = {
-            applied: true,
-            enhancedLength: enhancedText.length,
-            improvements: deepseekImprovements,
-            analysis: analysis
-          };
-          console.log(`✅ Complete DeepSeek enhancement finished: ${enhancedText.length} characters total`);
-        }
-      } catch (deepseekError) {
-        console.error('❌ DeepSeek enhancement error details:', deepseekError);
-        console.warn('⚠️ DeepSeek text enhancement failed, using original OCR text');
-        deepseekAnalysis.reason = `Enhancement failed: ${deepseekError instanceof Error ? deepseekError.message : 'Unknown error'}`;
-      }
-
-      ocrResult = {
-        success: true,
-        file_id: document.originalName,
-        text: enhancedText,
-        confidence: Math.round(reliableOCRResult.confidence / 100 * 100), // Use original OCR confidence
-        page_count: reliableOCRResult.pageCount || 1,
-        processing_time: reliableOCRResult.processingTime / 1000,
-        metadata: {
-          character_count: enhancedText.length,
-          word_count: enhancedText.split(/\s+/).filter(word => word.length > 0).length,
-          language: 'vie',
-          confidence_threshold: 60.0,
-          processing_timestamp: new Date(),
-          file_size_bytes: document.fileSize,
-          processing_mode: 'reliable-pdf-ocr-enhanced',
-          ocr_method: reliableOCRResult.method || 'reliable-ocr',
-          deepseek_analysis: deepseekAnalysis,
-          deepseek_improvements: deepseekImprovements,
-          note: 'Reliable PDF processing with ImageMagick, Tesseract OCR, and DeepSeek enhancement'
-        }
-      };
-
-    } else {
-      // Image processing with optimized processor for faster results
-      ocrProgressTracker.updateProgress(progressId, 'extracting', 3, 'Processing image with optimized OCR...');
-
-      console.log('🔧 Processing image with optimized OCR for Vietnamese text...');
-
-      const enhancedResult = await optimizedOCRProcessor.processDocument(filePath);
-
-      // Update progress: Enhancing with DeepSeek
-      ocrProgressTracker.updateProgress(progressId, 'reconstructing', 4, 'Enhancing text with DeepSeek AI...');
-
-      // Now enhance the extracted text with DeepSeek API
-      let enhancedText = enhancedResult.extractedText;
-      let deepseekAnalysis: any = { applied: false, reason: 'Text enhancement skipped' };
-      let deepseekImprovements: any[] = [];
-
-      try {
-        console.log(`🤖 DeepSeek Enhancement Phase Starting for image...`);
-        console.log(`📊 Optimized OCR result: ${enhancedResult.extractedText.length} characters, ${enhancedResult.confidence}% confidence`);
-
-        // Always process with DeepSeek for maximum confidence
-        {
-          const reconstruction = await deepSeekService.reconstructVietnameseText(enhancedResult.extractedText);
-          enhancedText = reconstruction.reconstructedText;
-          deepseekImprovements = reconstruction.improvements || [];
-
-          console.log(`✅ Text reconstruction completed: ${enhancedText.length} characters`);
-
-          // Also get document analysis
-          const analysis = await deepSeekService.analyzeDocument(enhancedText, `Vietnamese ID card analysis: ${document.originalName}`);
-
-          deepseekAnalysis = {
-            applied: true,
-            enhancedLength: enhancedText.length,
-            improvements: deepseekImprovements,
-            analysis: analysis
-          };
-        }
-
-      } catch (deepseekError) {
-        console.error('❌ DeepSeek enhancement error for image:', deepseekError);
-        console.warn('⚠️ DeepSeek text enhancement failed, using optimized OCR result');
-        deepseekAnalysis.reason = `Enhancement failed: ${deepseekError instanceof Error ? deepseekError.message : 'Unknown error'}`;
-      }
-
-      ocrResult = {
-        success: true,
-        file_id: document.originalName,
-        text: enhancedText,
-        confidence: enhancedResult.confidence, // Use optimized OCR confidence
-        page_count: 1,
-        processing_time: enhancedResult.processingTime / 1000,
-        metadata: {
-          character_count: enhancedText.length,
-          word_count: enhancedText.split(/\s+/).filter(word => word.length > 0).length,
-          language: 'vie',
-          confidence_threshold: 60.0,
-          processing_timestamp: new Date(),
-          file_size_bytes: document.fileSize,
-          processing_mode: 'optimized-vietnamese-ocr',
-          ocr_method: enhancedResult.method || 'optimized-ocr',
-          deepseek_analysis: deepseekAnalysis,
-          deepseek_improvements: deepseekImprovements,
-          note: 'Optimized OCR processing for Vietnamese text with DeepSeek enhancement'
-        }
-      };
-    }
-
-    // Update progress: Completing
-    ocrProgressTracker.updateProgress(progressId, 'completing', 5, 'Processing completed successfully!');
-    console.log('✅ DeepSeek API processing completed successfully');
-
-  } catch (deepseekError) {
-    console.warn('⚠️ DeepSeek API processing failed, trying direct OCR fallback...');
-    console.error('DeepSeek error:', deepseekError instanceof Error ? deepseekError.message : deepseekError);
-
-    // Update progress: Fallback
-    ocrProgressTracker.updateProgress(progressId, 'extracting', 3, 'Reliable OCR failed, using optimized OCR...');
-
-    // Optimized OCR fallback
+  // Primary workflow: DeepSeek API processing
+  if (process.env.OPENAI_API_KEY) {
+    console.log('🤖 Starting DeepSeek API document processing...');
+    
     try {
-      const optimizedResult = await optimizedOCRProcessor.processDocument(filePath);
-
+      // First extract text using direct OCR for DeepSeek analysis
+      const directResult = await directOCRProcessor.processDocument(filePath);
+      
+      // Then enhance with DeepSeek analysis
+      const deepseekAnalysis = await deepSeekService.analyzeDocument(
+        directResult.extractedText, 
+        "Vietnamese government document analysis"
+      );
+      
       ocrResult = {
         success: true,
         file_id: document.originalName,
-        text: optimizedResult.extractedText,
-        confidence: optimizedResult.confidence,
-        page_count: optimizedResult.pageCount,
-        processing_time: optimizedResult.processingTime / 1000,
+        text: directResult.extractedText,
+        confidence: directResult.confidence,
+        page_count: directResult.pageCount,
+        processing_time: directResult.processingTime / 1000,
         metadata: {
-          character_count: optimizedResult.extractedText.length,
-          word_count: optimizedResult.extractedText.split(/\s+/).filter(word => word.length > 0).length,
+          character_count: directResult.extractedText.length,
+          word_count: directResult.extractedText.split(/\s+/).filter(word => word.length > 0).length,
           language: 'vie',
           confidence_threshold: 60.0,
           processing_timestamp: new Date(),
           file_size_bytes: document.fileSize,
-          processing_mode: 'optimized-fallback',
-          note: 'Processed with optimized OCR (Reliable OCR unavailable)'
+          processing_mode: 'deepseek-api',
+          deepseek_analysis: deepseekAnalysis,
+          note: 'Processed with DeepSeek API workflow'
         }
       };
-
-      ocrProgressTracker.updateProgress(progressId, 'completing', 5, 'Optimized OCR completed');
-    } catch (optimizedError: any) {
-      ocrProgressTracker.completeTracking(progressId, false, { error: optimizedError.message });
-      throw new Error('OCR processing failed: ' + (optimizedError.message || 'Unknown error'));
+      
+      console.log('✅ DeepSeek API processing completed successfully');
+      
+    } catch (deepseekError) {
+      console.warn('⚠️ DeepSeek API processing failed, trying direct OCR fallback...');
+      console.error('DeepSeek error:', deepseekError instanceof Error ? deepseekError.message : deepseekError);
+      
+      // Direct OCR fallback
+      try {
+        const directResult = await directOCRProcessor.processDocument(filePath);
+        
+        ocrResult = {
+          success: true,
+          file_id: document.originalName,
+          text: directResult.extractedText,
+          confidence: directResult.confidence,
+          page_count: directResult.pageCount,
+          processing_time: directResult.processingTime / 1000,
+          metadata: {
+            character_count: directResult.extractedText.length,
+            word_count: directResult.extractedText.split(/\s+/).filter(word => word.length > 0).length,
+            language: 'vie',
+            confidence_threshold: 60.0,
+            processing_timestamp: new Date(),
+            file_size_bytes: document.fileSize,
+            processing_mode: 'direct-fallback',
+            note: 'Processed with direct OCR (DeepSeek unavailable)'
+          }
+        };
+      } catch (directError: any) {
+        throw new Error('OCR processing failed: ' + (directError.message || 'Unknown error'));
+      }
+    }
+  } else {
+    console.log('⚠️ No DeepSeek API key available, using direct OCR fallback...');
+    
+    try {
+      const directResult = await directOCRProcessor.processDocument(filePath);
+      
+      ocrResult = {
+        success: true,
+        file_id: document.originalName,
+        text: directResult.extractedText,
+        confidence: directResult.confidence,
+        page_count: directResult.pageCount,
+        processing_time: directResult.processingTime / 1000,
+        metadata: {
+          character_count: directResult.extractedText.length,
+          word_count: directResult.extractedText.split(/\s+/).filter(word => word.length > 0).length,
+          language: 'vie',
+          confidence_threshold: 60.0,
+          processing_timestamp: new Date(),
+          file_size_bytes: document.fileSize,
+          processing_mode: 'direct-fallback',
+          note: 'Processed with direct OCR (no API key)'
+        }
+      };
+    } catch (directError: any) {
+      throw new Error('OCR processing failed: ' + (directError.message || 'Unknown error'));
     }
   }
 
@@ -357,7 +165,6 @@ async function processFileWithFallback(filePath: string, document: any, document
     processingMode: ocrResult.metadata?.processing_mode || 'direct-fallback',
     processingTime: ocrResult.processing_time || 0,
     deepseekAnalysis: deepseekAnalysis,
-    deepseekImprovements: ocrResult.metadata?.deepseek_improvements || [],
     documentType: 'Unknown Document'
   };
 
@@ -368,13 +175,6 @@ async function processFileWithFallback(filePath: string, document: any, document
     confidence,
     extractedText,
     structuredData: JSON.stringify(structuredData),
-  });
-
-  // Complete progress tracking
-  ocrProgressTracker.completeTracking(progressId, true, {
-    totalCharacters: extractedText.length,
-    confidence: Math.round(confidence * 100),
-    improvements: ocrResult.metadata?.deepseek_improvements?.length || 0
   });
 
   // Log successful processing
@@ -393,91 +193,24 @@ async function processFileWithFallback(filePath: string, document: any, document
 export async function registerRoutes(app: Express): Promise<Server> {
   // Initialize database with default user
   await initializeDatabase();
-
-  // CORS configuration for deployment
-  app.use((req, res, next) => {
-    const allowedOrigins = [
-      'http://localhost:5000',
-      'http://localhost:3000', 
-      'https://ocr-app.replit.app',
-      'https://replit.app'
-    ];
-
-    const origin = req.headers.origin;
-    if (allowedOrigins.includes(origin as string)) {
-      res.setHeader('Access-Control-Allow-Origin', origin as string);
-    }
-
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-
-    if (req.method === 'OPTIONS') {
-      res.sendStatus(200);
-      return;
-    }
-
-    next();
-  });
-
-  // Apply security headers with deployment-friendly settings
+  
+  // Apply security headers
   app.use(helmet({
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
         scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-        imgSrc: ["'self'", "data:", "blob:", "http://localhost:5000", "http://localhost:3000", "https://ocr-app.replit.app"],
-        connectSrc: ["'self'", "ws:", "wss:", "http://localhost:8001", "https://ocr-app.replit.app"],
+        imgSrc: ["'self'", "data:", "blob:", "http://localhost:5000", "http://localhost:3000"],
+        connectSrc: ["'self'", "ws:", "wss:", "http://localhost:8001"],
         fontSrc: ["'self'", "data:"],
-        frameAncestors: ["'self'", "vscode-webview:", "https://vscode-cdn.net", "https://replit.app"],
-        frameSrc: ["'self'", "data:", "blob:"],
-        objectSrc: ["'self'", "data:", "blob:"],
+        frameAncestors: ["'self'", "vscode-webview:", "https://vscode-cdn.net"],
+        frameSrc: ["'self'"],
+        objectSrc: ["'none'"],
         upgradeInsecureRequests: [],
       },
     },
   }));
-
-  // Cleanup endpoint to handle missing files
-  app.post("/api/documents/cleanup-missing", async (req, res) => {
-    try {
-      const documents = await storage.getAllDocuments();
-      const missingFiles = [];
-
-      for (const doc of documents) {
-        const filePath = path.join('/home/runner/uploads', doc.filename);
-        try {
-          await fs.access(filePath);
-        } catch (error) {
-          missingFiles.push({
-            id: doc.id,
-            filename: doc.filename,
-            originalName: doc.originalName,
-            status: doc.processingStatus
-          });
-
-          // Update status to failed if not already completed
-          if (doc.processingStatus !== 'completed') {
-            await storage.updateDocument(doc.id, {
-              processingStatus: 'failed',
-              errorMessage: 'File missing from uploads directory'
-            });
-          }
-        }
-      }
-
-      console.log(`🧹 Cleanup found ${missingFiles.length} missing files`);
-      res.json({
-        success: true,
-        missingFiles,
-        message: `Found and updated ${missingFiles.length} missing files`
-      });
-
-    } catch (error) {
-      console.error('Cleanup error:', error);
-      res.status(500).json({ message: "Cleanup failed" });
-    }
-  });
 
   // Document upload endpoint
   app.post("/api/documents/upload", upload.single('file'), async (req, res) => {
@@ -487,162 +220,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const userId = 1; // Default user ID
-      const forceReprocess = req.body.forceReprocess === 'true'; // Allow bypassing duplicate detection
 
-      // Check for duplicate files (unless force reprocess is enabled)
-      if (!forceReprocess) {
-        // Fix encoding issues for Vietnamese filenames
-        const originalNameUtf8 = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+      // Upload file to R2 cloud storage
+      const fileBuffer = req.file.buffer;
+      const uniqueFilename = `${Date.now()}-${Date.now()}-${req.file.originalname}`;
 
-        const existingDocument = await storage.findDuplicateDocument(
-          originalNameUtf8,
-          req.file.size,
-          req.file.mimetype,
-          userId
-        );
+      console.log(`📤 Uploading file: ${req.file.originalname} (${fileBuffer.length} bytes) to R2 cloud storage`);
 
-        if (existingDocument) {
-          // Check if the existing file actually exists in storage (R2 or local)
-          let fileExists = false;
+      const uploadResult = await storageService.uploadFile(
+        fileBuffer,
+        uniqueFilename,
+        req.file.originalname,
+        req.file.mimetype
+      );
 
-          try {
-            if (existingDocument.storageType === 'r2') {
-              // Check R2 storage
-              try {
-                const { metadata } = await storageService.downloadFile(existingDocument.filename);
-                if (!metadata) throw new Error('File not found in R2');
-                fileExists = true;
-                console.log(`✅ Existing R2 file found: ${existingDocument.filename}`);
-              } catch (r2Error) {
-                console.warn(`⚠️ Existing R2 file missing: ${existingDocument.filename}`);
-                fileExists = false;
-              }
-            } else {
-              // Check local storage (legacy files)
-              const existingFilePath = path.join('/home/runner/uploads', existingDocument.filename);
-              await fs.access(existingFilePath);
-              fileExists = true;
-              console.log(`✅ Existing local file found: ${existingFilePath}`);
-            }
-          } catch (fileError) {
-            console.warn(`⚠️ Existing file missing in storage`);
-            fileExists = false;
-          }
-
-          if (fileExists) {
-            // Original file exists, use duplicate detection
-            try {
-              await fs.unlink(req.file.path);
-            } catch (unlinkError) {
-              console.warn('Failed to delete duplicate file:', unlinkError);
-            }
-
-            await storage.createAuditLog({
-              userId,
-              action: `Duplicate file detected: ${originalNameUtf8} (${req.file.size} bytes) - using existing document`,
-              documentId: existingDocument.id,
-              ipAddress: req.ip,
-              userAgent: req.get('User-Agent'),
-            });
-
-            console.log(`📋 Duplicate file detected: ${originalNameUtf8} - using existing document ${existingDocument.id}`);
-            console.log(`📊 Existing document details:`, {
-              id: existingDocument.id,
-              originalName: existingDocument.originalName,
-              uploadedAt: existingDocument.uploadedAt,
-              processingStatus: existingDocument.processingStatus,
-              processingCompletedAt: existingDocument.processingCompletedAt
-            });
-
-            return res.json({
-              ...existingDocument,
-              isDuplicate: true,
-              message: `File "${originalNameUtf8}" already exists on server. Using existing document (ID: ${existingDocument.id}) from ${new Date(existingDocument.uploadedAt).toLocaleString()}.`
-            });
-          } else {
-            // Original file is missing, update the existing record with new file
-            const newFilename = req.file.filename;
-            await storage.updateDocument(existingDocument.id, { 
-              filename: newFilename,
-              processingStatus: 'pending'
-            });
-
-            await storage.createAuditLog({
-              userId,
-              action: `Replaced missing file for existing document: ${originalNameUtf8} - new file: ${newFilename}`,
-              documentId: existingDocument.id,
-              ipAddress: req.ip,
-              userAgent: req.get('User-Agent'),
-            });
-
-            console.log(`🔄 Replaced missing file for document ${existingDocument.id}: ${originalNameUtf8}`);
-            console.log(`📁 New file: ${newFilename}`);
-
-            // Return the updated document
-            const updatedDocument = await storage.getDocument(existingDocument.id);
-            return res.json({
-              ...updatedDocument,
-              isReplacement: true,
-              message: `File "${originalNameUtf8}" was missing. Updated existing document (ID: ${existingDocument.id}) with new file.`
-            });
-          }
-        }
-      }
-
-      if (forceReprocess) {
-        const originalNameUtf8 = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
-        console.log(`🔄 Force reprocessing enabled for: ${originalNameUtf8}`);
-      }
-
-      // Fix encoding for Vietnamese filenames
-      const originalNameUtf8 = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
-
-      // Upload file using hybrid storage service (R2 or local)
-      let uploadResult;
-      const fileBuffer = await fs.readFile(req.file.path);
-
-      try {
-        console.log(`📤 Uploading file: ${originalNameUtf8} (${fileBuffer.length} bytes) using ${storageService.getStorageType()} storage`);
-
-        uploadResult = await storageService.uploadFile(
-          fileBuffer,
-          req.file.filename,
-          originalNameUtf8,
-          req.file.mimetype
-        );
-
-        console.log(`✅ File uploaded successfully to ${storageService.getStorageType()}: ${uploadResult.key}`);
-
-        // Clean up temp file
-        try {
-          await fs.unlink(req.file.path);
-        } catch (unlinkError) {
-          console.warn('Failed to delete temp file:', unlinkError);
-        }
-      } catch (uploadError) {
-        console.error(`❌ ${storageService.getStorageType()} upload failed:`, uploadError);
-
-        // Clean up temp file on error
-        try {
-          await fs.unlink(req.file.path);
-        } catch {
-          // Ignore cleanup errors
-        }
-
-        return res.status(500).json({ 
-          message: `File upload failed using ${storageService.getStorageType()} storage`,
-          details: uploadError instanceof Error ? uploadError.message : 'Unknown error'
-        });
-      }
+      console.log(`✅ File uploaded successfully to R2: ${uploadResult.key}`);
 
       const documentData = {
-        filename: uploadResult.key, // Use R2 key or local filename
-        originalName: originalNameUtf8,
+        filename: uploadResult.key,
+        originalName: req.file.originalname,
         fileSize: uploadResult.metadata.size,
         mimeType: uploadResult.metadata.contentType,
         userId,
         processingStatus: 'pending' as const,
-        storageType: storageService.getStorageType(), // Track storage type
+        storageType: 'r2',
       };
 
       const document = await storage.createDocument(documentData);
@@ -650,101 +251,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Log upload
       await storage.createAuditLog({
         userId,
-        action: `Document uploaded: ${originalNameUtf8} (${uploadResult.metadata.size} bytes) via ${storageService.getStorageType()}`,
+        action: `Document uploaded: ${req.file.originalname} (${uploadResult.metadata.size} bytes) via R2 cloud storage`,
         documentId: document.id,
         ipAddress: req.ip,
         userAgent: req.get('User-Agent'),
-      });
-
-      // Automatically start OCR processing after upload (background)
-      console.log(`🚀 Auto-starting OCR processing for document ${document.id}: ${document.originalName}...`);
-
-      // Process in background without blocking the response
-      setImmediate(async () => {
-        // Get file for processing (from R2 or local storage)
-        let filePath: string;
-        let tempFileCleanup: (() => Promise<void>) | null = null;
-
-        try {
-
-          try {
-            if (document.storageType === 'r2') {
-              // Download from R2 to temp file for processing (preserve file extension)
-              const tempDir = '/tmp';
-              const originalExt = path.extname(document.originalName) || path.extname(document.filename);
-              const tempFileName = `ocr-temp-${document.id}-${Date.now()}${originalExt}`;
-              filePath = path.join(tempDir, tempFileName);
-
-              console.log(`🔧 Debug: originalName="${document.originalName}", filename="${document.filename}", ext="${originalExt}", tempPath="${filePath}"`);
-
-              const { stream } = await storageService.downloadFile(document.filename);
-
-              // Write stream to temp file
-              const writeStream = fsSync.createWriteStream(filePath);
-              await new Promise((resolve, reject) => {
-                stream.pipe(writeStream);
-                stream.on('end', resolve);
-                stream.on('error', reject);
-              });
-
-              // Set up cleanup function
-              tempFileCleanup = async () => {
-                try {
-                  await fs.unlink(filePath);
-                  console.log(`🧹 Cleaned up temp file: ${filePath}`);
-                } catch {
-                  // Ignore cleanup errors
-                }
-              };
-
-              console.log(`📥 Downloaded R2 file to temp: ${filePath}`);
-            } else {
-              // Use local file path
-              filePath = path.join('/home/runner/uploads', document.filename);
-
-              // Check if file actually exists
-              await fs.access(filePath);
-              console.log(`📂 Local file exists: ${filePath}`);
-            }
-          } catch (fileError) {
-            console.error(`❌ File not found for auto-processing: ${document.filename}`, fileError);
-            await storage.updateDocument(document.id, { processingStatus: 'failed', errorMessage: 'File not found' });
-            return;
-          }
-
-          // Update status to processing
-          await storage.updateDocument(document.id, { processingStatus: 'processing' });
-
-          // Process the document (create mock req object for auto-processing)
-          const mockReq = { 
-            ip: '127.0.0.1', 
-            get: () => 'Auto-processing',
-            params: { id: document.id.toString() }
-          };
-          const mockRes = {
-            json: (data: any) => {
-              console.log(`✅ Auto-processing result for document ${document.id}:`, data.success ? 'Success' : 'Failed');
-            },
-            status: (code: number) => ({ json: (data: any) => console.log(`❌ Auto-processing error ${code}:`, data) })
-          };
-          await processFileWithFallback(filePath, document, document.id, userId, mockReq as any, mockRes as any);
-
-          console.log(`✅ Auto-processing completed for document ${document.id}: ${document.originalName}`);
-
-        } catch (error) {
-          console.error(`❌ Auto-processing failed for document ${document.id}:`, error);
-
-          // Update status to failed with error details
-          await storage.updateDocument(document.id, { 
-            processingStatus: 'failed', 
-            errorMessage: error instanceof Error ? error.message : 'Unknown error'
-          });
-        } finally {
-          // Clean up temp file if it was created
-          if (tempFileCleanup) {
-            await tempFileCleanup();
-          }
-        }
       });
 
       res.json(document);
@@ -754,116 +264,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Process document with OCR
+  // Document processing endpoint
   app.post("/api/documents/:id/process", async (req, res) => {
-    try {
-      const documentId = parseInt(req.params.id);
-      console.log(`🔤 Starting OCR processing for document ${documentId}`);
-
-      const document = await storage.getDocument(documentId);
-      if (!document) {
-        return res.status(404).json({ success: false, error: "Document not found" });
-      }
-
-      let result;
-      let processingMethod = "unknown";
-
-      // Force local processing for immediate testing (skip Python services)
-      try {
-        console.log('🔄 Using local OCR processing (Python services disabled for testing)...');
-
-        // Fallback to local Enhanced Tesseract Processing
-        try {
-          console.log('🔄 Using local Enhanced Tesseract processor...');
-          const { EnhancedTesseractProcessor } = require('./enhanced-tesseract-processor');
-          const processor = new EnhancedTesseractProcessor();
-          result = await processor.processDocument(document.filename);
-          processingMethod = "local-enhanced-tesseract";
-        } catch (enhancedError) {
-          console.warn('⚠️ Enhanced Tesseract failed, using reliable processor:', enhancedError.message);
-
-          // Final fallback to Reliable OCR Processor
-          const { ReliableOCRProcessor } = require('./reliable-ocr-processor');
-          const processor = new ReliableOCRProcessor();
-          result = await processor.processDocument(document.filename);
-          processingMethod = "local-reliable-ocr";
-        }
-      } catch (pythonError) {
-        console.warn('⚠️ Python OCR service unavailable, falling back to local processing:', pythonError.message);
-      }
-
-      // Text reconstruction with DeepSeek
-      let structuredData: any = { processingMethod };
-      let enhancedText = result.extractedText;
-
-      if (process.env.OPENAI_API_KEY && result.extractedText?.length > 10) {
-        try {
-          console.log('🤖 Applying DeepSeek text reconstruction...');
-          const { DeepSeekService } = require('./deepseek-service');
-          const deepSeekService = new DeepSeekService();
-          const reconstruction = await deepSeekService.reconstructText(result.extractedText);
-
-          if (reconstruction.success && reconstruction.improvedText) {
-            enhancedText = reconstruction.improvedText;
-            structuredData.text_reconstruction = {
-              applied: true,
-              confidence: reconstruction.confidence,
-              improvements: reconstruction.improvements,
-              original_length: result.extractedText.length,
-              enhanced_length: enhancedText.length
-            };
-            console.log(`✨ Text reconstruction applied: ${reconstruction.confidence}% confidence`);
-          }
-        } catch (deepSeekError) {
-          console.warn('⚠️ DeepSeek reconstruction failed:', deepSeekError.message);
-          structuredData.text_reconstruction = {
-            applied: false,
-            error: deepSeekError.message
-          };
-        }
-      }
-
-      // Prepare structured data
-      structuredData = {
-        ...structuredData,
-        pageCount: result.pageCount || 1,
-        characterCount: enhancedText.length,
-        wordCount: enhancedText.split(/\s+/).filter(word => word.length > 0).length,
-        language: 'Vietnamese',
-        confidence_threshold: 60.0,
-        processing_timestamp: new Date(),
-        file_size_bytes: document.filename,
-        processing_mode: processingMethod,
-        note: 'Processed with local OCR'
-      };
-
-      // Update document with processing results
-      const confidence = result.confidence;
-      await storage.updateDocument(documentId, {
-        processingStatus: 'completed',
-        processingCompletedAt: new Date(),
-        confidence,
-        extractedText: enhancedText,
-        structuredData: JSON.stringify(structuredData),
-      });
-
-      res.json({
-        success: true,
-        document: await storage.getDocument(documentId),
-      });
-
-    } catch (error) {
-      console.error('Processing error:', error);
-      res.status(500).json({
-        success: false,
-        error: "OCR processing failed",
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  });
-
-  // Vietnamese Receipt OCR Processing endpoint
-  app.post("/api/documents/:id/process-receipt", async (req, res) => {
     try {
       const documentId = parseInt(req.params.id);
       const userId = 1; // Default user ID
@@ -879,84 +281,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         processingStartedAt: new Date(),
       });
 
-      const filePath = path.join(uploadsDir, document.filename);
+      // Download R2 file to temp location for processing
+      const tempDir = '/tmp';
+      const originalExt = path.extname(document.originalName) || path.extname(document.filename);
+      const tempFileName = `ocr-temp-${documentId}-${Date.now()}${originalExt}`;
+      const filePath = path.join(tempDir, tempFileName);
 
-      console.log(`🧾 Processing document as Vietnamese receipt: ${document.originalName}`);
+      console.log(`📥 Downloading R2 file for processing: ${document.filename}`);
+      const { stream } = await storageService.downloadFile(document.filename);
+      const writeStream = require('fs').createWriteStream(filePath);
+      await new Promise((resolve, reject) => {
+        stream.pipe(writeStream);
+        stream.on('end', resolve);
+        stream.on('error', reject);
+      });
 
-      // Use enhanced Tesseract processor for stable processing
-      const receiptResult = await enhancedTesseractProcessor.processDocument(filePath);
+      // Process the file with DeepSeek API workflow
+      await processFileWithFallback(filePath, document, documentId, userId, req, res);
 
-      // Process with DeepSeek enhancement if API key available
-      let enhancedText = receiptResult.extractedText;
-      let deepseekAnalysis = { applied: false, reason: 'No API key available' };
-
-      if (process.env.OPENAI_API_KEY) {
-        try {
-          deepseekAnalysis = await deepSeekService.analyzeDocument(
-            receiptResult.extractedText, 
-            "Vietnamese receipt analysis and data extraction"
-          );
-          if ((deepseekAnalysis as any).improvedText) {
-            enhancedText = (deepseekAnalysis as any).improvedText;
-          }
-          deepseekAnalysis.applied = true;
-        } catch (error) {
-          console.warn('DeepSeek enhancement failed:', error);
-          deepseekAnalysis = { applied: false, reason: 'DeepSeek processing failed' };
-        }
+      // Clean up temp file
+      try {
+        await require('fs').promises.unlink(filePath);
+      } catch (cleanupError) {
+        console.warn('Failed to cleanup temp file:', cleanupError);
       }
 
-      // Prepare comprehensive structured data for receipts
-      const structuredData = {
-        pageCount: receiptResult.pageCount,
-        characterCount: enhancedText.length,
-        wordCount: enhancedText.split(/\s+/).filter((word: string) => word.length > 0).length,
-        language: 'Vietnamese',
-        processingMode: 'vietnamese-receipt-ocr',
-        processingTime: receiptResult.processingTime,
-        deepseekAnalysis,
-        documentType: 'Vietnamese Receipt',
-        isReceiptDocument: true,
-        preprocessingSteps: receiptResult.preprocessingSteps,
-        // Receipt-specific data
-        receiptData: receiptResult.structuredData || {},
-        storeName: receiptResult.structuredData?.storeName,
-        receiptTotal: receiptResult.structuredData?.total,
-        receiptDate: receiptResult.structuredData?.date,
-        receiptPhone: receiptResult.structuredData?.phone,
-        itemCount: receiptResult.structuredData?.items?.length || 0,
-        receiptItems: receiptResult.structuredData?.items || []
-      };
-
-      // Update document with processing results
-      const confidence = receiptResult.confidence;
-      await storage.updateDocument(documentId, {
-        processingStatus: 'completed',
-        processingCompletedAt: new Date(),
-        processedAt: new Date(), // Ensure processedAt is set to current time
-        confidence,
-        extractedText: enhancedText,
-        structuredData: JSON.stringify(structuredData),
-      });
-
-      // Log successful processing
-      await storage.createAuditLog({
-        userId,
-        action: `Vietnamese receipt processing completed: ${document.originalName} (${confidence}% confidence)`,
-        documentId,
-        ipAddress: req.ip,
-        userAgent: req.get('User-Agent'),
-      });
-
-      res.json({
-        success: true,
-        document: await storage.getDocument(documentId),
-        receiptData: structuredData.receiptData
-      });
-
     } catch (error) {
-      console.error('Receipt processing error:', error);
-
+      console.error('Processing error:', error);
+      
       // Update document status to failed
       const documentId = parseInt(req.params.id);
       await storage.updateDocument(documentId, {
@@ -966,325 +318,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.status(500).json({
         success: false,
-        error: "Receipt processing failed",
+        error: "Enhanced processing failed",
         details: error instanceof Error ? error.message : 'Unknown error',
-      });
-    }
-  });
-
-
-  // Debug PDF content endpoint
-  app.get("/api/documents/:id/debug", async (req, res) => {
-    try {
-      const documentId = parseInt(req.params.id);
-      const document = await storage.getDocument(documentId);
-
-      if (!document) {
-        return res.status(404).json({ message: "Document not found" });
-      }
-
-      const filePath = path.join(uploadsDir, document.filename);
-
-      if (!fsSync.existsSync(filePath)) {
-        return res.status(404).json({ message: "File not found" });
-      }
-
-      // Try to extract basic PDF information
-      try {
-        const dataBuffer = await fs.readFile(filePath);
-        // Import pdf-parse dynamically  
-        const pdfParse = (await import('pdf-parse')).default;
-        const pdfData = await pdfParse(dataBuffer);
-
-        const debugInfo = {
-          filename: document.originalName,
-          fileSize: document.fileSize,
-          mimeType: document.mimeType,
-          pdfInfo: {
-            numPages: pdfData.numpages,
-            textLength: pdfData.text.length,
-            hasText: pdfData.text.length > 50,
-            firstChars: pdfData.text.substring(0, 500),
-            metadata: pdfData.metadata || {}
-          },
-          processingStatus: document.processingStatus,
-          lastError: document.errorMessage
-        };
-
-        res.json({
-          success: true,
-          debugInfo
-        });
-
-      } catch (pdfError) {
-        res.json({
-          success: false,
-          error: `PDF parsing failed: ${pdfError instanceof Error ? pdfError.message : 'Unknown error'}`,
-          fileInfo: {
-            filename: document.originalName,
-            fileSize: document.fileSize,
-            mimeType: document.mimeType,
-            processingStatus: document.processingStatus,
-            lastError: document.errorMessage
-          }
-        });
-      }
-    } catch (error) {
-      console.error('Debug endpoint error:', error);
-      res.status(500).json({ 
-        success: false, 
-        error: "Failed to debug document" 
-      });
-    }
-  });
-
-  // Tesseract Training API Endpoints
-
-  // Start training session
-  app.post("/api/training/start", async (req, res) => {
-    try {
-      const { sessionName, documentIds } = req.body;
-
-      if (!sessionName || !documentIds || !Array.isArray(documentIds)) {
-        return res.status(400).json({
-          success: false,
-          error: "Missing required fields: sessionName and documentIds"
-        });
-      }
-
-      // Validate documents before training
-      const validation = await trainingPipeline.validateDocumentsForTraining(documentIds);
-
-      if (validation.suitable.length < 5) {
-        return res.status(400).json({
-          success: false,
-          error: "Insufficient suitable documents for training",
-          validation
-        });
-      }
-
-      const sessionId = await trainingPipeline.startTrainingSession(sessionName, validation.suitable);
-
-      res.json({
-        success: true,
-        sessionId,
-        validation,
-        message: `Training session started with ${validation.suitable.length} documents`
-      });
-
-    } catch (error) {
-      console.error('Training start error:', error);
-      res.status(500).json({
-        success: false,
-        error: "Failed to start training session",
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  });
-
-  // Get training session status
-  app.get("/api/training/sessions/:sessionId", async (req, res) => {
-    try {
-      const { sessionId } = req.params;
-      const session = trainingPipeline.getSessionStatus(sessionId);
-
-      if (!session) {
-        return res.status(404).json({
-          success: false,
-          error: "Training session not found"
-        });
-      }
-
-      res.json({
-        success: true,
-        session
-      });
-
-    } catch (error) {
-      console.error('Get training session error:', error);
-      res.status(500).json({
-        success: false,
-        error: "Failed to get training session status"
-      });
-    }
-  });
-
-  // List all training sessions
-  app.get("/api/training/sessions", async (req, res) => {
-    try {
-      const sessions = trainingPipeline.getAllSessions();
-
-      res.json({
-        success: true,
-        sessions: sessions.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-      });
-
-    } catch (error) {
-      console.error('List training sessions error:', error);
-      res.status(500).json({
-        success: false,
-        error: "Failed to list training sessions"
-      });
-    }
-  });
-
-  // Install trained model
-  app.post("/api/training/install/:sessionId", async (req, res) => {
-    try {
-      const { sessionId } = req.params;
-
-      await trainingPipeline.installModel(sessionId);
-
-      res.json({
-        success: true,
-        message: "Improved Vietnamese model installed successfully"
-      });
-
-    } catch (error) {
-      console.error('Model installation error:', error);
-      res.status(500).json({
-        success: false,
-        error: "Failed to install model",
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  });
-
-  // Validate documents for training
-  app.post("/api/training/validate", async (req, res) => {
-    try {
-      const { documentIds } = req.body;
-
-      if (!documentIds || !Array.isArray(documentIds)) {
-        return res.status(400).json({
-          success: false,
-          error: "documentIds array is required"
-        });
-      }
-
-      const validation = await trainingPipeline.validateDocumentsForTraining(documentIds);
-
-      res.json({
-        success: true,
-        validation
-      });
-
-    } catch (error) {
-      console.error('Document validation error:', error);
-      res.status(500).json({
-        success: false,
-        error: "Failed to validate documents"
-      });
-    }
-  });
-
-  // Get training workflow guide
-  app.get("/api/training/guide", async (req, res) => {
-    try {
-      const guide = await trainingPipeline.createSimpleTrainingWorkflow();
-
-      res.json({
-        success: true,
-        guide
-      });
-
-    } catch (error) {
-      console.error('Get training guide error:', error);
-      res.status(500).json({
-        success: false,
-        error: "Failed to get training guide"
-      });
-    }
-  });
-
-
-  // Text reconstruction endpoint for testing
-  app.post("/api/ocr/reconstruct-text", async (req, res) => {
-    try {
-      const { rawText } = req.body;
-
-      if (!rawText || typeof rawText !== 'string') {
-        return res.status(400).json({
-          success: false,
-          error: "rawText is required and must be a string"
-        });
-      }
-
-      if (!process.env.OPENAI_API_KEY) {
-        return res.status(503).json({
-          success: false,
-          error: "DeepSeek API key not configured"
-        });
-      }
-
-      const reconstruction = await deepSeekService.reconstructVietnameseText(rawText);
-
-      res.json({
-        success: true,
-        original_text: rawText,
-        ...reconstruction
-      });
-
-    } catch (error) {
-      console.error('Text reconstruction error:', error);
-      res.status(500).json({
-        success: false,
-        error: "Text reconstruction failed",
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  });
-
-  // OCR engines status endpoint
-  app.get("/api/ocr/status", async (req, res) => {
-    try {
-      const abbyyHealth = await abbyyOCRProcessor.healthCheck();
-
-      const status = {
-        engines: {
-          abbyy: {
-            available: abbyyHealth.status === 'healthy',
-            status: abbyyHealth.status,
-            details: abbyyHealth.details
-          },
-          tesseract: {
-            available: true, // Tesseract is always available in this environment
-            status: 'healthy',
-            details: {
-              optimized_for_vietnamese: true,
-              id_card_support: true,
-              psm_configurations: [3, 6, 8, 13]
-            }
-          },
-          deepseek_text_reconstruction: {
-            available: !!process.env.OPENAI_API_KEY,
-            status: process.env.OPENAI_API_KEY ? 'healthy' : 'unavailable',
-            details: {
-              purpose: 'Vietnamese administrative text reconstruction',
-              improvements: ['Fix OCR errors', 'Standardize legal terminology', 'Correct formatting']
-            }
-          }
-        },
-        recommendations: {
-          id_cards: abbyyHealth.status === 'healthy' ? 'ABBYY (preferred) or Tesseract PSM 6' : 'Tesseract PSM 6',
-          receipts: 'Vietnamese Receipt Processor',
-          documents: abbyyHealth.status === 'healthy' ? 'ABBYY (preferred) or Tesseract' : 'Tesseract',
-          parallel_processing: abbyyHealth.status === 'healthy',
-          text_reconstruction: !!process.env.OPENAI_API_KEY
-        }
-      };
-
-      res.json({
-        success: true,
-        ...status
-      });
-
-    } catch (error) {
-      console.error('OCR status check error:', error);
-      res.status(500).json({
-        success: false,
-        error: "OCR status check failed",
-        details: error instanceof Error ? error.message : 'Unknown error'
+        step: "unknown"
       });
     }
   });
@@ -1305,11 +341,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const documentId = parseInt(req.params.id);
       const document = await storage.getDocument(documentId);
-
+      
       if (!document) {
         return res.status(404).json({ message: "Document not found" });
       }
-
+      
       res.json(document);
     } catch (error) {
       console.error('Get document error:', error);
@@ -1322,258 +358,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const documentId = parseInt(req.params.id);
       const document = await storage.getDocument(documentId);
-
+      
       if (!document) {
         return res.status(404).json({ message: "Document not found" });
       }
 
-      // Handle R2 vs local storage
-      if (document.storageType === 'r2') {
-        try {
-          const { stream, metadata } = await storageService.downloadFile(document.filename);
+      // Download R2 file to temp location for serving
+      const tempDir = '/tmp';
+      const originalExt = path.extname(document.originalName) || path.extname(document.filename);
+      const tempFileName = `serve-temp-${documentId}-${Date.now()}${originalExt}`;
+      const filePath = path.join(tempDir, tempFileName);
 
-          res.setHeader('Content-Type', metadata.contentType);
-          res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
-          res.setHeader('Cache-Control', 'public, max-age=3600');
-          res.setHeader('Content-Length', metadata.size.toString());
-
-          stream.pipe(res);
-          return;
-        } catch (error) {
-          console.error('R2 file serving error:', error);
-          return res.status(404).json({ 
-            message: "File not found in R2 storage",
-            details: `R2 key: ${document.filename}`,
-            suggestion: "File may have been moved or deleted"
-          });
-        }
-      } else {
-        // Local file handling
-        const filePath = path.join(uploadsDir, document.filename);
-
-        // Enhanced file existence check with alternative file search
-        if (!fsSync.existsSync(filePath)) {
-          console.warn(`📁 File not found: ${filePath}, searching for alternatives...`);
-
-          // Try to find an alternative file with same original name
-          try {
-            const uploads = await fs.readdir(uploadsDir);
-            const alternativeFile = uploads.find(filename => 
-              filename.includes(document.originalName.replace(/[^\w\s.-]/g, '')) || 
-              document.originalName.includes(filename.replace(/^\d+-/, '').replace(/[^\w\s.-]/g, ''))
-            );
-
-            if (alternativeFile) {
-              const alternativePath = path.join(uploadsDir, alternativeFile);
-              console.log(`✅ Found alternative file: ${alternativeFile}`);
-
-              // Update document record with correct filename
-              await storage.updateDocument(documentId, { filename: alternativeFile });
-
-              res.setHeader('Content-Type', document.mimeType);
-              res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
-              res.setHeader('Cache-Control', 'no-cache');
-
-              const fileStream = fsSync.createReadStream(alternativePath);
-              fileStream.pipe(res);
-              return;
-            }
-          } catch (searchError) {
-            console.error('Alternative file search failed:', searchError);
-          }
-
-          return res.status(404).json({ 
-            message: "File not found",
-            details: `Missing file: ${document.filename}`,
-            suggestion: "Please re-upload this document"
-          });
-        }
-
-        res.setHeader('Content-Type', document.mimeType);
-        res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
-        res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
-
-        const fileStream = fsSync.createReadStream(filePath);
-        fileStream.pipe(res);
+      const { stream } = await storageService.downloadFile(document.filename);
+      const writeStream = require('fs').createWriteStream(filePath);
+      await new Promise((resolve, reject) => {
+        stream.pipe(writeStream);
+        stream.on('end', resolve);
+        stream.on('error', reject);
+      });
+      
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ message: "File not found" });
       }
+
+      res.setHeader('Content-Type', document.mimeType);
+      res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
+      
+      const fileStream = fs.createReadStream(filePath);
+      fileStream.pipe(res);
     } catch (error) {
       console.error('Get raw document error:', error);
       res.status(500).json({ message: "Failed to fetch document" });
-    }
-  });
-
-  // Get PDF pages as images
-  app.get("/api/documents/:id/pages", async (req, res) => {
-    try {
-      const documentId = parseInt(req.params.id);
-      const document = await storage.getDocument(documentId);
-
-      if (!document) {
-        return res.status(404).json({ message: "Document not found" });
-      }
-
-      // Check if it's a PDF file first
-      const ext = path.extname(document.filename).toLowerCase();
-      if (ext !== '.pdf') {
-        // For non-PDF files, return the raw file as a single "page"
-        const rawUrl = `/api/documents/${documentId}/raw?t=${Date.now()}`;
-        return res.json({
-          success: true,
-          images: [rawUrl],
-          pageCount: 1,
-          message: "Single image file"
-        });
-      }
-
-      // For PDF files only, proceed with page generation
-      console.log(`🖼️ Generating PDF pages for document ${documentId}: ${document.originalName}`);
-
-      // For PDF files, generate page images using ImageMagick
-      const tempDir = `/tmp/pdf_pages_${documentId}_${Date.now()}`;
-      await fs.mkdir(tempDir, { recursive: true });
-
-      // Declare variables outside try block for proper scope
-      let tempPdfCleanup: (() => Promise<void>) | null = null;
-
-      try {
-        // Convert PDF pages to images
-        const outputPattern = path.join(tempDir, 'page-%d.png');
-        // Handle R2 vs local file access for PDF processing
-        let pdfPath: string;
-
-        if (document.storageType === 'r2') {
-          console.log(`📥 Downloading R2 file for PDF conversion: ${document.filename}`);
-          // Download R2 file to temp for PDF processing
-          pdfPath = path.join(tempDir, 'temp.pdf');
-          const { stream } = await storageService.downloadFile(document.filename);
-
-          const writeStream = fsSync.createWriteStream(pdfPath);
-          await new Promise((resolve, reject) => {
-            stream.pipe(writeStream);
-            stream.on('end', resolve);
-            stream.on('error', reject);
-          });
-
-          tempPdfCleanup = async () => {
-            try {
-              await fs.unlink(pdfPath);
-            } catch {}
-          };
-          console.log(`✅ R2 file downloaded for conversion: ${pdfPath}`);
-        } else {
-          // Use local file path directly
-          const filePath = path.join('/home/runner/uploads', document.filename);
-          if (!fsSync.existsSync(filePath)) {
-            return res.status(404).json({ 
-              message: "Local PDF file not found",
-              details: `Local path: ${filePath}`,
-              suggestion: "Please re-upload this document"
-            });
-          }
-          pdfPath = filePath;
-          console.log(`📁 Using local file for conversion: ${pdfPath}`);
-        }
-
-        // Convert PDF to images using ImageMagick directly
-        await convertPDFToImages(pdfPath, outputPattern);
-
-        // Get generated page images
-        const pageFiles = await fs.readdir(tempDir);
-        const pngFiles = pageFiles.filter(f => f.endsWith('.png')).sort();
-
-        if (pngFiles.length === 0) {
-          throw new Error('No pages generated');
-        }
-
-        // Copy pages to public directory for serving
-        const publicPagesDir = path.join(process.cwd(), 'client', 'public', 'pages', documentId.toString());
-        await fs.mkdir(publicPagesDir, { recursive: true });
-
-        const imageUrls = [];
-        for (let i = 0; i < pngFiles.length; i++) {
-          const sourcePath = path.join(tempDir, pngFiles[i]);
-          const destPath = path.join(publicPagesDir, `page-${i + 1}.png`);
-          await fs.copyFile(sourcePath, destPath);
-          imageUrls.push(`/pages/${documentId}/page-${i + 1}.png`);
-        }
-
-        // Clean up temporary directory
-        await fs.rm(tempDir, { recursive: true, force: true });
-
-        res.json({
-          success: true,
-          images: imageUrls,
-          pageCount: pngFiles.length,
-          message: "PDF pages generated successfully"
-        });
-
-        // Clean up temp PDF if downloaded from R2
-        if (tempPdfCleanup) {
-          await tempPdfCleanup();
-        }
-
-      } catch (conversionError) {
-        console.error('PDF page generation failed:', conversionError);
-
-        // Clean up on error
-        await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
-
-        // Clean up temp PDF if downloaded from R2
-        if (tempPdfCleanup) {
-          await tempPdfCleanup();
-        }
-
-        // Return error instead of fallback to avoid confusion
-        res.status(500).json({
-          success: false,
-          error: "PDF page generation failed",
-          details: conversionError instanceof Error ? conversionError.message : 'Unknown error',
-          suggestion: "PDF may be corrupted or ImageMagick conversion failed"
-        });
-      }
-
-    } catch (error) {
-      console.error('Get PDF pages error:', error);
-      res.status(500).json({ message: "Failed to fetch PDF pages" });
-    }
-  });
-
-  // Get document thumbnail endpoint (for EnhancedOCRViewer)
-  app.get("/api/documents/:id/thumbnail", async (req, res) => {
-    try {
-      const documentId = parseInt(req.params.id);
-      const document = await storage.getDocument(documentId);
-
-      if (!document) {
-        return res.status(404).json({ message: "Document not found" });
-      }
-
-      console.log(`🖼️ Serving thumbnail for document ${documentId}: ${document.originalName}`);
-
-      // Check if page images exist for PDF files
-      const ext = path.extname(document.filename).toLowerCase();
-      if (ext === '.pdf') {
-        const publicPagesDir = path.join(process.cwd(), 'client', 'public', 'pages', documentId.toString());
-        const firstPagePath = path.join(publicPagesDir, 'page-1.png');
-
-        if (fsSync.existsSync(firstPagePath)) {
-          console.log(`✅ Found page-1.png, serving thumbnail from: ${firstPagePath}`);
-          res.setHeader('Content-Type', 'image/png');
-          res.setHeader('Cache-Control', 'public, max-age=3600');
-          const fileStream = fsSync.createReadStream(firstPagePath);
-          fileStream.pipe(res);
-          return;
-        } else {
-          console.log(`⚠️ No page images found for PDF ${documentId}, redirecting to raw`);
-        }
-      }
-
-      // For non-PDF files or when page images don't exist, redirect to raw
-      const rawUrl = `/api/documents/${documentId}/raw`;
-      res.redirect(rawUrl);
-    } catch (error) {
-      console.error('Get thumbnail error:', error);
-      res.status(500).json({ message: "Failed to get document thumbnail" });
     }
   });
 
@@ -1588,189 +403,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Get user error:', error);
       res.status(500).json({ message: "Failed to fetch user" });
-    }
-  });
-
-  // Enhanced Vietnamese OCR endpoint
-  app.post('/api/ocr/enhanced-vietnamese', upload.single('file'), async (req, res) => {
-    try {
-      if (!req.file) {
-        return res.status(400).json({
-          success: false,
-          error: 'No file provided'
-        });
-      }
-
-      console.log(`🇻🇳 Enhanced Vietnamese OCR: ${req.file.originalname}`);
-
-      const result = await enhancedVietnameseOCR.processDocument(req.file.path);
-
-      // Clean up uploaded file
-      await fs.unlink(req.file.path).catch(() => {});
-
-      res.json({
-        success: true,
-        ...result
-      });
-
-    } catch (error: any) {
-      console.error('Enhanced Vietnamese OCR error:', error);
-
-      if (req.file?.path) {
-        await fs.unlink(req.file.path).catch(() => {});
-      }
-
-      res.status(500).json({
-        success: false,
-        error: error.message
-      });
-    }
-  });
-
-  // Progress tracking endpoints
-  app.get('/api/documents/:id/progress', async (req, res) => {
-    try {
-      const documentId = req.params.id;
-      const progress = ocrProgressTracker.getProgress(documentId);
-
-      if (!progress) {
-        return res.json({ 
-          documentId, 
-          progress: 0, 
-          stage: 'not_started',
-          currentStep: 'Processing not started',
-          message: 'No active processing found' 
-        });
-      }
-
-      res.json(progress);
-    } catch (error: any) {
-      console.error('Progress tracking error:', error);
-      res.status(500).json({ error: 'Failed to get progress' });
-    }
-  });
-
-  // Server-Sent Events for real-time progress
-  app.get('/api/documents/:id/progress-stream', (req, res) => {
-    const documentId = req.params.id;
-
-    // Set up SSE headers
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Cache-Control'
-    });
-
-    // Send initial progress
-    const initialProgress = ocrProgressTracker.getProgress(documentId);
-    if (initialProgress) {
-      res.write(`data: ${JSON.stringify(initialProgress)}\n\n`);
-    } else {
-      res.write(`data: ${JSON.stringify({
-        documentId,
-        progress: 0,
-        stage: 'not_started',
-        currentStep: 'Waiting for processing to start...',
-        totalSteps: 6,
-        currentStepIndex: 0
-      })}\n\n`);
-    }
-
-    // Listen for progress updates
-    const progressHandler = (progress: any) => {
-      if (progress.documentId === documentId) {
-        res.write(`data: ${JSON.stringify(progress)}\n\n`);
-
-        // Close connection when completed
-        if (progress.stage === 'completing' && progress.progress >= 100) {
-          setTimeout(() => {
-            res.end();
-          }, 2000); // Keep connection open for 2 more seconds
-        }
-      }
-    };
-
-    ocrProgressTracker.on('progress', progressHandler);
-
-    // Handle client disconnect
-    req.on('close', () => {
-      ocrProgressTracker.removeListener('progress', progressHandler);
-      res.end();
-    });
-
-    // Keep-alive ping every 30 seconds
-    const keepAlive = setInterval(() => {
-      res.write(`: keep-alive\n\n`);
-    }, 30000);
-
-    req.on('close', () => {
-      clearInterval(keepAlive);
-    });
-  });
-
-  // Health check endpoint for deployment
-  app.get('/health', (req, res) => {
-    res.json({ 
-      status: 'healthy', 
-      timestamp: new Date().toISOString(),
-      environment: process.env.NODE_ENV || 'development',
-      uptime: process.uptime()
-    });
-  });
-
-  // Serve static files from uploads directory  
-  app.use('/uploads', express.static(uploadsDir));
-
-  // Serve generated PDF page images
-  app.use('/pages', express.static(path.join(process.cwd(), 'client', 'public', 'pages')));
-
-  // R2 Storage cleanup endpoint
-  app.post("/api/cleanup-r2", async (req, res) => {
-    try {
-      console.log("🧹 Starting R2 storage cleanup...");
-
-      // List all files in R2 bucket using the implemented listFiles method
-      const files: any[] = [];
-      if (storageService.useR2 && storageService.r2Storage) {
-        try {
-          const r2Result = await storageService.r2Storage.listFiles();
-          files.push(...r2Result.files.map(f => ({ filename: f.filename })));
-          console.log(`📁 Found ${files.length} files in R2 storage`);
-        } catch (listError) {
-          console.error('❌ Failed to list R2 files:', listError);
-        }
-      } else {
-        console.log('⚠️ R2 not available for cleanup');
-      }
-
-      // Delete each file
-      let deletedCount = 0;
-      for (const file of files) {
-        try {
-          await storageService.deleteFile(file.filename);
-          console.log(`🗑️ Deleted: ${file.filename}`);
-          deletedCount++;
-        } catch (error) {
-          console.error(`❌ Failed to delete ${file.filename}:`, error);
-        }
-      }
-
-      console.log(`✅ R2 cleanup completed: ${deletedCount}/${files.length} files deleted`);
-      res.json({ 
-        success: true, 
-        message: `Deleted ${deletedCount} files from R2 storage`,
-        deletedFiles: deletedCount,
-        totalFiles: files.length
-      });
-
-    } catch (error) {
-      console.error("❌ R2 cleanup failed:", error);
-      res.status(500).json({ 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Unknown error' 
-      });
     }
   });
 
