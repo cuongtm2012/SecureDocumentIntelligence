@@ -5,6 +5,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { promisify } from "util";
+import { spawn } from "child_process";
 import { createWorker } from "tesseract.js";
 import sharp from "sharp";
 import { deepSeekService } from "./deepseek-service";
@@ -427,6 +428,227 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Get user error:', error);
       res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
+
+  // Get PDF pages as images
+  app.get("/api/documents/:id/pages", async (req, res) => {
+    try {
+      const documentId = parseInt(req.params.id);
+      const document = await storage.getDocument(documentId);
+      
+      if (!document) {
+        return res.status(404).json({ message: "Document not found" });
+      }
+
+      // Only process PDF files
+      if (document.mimeType !== 'application/pdf') {
+        return res.json({ 
+          success: false, 
+          message: "Document is not a PDF",
+          images: []
+        });
+      }
+
+      // Download R2 file to temp location for processing
+      const tempDir = '/tmp';
+      const originalExt = path.extname(document.originalName) || path.extname(document.filename);
+      const tempFileName = `pages-temp-${documentId}-${Date.now()}${originalExt}`;
+      const filePath = path.join(tempDir, tempFileName);
+
+      try {
+        const { stream } = await storageService.downloadFile(document.filename);
+        const writeStream = fs.createWriteStream(filePath);
+        await new Promise((resolve, reject) => {
+          stream.pipe(writeStream);
+          stream.on('end', resolve);
+          stream.on('error', reject);
+        });
+
+        // Convert PDF to images
+        const outputDir = path.join(tempDir, `pdf_pages_${documentId}_${Date.now()}`);
+        fs.mkdirSync(outputDir, { recursive: true });
+        
+        const convertArgs = [
+          '-density', '200',
+          '-quality', '90',
+          '-colorspace', 'RGB',
+          filePath,
+          path.join(outputDir, 'page-%d.png')
+        ];
+
+        await new Promise((resolve, reject) => {
+          const convert = spawn('convert', convertArgs);
+          convert.on('close', (code) => {
+            if (code === 0) {
+              resolve(null);
+            } else {
+              reject(new Error(`PDF conversion failed with code ${code}`));
+            }
+          });
+          convert.on('error', reject);
+        });
+
+        // Find generated page images
+        const pageFiles = fs.readdirSync(outputDir)
+          .filter(file => file.startsWith('page-') && file.endsWith('.png'))
+          .sort((a, b) => {
+            const numA = parseInt(a.match(/page-(\d+)\.png/)?.[1] || '0');
+            const numB = parseInt(b.match(/page-(\d+)\.png/)?.[1] || '0');
+            return numA - numB;
+          });
+
+        const imageUrls = pageFiles.map(file => `/api/documents/${documentId}/page/${file}`);
+
+        // Cleanup temp PDF file
+        fs.unlinkSync(filePath);
+
+        res.json({
+          success: true,
+          images: imageUrls,
+          pageCount: pageFiles.length
+        });
+
+      } catch (conversionError) {
+        console.error('PDF conversion error:', conversionError);
+        // Cleanup temp file if it exists
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+        
+        res.json({
+          success: false,
+          message: "Failed to convert PDF to images",
+          images: []
+        });
+      }
+
+    } catch (error) {
+      console.error('Get PDF pages error:', error);
+      res.status(500).json({ message: "Failed to get PDF pages" });
+    }
+  });
+
+  // Get document thumbnail
+  app.get("/api/documents/:id/thumbnail", async (req, res) => {
+    try {
+      const documentId = parseInt(req.params.id);
+      const document = await storage.getDocument(documentId);
+      
+      if (!document) {
+        return res.status(404).json({ message: "Document not found" });
+      }
+
+      // For PDFs, generate thumbnail from first page
+      if (document.mimeType === 'application/pdf') {
+        // Download R2 file to temp location
+        const tempDir = '/tmp';
+        const tempFileName = `thumb-temp-${documentId}-${Date.now()}.pdf`;
+        const filePath = path.join(tempDir, tempFileName);
+        const thumbnailPath = path.join(tempDir, `thumb-${documentId}-${Date.now()}.png`);
+
+        try {
+          const { stream } = await storageService.downloadFile(document.filename);
+          const writeStream = fs.createWriteStream(filePath);
+          await new Promise((resolve, reject) => {
+            stream.pipe(writeStream);
+            stream.on('end', resolve);
+            stream.on('error', reject);
+          });
+
+          // Generate thumbnail from first page
+          const convertArgs = [
+            '-density', '150',
+            '-quality', '90',
+            '-resize', '300x400>',
+            `${filePath}[0]`, // First page only
+            thumbnailPath
+          ];
+
+          await new Promise((resolve, reject) => {
+            const convert = spawn('convert', convertArgs);
+            convert.on('close', (code) => {
+              if (code === 0) {
+                resolve(null);
+              } else {
+                reject(new Error(`Thumbnail generation failed with code ${code}`));
+              }
+            });
+            convert.on('error', reject);
+          });
+
+          // Serve the thumbnail
+          res.setHeader('Content-Type', 'image/png');
+          res.setHeader('Cache-Control', 'public, max-age=3600');
+          const thumbnailStream = fs.createReadStream(thumbnailPath);
+          thumbnailStream.pipe(res);
+
+          // Cleanup temp files after serving
+          thumbnailStream.on('end', () => {
+            if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+            if (fs.existsSync(thumbnailPath)) fs.unlinkSync(thumbnailPath);
+          });
+
+        } catch (error) {
+          console.error('Thumbnail generation error:', error);
+          // Cleanup temp files
+          if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+          if (fs.existsSync(thumbnailPath)) fs.unlinkSync(thumbnailPath);
+          
+          res.status(500).json({ message: "Failed to generate thumbnail" });
+        }
+      } else {
+        // For images, serve the original file as thumbnail
+        const { stream } = await storageService.downloadFile(document.filename);
+        res.setHeader('Content-Type', document.mimeType);
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        stream.pipe(res);
+      }
+
+    } catch (error) {
+      console.error('Get thumbnail error:', error);
+      res.status(500).json({ message: "Failed to get thumbnail" });
+    }
+  });
+
+  // Serve individual PDF page images
+  app.get("/api/documents/:id/page/:filename", async (req, res) => {
+    try {
+      const documentId = parseInt(req.params.id);
+      const filename = req.params.filename;
+      
+      // Security: validate filename format
+      if (!/^page-\d+\.png$/.test(filename)) {
+        return res.status(400).json({ message: "Invalid page filename" });
+      }
+
+      const tempDir = '/tmp';
+      const outputDir = path.join(tempDir, `pdf_pages_${documentId}_*`);
+      
+      // Find the correct page directory
+      const dirs = fs.readdirSync(tempDir)
+        .filter(dir => dir.startsWith(`pdf_pages_${documentId}_`))
+        .map(dir => path.join(tempDir, dir))
+        .filter(dir => fs.statSync(dir).isDirectory());
+      
+      if (dirs.length === 0) {
+        return res.status(404).json({ message: "Page images not found" });
+      }
+
+      const pagePath = path.join(dirs[0], filename);
+      
+      if (!fs.existsSync(pagePath)) {
+        return res.status(404).json({ message: "Page image not found" });
+      }
+
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      const pageStream = fs.createReadStream(pagePath);
+      pageStream.pipe(res);
+
+    } catch (error) {
+      console.error('Get page image error:', error);
+      res.status(500).json({ message: "Failed to get page image" });
     }
   });
 
