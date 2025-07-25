@@ -409,8 +409,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // R2 Storage management endpoints
   app.get("/api/r2/list", async (req, res) => {
     try {
-      const files = await storageService.listFiles();
-      res.json({ success: true, files, count: files.length });
+      if (storageService.useR2 && storageService.r2Storage) {
+        const result = await storageService.r2Storage.listFiles();
+        res.json({ success: true, files: result.files, count: result.files.length });
+      } else {
+        res.json({ success: true, files: [], count: 0, message: "R2 not configured" });
+      }
     } catch (error) {
       console.error('R2 list error:', error);
       res.status(500).json({ success: false, message: "Failed to list R2 files" });
@@ -419,21 +423,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/r2/cleanup", async (req, res) => {
     try {
-      const files = await storageService.listFiles();
-      let deletedCount = 0;
-      
-      for (const file of files) {
-        try {
-          await storageService.deleteFile(file.key);
-          deletedCount++;
-          console.log(`🗑️ Deleted R2 file: ${file.key}`);
-        } catch (deleteError) {
-          console.warn(`Failed to delete R2 file ${file.key}:`, deleteError);
+      if (storageService.useR2 && storageService.r2Storage) {
+        const result = await storageService.r2Storage.listFiles();
+        let deletedCount = 0;
+        
+        console.log(`🧹 Starting R2 cleanup: ${result.files.length} files found`);
+        
+        for (const file of result.files) {
+          try {
+            await storageService.r2Storage.deleteFile(file.filename);
+            deletedCount++;
+            console.log(`🗑️ Deleted R2 file: ${file.filename}`);
+          } catch (deleteError) {
+            console.warn(`Failed to delete R2 file ${file.filename}:`, deleteError);
+          }
         }
+        
+        console.log(`🧹 R2 cleanup completed: ${deletedCount}/${result.files.length} files deleted`);
+        res.json({ success: true, deletedCount, totalFound: result.files.length, message: `Deleted ${deletedCount} files from R2 storage` });
+      } else {
+        res.json({ success: false, message: "R2 storage not configured or available" });
       }
-      
-      console.log(`🧹 R2 cleanup completed: ${deletedCount} files deleted`);
-      res.json({ success: true, deletedCount, message: `Deleted ${deletedCount} files from R2 storage` });
     } catch (error) {
       console.error('R2 cleanup error:', error);
       res.status(500).json({ success: false, message: "R2 cleanup failed" });
