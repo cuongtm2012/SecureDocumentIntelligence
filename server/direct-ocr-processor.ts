@@ -203,12 +203,18 @@ export class DirectOCRProcessor {
 
   private async processImageWithTesseract(imagePath: string): Promise<{ text: string; confidence: number }> {
     return new Promise((resolve, reject) => {
+      let tesseractProcess: any = null;
+      
       // Increase timeout to 120 seconds for complex Vietnamese documents
       const timeout = setTimeout(() => {
         console.warn(`⏰ Tesseract timeout for ${path.basename(imagePath)} (120s limit reached)`);
-        // Try to kill the process if it's still running
-        if (process && process.pid) {
-          process.kill(15); // SIGTERM signal
+        // Try to kill the tesseract process if it's still running
+        if (tesseractProcess && tesseractProcess.pid) {
+          try {
+            tesseractProcess.kill('SIGTERM');
+          } catch (error: any) {
+            console.warn(`⚠️ Could not kill tesseract process: ${error?.message || 'Unknown error'}`);
+          }
         }
         // Return partial results instead of complete failure
         resolve({
@@ -235,7 +241,7 @@ export class DirectOCRProcessor {
           '-c', 'tessedit_create_tsv=0'
         ];
         
-        const process = spawn('tesseract', args, {
+        tesseractProcess = spawn('tesseract', args, {
           stdio: ['pipe', 'pipe', 'pipe'],
           timeout: 90000 // 90 second timeout per attempt
         });
@@ -243,15 +249,15 @@ export class DirectOCRProcessor {
         let stdout = '';
         let stderr = '';
         
-        process.stdout.on('data', (data) => {
+        tesseractProcess.stdout.on('data', (data: any) => {
           stdout += data.toString();
         });
         
-        process.stderr.on('data', (data) => {
+        tesseractProcess.stderr.on('data', (data: any) => {
           stderr += data.toString();
         });
         
-        process.on('close', (code) => {
+        tesseractProcess.on('close', (code: any) => {
           const extractedText = stdout.trim();
           
           if (code === 0 && extractedText.length > 10) {
@@ -281,7 +287,7 @@ export class DirectOCRProcessor {
           }
         });
         
-        process.on('error', (error) => {
+        tesseractProcess.on('error', (error: any) => {
           if (currentModeIndex < psmModes.length - 1) {
             console.log(`❌ PSM ${psm} failed with error: ${error.message}, trying next mode...`);
             currentModeIndex++;
