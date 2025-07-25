@@ -166,8 +166,8 @@ export class DirectOCRProcessor {
         if (code === 0) {
           console.log('✅ PDF to images conversion completed successfully');
           // Check if any images were actually created
-          const dir = require('path').dirname(outputPattern);
-          const files = require('fs').readdirSync(dir).filter((f: string) => f.endsWith('.png'));
+          const dir = path.dirname(outputPattern);
+          const files = fsSync.readdirSync(dir).filter((f: string) => f.endsWith('.png'));
           if (files.length === 0) {
             reject(new Error('PDF conversion completed but no images were generated'));
           } else {
