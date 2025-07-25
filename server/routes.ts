@@ -289,7 +289,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`📥 Downloading R2 file for processing: ${document.filename}`);
       const { stream } = await storageService.downloadFile(document.filename);
-      const writeStream = require('fs').createWriteStream(filePath);
+      const writeStream = fs.createWriteStream(filePath);
       await new Promise((resolve, reject) => {
         stream.pipe(writeStream);
         stream.on('end', resolve);
@@ -301,7 +301,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Clean up temp file
       try {
-        await require('fs').promises.unlink(filePath);
+        await fs.promises.unlink(filePath);
       } catch (cleanupError) {
         console.warn('Failed to cleanup temp file:', cleanupError);
       }
@@ -370,7 +370,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const filePath = path.join(tempDir, tempFileName);
 
       const { stream } = await storageService.downloadFile(document.filename);
-      const writeStream = require('fs').createWriteStream(filePath);
+      const writeStream = fs.createWriteStream(filePath);
       await new Promise((resolve, reject) => {
         stream.pipe(writeStream);
         stream.on('end', resolve);
@@ -403,6 +403,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Get user error:', error);
       res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
+
+  // R2 Storage management endpoints
+  app.get("/api/r2/list", async (req, res) => {
+    try {
+      const files = await storageService.listFiles();
+      res.json({ success: true, files, count: files.length });
+    } catch (error) {
+      console.error('R2 list error:', error);
+      res.status(500).json({ success: false, message: "Failed to list R2 files" });
+    }
+  });
+
+  app.post("/api/r2/cleanup", async (req, res) => {
+    try {
+      const files = await storageService.listFiles();
+      let deletedCount = 0;
+      
+      for (const file of files) {
+        try {
+          await storageService.deleteFile(file.key);
+          deletedCount++;
+          console.log(`🗑️ Deleted R2 file: ${file.key}`);
+        } catch (deleteError) {
+          console.warn(`Failed to delete R2 file ${file.key}:`, deleteError);
+        }
+      }
+      
+      console.log(`🧹 R2 cleanup completed: ${deletedCount} files deleted`);
+      res.json({ success: true, deletedCount, message: `Deleted ${deletedCount} files from R2 storage` });
+    } catch (error) {
+      console.error('R2 cleanup error:', error);
+      res.status(500).json({ success: false, message: "R2 cleanup failed" });
     }
   });
 
