@@ -13,6 +13,7 @@ export interface StorageService {
   
   downloadFile(key: string): Promise<{ stream: NodeJS.ReadableStream; metadata: any }>;
   deleteFile(key: string): Promise<void>;
+  listFiles(): Promise<Array<{ key: string; size: number; lastModified: Date }>>;
   testConnection(): Promise<boolean>;
 }
 
@@ -174,6 +175,51 @@ export class HybridStorageService implements StorageService {
       await fs.promises.unlink(filePath);
       console.log(`✅ File deleted from local storage: ${key}`);
     }
+  }
+
+  async listFiles(): Promise<Array<{ key: string; size: number; lastModified: Date }>> {
+    if (this.useR2 && this.r2Storage) {
+      // Use R2 storage
+      const result = await this.r2Storage.listFiles();
+      return result.files.map(file => ({
+        key: file.filename,
+        size: file.size,
+        lastModified: file.uploadedAt
+      }));
+    } else {
+      // Fallback to local storage
+      return await this.listLocalFiles();
+    }
+  }
+
+  private async listLocalFiles(): Promise<Array<{ key: string; size: number; lastModified: Date }>> {
+    const uploadsDir = '/home/runner/uploads';
+    
+    if (!fs.existsSync(uploadsDir)) {
+      return [];
+    }
+
+    const files = await fs.promises.readdir(uploadsDir);
+    const fileList = [];
+
+    for (const file of files) {
+      try {
+        const filePath = path.join(uploadsDir, file);
+        const stats = await fs.promises.stat(filePath);
+        
+        if (stats.isFile()) {
+          fileList.push({
+            key: file,
+            size: stats.size,
+            lastModified: stats.mtime
+          });
+        }
+      } catch (error) {
+        console.warn(`Failed to get stats for file ${file}:`, error);
+      }
+    }
+
+    return fileList;
   }
 
   async testConnection(): Promise<boolean> {
