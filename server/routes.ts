@@ -58,32 +58,49 @@ async function processFileWithFallback(filePath: string, document: any, document
     console.log('🤖 Starting DeepSeek API document processing...');
     
     try {
-      // First extract text using direct OCR for DeepSeek analysis
+      // First extract text using direct OCR
       const directResult = await directOCRProcessor.processDocument(filePath);
+      console.log(`📝 Initial OCR extracted ${directResult.extractedText.length} characters with ${Math.round(directResult.confidence * 100)}% confidence`);
       
-      // Then enhance with DeepSeek analysis
+      // Then enhance the OCR text with DeepSeek reconstruction
+      let enhancedText = directResult.extractedText;
+      let deepseekImprovements: string[] = [];
+      let finalConfidence = directResult.confidence;
+      
+      if (directResult.extractedText.length > 10) {
+        console.log('🤖 Enhancing OCR text with DeepSeek reconstruction...');
+        const reconstruction = await deepSeekService.reconstructVietnameseText(directResult.extractedText);
+        enhancedText = reconstruction.reconstructedText;
+        deepseekImprovements = reconstruction.improvements;
+        finalConfidence = Math.max(directResult.confidence, reconstruction.confidence);
+        console.log(`✨ DeepSeek enhanced text: ${enhancedText.length} characters, ${Math.round(finalConfidence * 100)}% confidence`);
+      }
+      
+      // Also perform document analysis on the enhanced text
       const deepseekAnalysis = await deepSeekService.analyzeDocument(
-        directResult.extractedText, 
+        enhancedText, 
         "Vietnamese government document analysis"
       );
       
       ocrResult = {
         success: true,
         file_id: document.originalName,
-        text: directResult.extractedText,
-        confidence: directResult.confidence,
+        text: enhancedText, // Use enhanced text instead of raw OCR
+        confidence: finalConfidence,
         page_count: directResult.pageCount,
         processing_time: directResult.processingTime / 1000,
         metadata: {
-          character_count: directResult.extractedText.length,
-          word_count: directResult.extractedText.split(/\s+/).filter(word => word.length > 0).length,
+          character_count: enhancedText.length,
+          word_count: enhancedText.split(/\s+/).filter(word => word.length > 0).length,
           language: 'vie',
           confidence_threshold: 60.0,
           processing_timestamp: new Date(),
           file_size_bytes: document.fileSize,
-          processing_mode: 'deepseek-api',
+          processing_mode: 'deepseek-enhanced',
           deepseek_analysis: deepseekAnalysis,
-          note: 'Processed with DeepSeek API workflow'
+          deepseek_improvements: deepseekImprovements,
+          original_ocr_confidence: directResult.confidence,
+          note: 'Processed with DeepSeek API text reconstruction + analysis'
         }
       };
       
@@ -150,7 +167,7 @@ async function processFileWithFallback(filePath: string, document: any, document
 
   // Extract data from OCR result
   const extractedText = ocrResult.text || '';
-  const confidence = Math.min((ocrResult.confidence || 0) / 100, 1);
+  const confidence = Math.min((ocrResult.confidence || 0), 1); // Don't divide by 100 if already decimal
   const deepseekAnalysis = ocrResult.metadata?.deepseek_analysis || {
     applied: false,
     reason: 'Not processed with DeepSeek workflow'
@@ -165,6 +182,13 @@ async function processFileWithFallback(filePath: string, document: any, document
     processingMode: ocrResult.metadata?.processing_mode || 'direct-fallback',
     processingTime: ocrResult.processing_time || 0,
     deepseekAnalysis: deepseekAnalysis,
+    deepseekImprovements: ocrResult.metadata?.deepseek_improvements || [],
+    originalOcrConfidence: ocrResult.metadata?.original_ocr_confidence || confidence,
+    text_reconstruction: {
+      applied: (ocrResult.metadata?.deepseek_improvements || []).length > 0,
+      improvements: ocrResult.metadata?.deepseek_improvements || [],
+      confidence: confidence
+    },
     documentType: 'Unknown Document'
   };
 
