@@ -385,8 +385,8 @@ except Exception as e:
       // Reasonable timeout - don't wait too long for downloads
       setTimeout(() => {
         python.kill('SIGTERM');
-        reject(new Error('PaddleOCR processing timeout (45s)'));
-      }, 45000);  // 45 seconds maximum
+        reject(new Error('PaddleOCR processing timeout (5 minutes)'));
+      }, 300000);  // 5 minutes maximum
     });
   }
 

@@ -195,7 +195,7 @@ export class OpenCVOCRProcessor {
         console.warn(`⏰ Tesseract timeout for ${path.basename(imagePath)}`);
         process.kill();
         reject(new Error(`Tesseract timeout for ${path.basename(imagePath)}`));
-      }, 120000); // Increased to 120 seconds for large images
+      }, 300000); // Increased to 5 minutes for large images
 
       // Use optimized Tesseract settings for preprocessed images
       const args = [
