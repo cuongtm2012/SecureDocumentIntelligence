@@ -1,0 +1,8 @@
+paddleocr==2.7.0
+paddlepaddle==3.2.2
+opencv-python-headless
+fastapi
+uvicorn[standard]
+python-multipart
+numpy
+pillow
